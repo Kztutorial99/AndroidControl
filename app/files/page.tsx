@@ -1,4 +1,5 @@
 'use client'
+import { Suspense } from 'react'
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -37,7 +38,7 @@ const QUICK_PATHS = [
   { label: '/proc', path: '/proc' },
 ]
 
-export default function FilesPage() {
+function FilesContent() {
   const searchParams = useSearchParams()
   const [devices, setDevices] = useState<DeviceItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
@@ -123,7 +124,6 @@ export default function FilesPage() {
       <main className="flex-1 page-content overflow-y-auto">
         <div className="max-w-5xl mx-auto px-3 md:px-6 py-3 md:py-6">
 
-          {/* Header */}
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-base md:text-xl font-bold text-white">File Manager</h2>
@@ -135,7 +135,6 @@ export default function FilesPage() {
             </div>
           </div>
 
-          {/* Quick path shortcuts */}
           <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
             {QUICK_PATHS.map(({ label, path: p }) => (
               <button
@@ -149,10 +148,8 @@ export default function FilesPage() {
             ))}
           </div>
 
-          {/* File browser */}
           <div className="bg-android-surface border border-android-border rounded-xl overflow-hidden">
 
-            {/* Path bar */}
             <div className="px-3 py-2.5 border-b border-android-border flex items-center gap-2">
               <button
                 onClick={goUp}
@@ -192,7 +189,6 @@ export default function FilesPage() {
               </button>
             </div>
 
-            {/* Content */}
             {!connected ? (
               <div className="p-10 text-center">
                 <HardDrive size={32} className="text-android-border mx-auto mb-3" />
@@ -262,5 +258,13 @@ export default function FilesPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function FilesPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-android-muted text-sm">Loading…</div>}>
+      <FilesContent />
+    </Suspense>
   )
 }
