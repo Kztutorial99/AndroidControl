@@ -1,8 +1,8 @@
 {
   "framework": "nextjs",
-  "buildCommand": "yarn build",
-  "devCommand": "yarn dev",
-  "installCommand": "yarn install",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
   "regions": ["sin1"],
   "functions": {
     "app/api/**": {
