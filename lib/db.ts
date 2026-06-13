@@ -1,8 +1,19 @@
 import { Pool } from 'pg'
 
+const dbUrl = process.env.DATABASE_URL
+
+if (!dbUrl) {
+  throw new Error(
+    'DATABASE_URL belum diset. Lihat database/README.md untuk cara setup database sendiri.'
+  )
+}
+
+// SSL: aktif untuk semua host kecuali localhost
+const useSSL = !dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1')
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || process.env.NEON_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: dbUrl,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
   max: 5,
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 5000,
