@@ -4,7 +4,8 @@ import Sidebar from '@/components/Sidebar'
 import StatCard from '@/components/StatCard'
 import {
   Battery, BatteryCharging, Cpu, HardDrive, Wifi,
-  Clock, RefreshCw, Smartphone, EyeOff, Eye, Bell, BellOff
+  Clock, RefreshCw, Smartphone, EyeOff, Eye, Bell, BellOff,
+  CreditCard, Signal
 } from 'lucide-react'
 import { Server } from 'lucide-react'
 
@@ -38,6 +39,19 @@ interface DeviceStats {
   hostname: string
   kernel: string
   screenState: string
+  brand?: string
+  device?: string
+  imei?: string
+  phoneNumber?: string
+  simOperator?: string
+  simCountry?: string
+  simSerial?: string
+  simSlots?: string
+  simState?: string
+  networkOperator?: string
+  networkGeneration?: string
+  roaming?: string
+  mccMnc?: string
 }
 
 interface DeviceEntry {
@@ -264,6 +278,60 @@ export default function Dashboard() {
                   <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
                     <span className="text-android-muted text-xs">{label}</span>
                     <span className="text-android-text text-xs font-medium font-mono truncate max-w-[160px] md:max-w-[200px]">
+                      {connected ? (value || '--') : '--'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* SIM & Identitas Perangkat */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div className="bg-android-surface border border-android-border rounded-xl p-4">
+              <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                <CreditCard size={13} /> SIM Card & Telepon
+              </h3>
+              <div className="space-y-2.5">
+                {[
+                  { label: 'IMEI', value: stats?.imei },
+                  { label: 'Nomor HP', value: stats?.phoneNumber },
+                  { label: 'Operator SIM', value: stats?.simOperator },
+                  { label: 'Negara SIM', value: stats?.simCountry },
+                  { label: 'Status SIM', value: stats?.simState },
+                  { label: 'Slot SIM', value: stats?.simSlots ? `${stats.simSlots} slot` : '--' },
+                  { label: 'Serial SIM', value: stats?.simSerial },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
+                    <span className="text-android-muted text-xs">{label}</span>
+                    <span className={`text-xs font-medium font-mono truncate max-w-[180px] ${label === 'IMEI' ? 'text-android-yellow' : 'text-android-text'}`}>
+                      {connected ? (value || '--') : '--'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-android-surface border border-android-border rounded-xl p-4">
+              <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Signal size={13} /> Info Jaringan Lengkap
+              </h3>
+              <div className="space-y-2.5">
+                {[
+                  { label: 'Koneksi', value: stats?.networkType },
+                  { label: 'Generasi', value: stats?.networkGeneration },
+                  { label: 'Operator Jaringan', value: stats?.networkOperator },
+                  { label: 'MCC-MNC', value: stats?.mccMnc },
+                  { label: 'Roaming', value: stats?.roaming },
+                  { label: 'IP Address', value: stats?.ip },
+                  { label: 'Uptime', value: stats?.uptime },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
+                    <span className="text-android-muted text-xs">{label}</span>
+                    <span className={`text-xs font-medium font-mono truncate max-w-[180px] ${
+                      label === 'Generasi' ? 'text-android-green' :
+                      label === 'Roaming' && value === 'Ya' ? 'text-android-red' : 'text-android-text'
+                    }`}>
                       {connected ? (value || '--') : '--'}
                     </span>
                   </div>

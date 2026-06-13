@@ -25,6 +25,23 @@ export interface DeviceStats {
   hostname: string
   kernel: string
   screenState: string
+  // Identitas perangkat tambahan
+  brand?: string
+  device?: string
+  product?: string
+  fingerprint?: string
+  // SIM & Telepon
+  imei?: string
+  phoneNumber?: string
+  simOperator?: string
+  simCountry?: string
+  simSerial?: string
+  simSlots?: string
+  simState?: string
+  networkOperator?: string
+  networkGeneration?: string
+  roaming?: string
+  mccMnc?: string
 }
 
 export interface PendingCommand {
