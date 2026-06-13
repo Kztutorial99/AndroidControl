@@ -4,14 +4,11 @@ import { initSchema } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-let schemaInit = false
-async function ensureSchema() {
-  if (!schemaInit) { await initSchema(); schemaInit = true }
-}
+const _ready = initSchema()
 
 export async function GET(req: NextRequest) {
   try {
-    await ensureSchema()
+    await _ready
     const deviceId = req.nextUrl.searchParams.get('deviceId')
     if (!deviceId) return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     const listing = await getFileListing(deviceId)
@@ -24,7 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureSchema()
+    await _ready
     const body = await req.json()
     const { deviceId, path } = body
 

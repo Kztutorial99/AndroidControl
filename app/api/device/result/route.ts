@@ -5,14 +5,11 @@ import { v4 as uuidv4 } from 'uuid'
 
 export const dynamic = 'force-dynamic'
 
-let schemaInit = false
-async function ensureSchema() {
-  if (!schemaInit) { await initSchema(); schemaInit = true }
-}
+const _ready = initSchema()
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureSchema()
+    await _ready
     const body = await req.json()
     const { deviceId, commandId, command, result, exitCode, type, data } = body
 
@@ -45,7 +42,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    await ensureSchema()
+    await _ready
     const deviceId = req.nextUrl.searchParams.get('deviceId')
     if (!deviceId) return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     const history = await getCommandHistory(deviceId)

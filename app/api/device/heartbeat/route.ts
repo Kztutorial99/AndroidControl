@@ -4,14 +4,11 @@ import { initSchema } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-let schemaInit = false
-async function ensureSchema() {
-  if (!schemaInit) { await initSchema(); schemaInit = true }
-}
+const _ready = initSchema()
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureSchema()
+    await _ready
     const body = await req.json()
     const { deviceId, deviceName, device } = body
 
@@ -46,14 +43,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, serverTime: new Date().toISOString() })
   } catch (e) {
-    console.error('heartbeat error:', e)
+    console.error('heartbeat POST error:', e)
     return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   }
 }
 
 export async function GET() {
   try {
-    await ensureSchema()
+    await _ready
     const devices = await getAllDevices()
     return NextResponse.json({
       devices: devices.map(d => ({ ...d, connected: isDeviceOnline(d) }))
