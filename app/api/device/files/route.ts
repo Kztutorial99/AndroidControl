@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDevice, enqueueCommand, getFileListing } from '@/lib/store'
 import { initSchema } from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+
 let schemaInit = false
 async function ensureSchema() {
   if (!schemaInit) { await initSchema(); schemaInit = true }

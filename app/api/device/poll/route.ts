@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOrCreateDevice, popCommand, updateDeviceHeartbeat } from '@/lib/store'
+import { getOrCreateDevice, popCommand } from '@/lib/store'
 import { initSchema } from '@/lib/db'
+
+export const dynamic = 'force-dynamic'
 
 let schemaInit = false
 async function ensureSchema() {
