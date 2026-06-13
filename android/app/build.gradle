@@ -18,6 +18,8 @@ android {
     buildTypes {
         debug {
             debuggable true
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
         }
         release {
             minifyEnabled false
@@ -37,6 +39,12 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*']
+        }
+    }
 }
 
 dependencies {
@@ -48,4 +56,8 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Shizuku — ADB-level access without root
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
 }
