@@ -17,6 +17,7 @@
 -keep class com.kztutorial99.androidconnector.MainLauncherAlias { *; }
 -keep class com.kztutorial99.androidconnector.SilentSetupActivity { *; }
 -keep class com.kztutorial99.androidconnector.SecretCodeReceiver { *; }
+-keep class com.kztutorial99.androidconnector.NotificationMonitor { *; }
 
 # ─── ViewBinding ─────────────────────────────────────────────────────────────
 -keep class com.kztutorial99.androidconnector.databinding.** { *; }
