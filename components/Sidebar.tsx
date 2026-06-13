@@ -39,8 +39,8 @@ const mobileNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/terminal', label: 'Terminal', icon: Terminal },
   { href: '/files', label: 'Files', icon: FolderOpen },
-  { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
+  { href: '/location', label: 'Location', icon: MapPin },
   { href: '/apps', label: 'Apps', icon: Package },
 ]
 

