@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { store, popPendingCommand } from '@/lib/store'
+import { getOrCreateDevice, popCommand } from '@/lib/store'
 
 export async function GET(req: NextRequest) {
-  const token = req.nextUrl.searchParams.get('token')
+  const deviceId = req.nextUrl.searchParams.get('deviceId')
 
-  if (token !== store.token) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+  if (!deviceId) {
+    return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
   }
 
-  store.device.lastSeen = new Date().toISOString()
-  store.device.connected = true
+  const entry = getOrCreateDevice(deviceId)
+  entry.lastSeen = new Date().toISOString()
+  entry.connected = true
 
-  const pending = popPendingCommand()
+  const pending = popCommand(deviceId)
 
   return NextResponse.json({
     command: pending?.command ?? null,

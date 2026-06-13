@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import {
   Folder, File, ArrowLeft, RefreshCw,
@@ -19,6 +20,12 @@ interface FileListing {
   entries: FileEntry[]
 }
 
+interface DeviceItem {
+  deviceId: string
+  deviceName: string
+  connected: boolean
+}
+
 const QUICK_PATHS = [
   { label: 'Internal', path: '/storage/emulated/0' },
   { label: 'DCIM', path: '/storage/emulated/0/DCIM' },
@@ -31,35 +38,51 @@ const QUICK_PATHS = [
 ]
 
 export default function FilesPage() {
-  const [connected, setConnected] = useState(false)
+  const searchParams = useSearchParams()
+  const [devices, setDevices] = useState<DeviceItem[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
   const [listing, setListing] = useState<FileListing | null>(null)
   const [path, setPath] = useState('/storage/emulated/0')
   const [loading, setLoading] = useState(false)
 
-  const fetchStatus = useCallback(async () => {
+  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
+
+  const fetchDevices = useCallback(async () => {
     try {
-      const res = await fetch('/api/device/heartbeat')
+      const res = await fetch('/api/devices')
       const data = await res.json()
-      setConnected(data.connected ?? false)
+      const list: DeviceItem[] = data.devices ?? []
+      setDevices(list)
+      if (!selectedId && list.length > 0) {
+        const online = list.find(d => d.connected) ?? list[0]
+        setSelectedId(online.deviceId)
+      }
     } catch {}
-  }, [])
+  }, [selectedId])
 
   const fetchListing = useCallback(async () => {
+    if (!selectedId) return
     try {
-      const res = await fetch('/api/device/files')
+      const res = await fetch(`/api/device/files?deviceId=${selectedId}`)
       const data = await res.json()
       if (data.listing) setListing(data.listing)
     } catch {}
-  }, [])
+  }, [selectedId])
 
   useEffect(() => {
-    fetchStatus()
-    fetchListing()
-    const interval = setInterval(() => { fetchStatus(); fetchListing() }, 3000)
+    fetchDevices()
+    const interval = setInterval(fetchDevices, 3000)
     return () => clearInterval(interval)
-  }, [fetchStatus, fetchListing])
+  }, [fetchDevices])
+
+  useEffect(() => {
+    fetchListing()
+    const interval = setInterval(fetchListing, 3000)
+    return () => clearInterval(interval)
+  }, [fetchListing])
 
   const navigate = async (targetPath: string) => {
+    if (!selectedId) return
     setLoading(true)
     setListing(null)
     setPath(targetPath)
@@ -67,7 +90,7 @@ export default function FilesPage() {
       await fetch('/api/device/files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: targetPath }),
+        body: JSON.stringify({ deviceId: selectedId, path: targetPath }),
       })
     } finally {
       setLoading(false)
@@ -81,21 +104,21 @@ export default function FilesPage() {
   }
 
   const viewFile = async (filePath: string) => {
+    if (!selectedId) return
     await fetch('/api/device/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: `read_text:${filePath}` }),
+      body: JSON.stringify({ deviceId: selectedId, command: `read_text:${filePath}` }),
     })
   }
 
   const breadcrumbs = path.split('/').filter(Boolean)
-  // On mobile, only show last 2 breadcrumbs
   const visibleCrumbs = breadcrumbs.slice(-2)
   const hiddenCount = breadcrumbs.length - visibleCrumbs.length
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar connected={connected} />
+      <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
 
       <main className="flex-1 page-content overflow-y-auto">
         <div className="max-w-5xl mx-auto px-3 md:px-6 py-3 md:py-6">
@@ -112,7 +135,7 @@ export default function FilesPage() {
             </div>
           </div>
 
-          {/* Quick path shortcuts — horizontal scroll on mobile */}
+          {/* Quick path shortcuts */}
           <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
             {QUICK_PATHS.map(({ label, path: p }) => (
               <button

@@ -18,7 +18,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="24dp">
+            android:layout_marginBottom="20dp">
 
             <TextView
                 android:layout_width="0dp"
@@ -47,7 +47,7 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <View
                 android:id="@+id/statusDot"
@@ -75,60 +75,61 @@
                     android:id="@+id/tvLastPoll"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Not connected to server"
+                    android:text="Connecting to server…"
                     android:textColor="@color/muted"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Server URL -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Server URL"
-            android:textColor="@color/muted"
-            android:textSize="12sp"
-            android:layout_marginBottom="6dp" />
-
-        <EditText
-            android:id="@+id/etServerUrl"
+        <!-- Device ID Card -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/input_bg"
-            android:textColor="@color/text"
-            android:textSize="13sp"
-            android:fontFamily="monospace"
-            android:hint="https://your-app.vercel.app"
-            android:textColorHint="@color/muted"
-            android:inputType="textUri"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
             android:padding="14dp"
-            android:layout_marginBottom="16dp"
-            android:singleLine="true" />
+            android:layout_marginBottom="16dp">
 
-        <!-- Token -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Device Token"
-            android:textColor="@color/muted"
-            android:textSize="12sp"
-            android:layout_marginBottom="6dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DEVICE ID"
+                android:textColor="@color/muted"
+                android:textSize="11sp"
+                android:textAllCaps="true"
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="4dp" />
 
-        <EditText
-            android:id="@+id/etToken"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/input_bg"
-            android:textColor="@color/text"
-            android:textSize="13sp"
-            android:fontFamily="monospace"
-            android:hint="change-this-secret-token"
-            android:textColorHint="@color/muted"
-            android:inputType="textPassword"
-            android:padding="14dp"
-            android:layout_marginBottom="20dp"
-            android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvDeviceId"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Generating…"
+                android:textColor="@color/green"
+                android:textSize="12sp"
+                android:fontFamily="monospace" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SERVER"
+                android:textColor="@color/muted"
+                android:textSize="11sp"
+                android:textAllCaps="true"
+                android:letterSpacing="0.1"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvServerUrl"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="android-control-juldevelopers-projects.vercel.app"
+                android:textColor="@color/text"
+                android:textSize="12sp"
+                android:fontFamily="monospace" />
+        </LinearLayout>
 
         <!-- Buttons -->
         <com.google.android.material.button.MaterialButton
@@ -206,7 +207,7 @@
             android:fontFamily="monospace"
             android:padding="12dp"
             android:gravity="top"
-            android:text="Waiting to connect…\n"
+            android:text="Starting…\n"
             android:scrollbars="vertical" />
 
     </LinearLayout>

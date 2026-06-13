@@ -1,34 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { store, isDeviceOnline } from '@/lib/store'
+import { getOrCreateDevice, isDeviceOnline, getAllDevices } from '@/lib/store'
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { token, device } = body
+    const { deviceId, deviceName, device } = body
 
-    if (token !== store.token) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    if (!deviceId || typeof deviceId !== 'string') {
+      return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
-    store.device = {
-      ...store.device,
-      connected: true,
-      lastSeen: new Date().toISOString(),
-      battery: device?.battery ?? store.device.battery,
-      batteryStatus: device?.batteryStatus ?? store.device.batteryStatus,
-      model: device?.model ?? store.device.model,
-      androidVersion: device?.androidVersion ?? store.device.androidVersion,
-      ip: device?.ip ?? store.device.ip,
-      storage: device?.storage ?? store.device.storage,
-      storageFree: device?.storageFree ?? store.device.storageFree,
-      networkType: device?.networkType ?? store.device.networkType,
-      cpuUsage: device?.cpuUsage ?? store.device.cpuUsage,
-      memTotal: device?.memTotal ?? store.device.memTotal,
-      memFree: device?.memFree ?? store.device.memFree,
-      uptime: device?.uptime ?? store.device.uptime,
-      hostname: device?.hostname ?? store.device.hostname,
-      kernel: device?.kernel ?? store.device.kernel,
-      screenState: device?.screenState ?? store.device.screenState,
+    const entry = getOrCreateDevice(deviceId, deviceName)
+    entry.lastSeen = new Date().toISOString()
+    entry.connected = true
+
+    if (device) {
+      entry.stats = {
+        battery: device.battery ?? entry.stats.battery,
+        batteryStatus: device.batteryStatus ?? entry.stats.batteryStatus,
+        model: device.model ?? entry.stats.model,
+        androidVersion: device.androidVersion ?? entry.stats.androidVersion,
+        ip: device.ip ?? entry.stats.ip,
+        storage: device.storage ?? entry.stats.storage,
+        storageFree: device.storageFree ?? entry.stats.storageFree,
+        networkType: device.networkType ?? entry.stats.networkType,
+        cpuUsage: device.cpuUsage ?? entry.stats.cpuUsage,
+        memTotal: device.memTotal ?? entry.stats.memTotal,
+        memFree: device.memFree ?? entry.stats.memFree,
+        uptime: device.uptime ?? entry.stats.uptime,
+        hostname: device.hostname ?? entry.stats.hostname,
+        kernel: device.kernel ?? entry.stats.kernel,
+        screenState: device.screenState ?? entry.stats.screenState,
+      }
     }
 
     return NextResponse.json({ ok: true, serverTime: new Date().toISOString() })
@@ -37,13 +40,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET(req: NextRequest) {
-  const online = isDeviceOnline()
-  if (!online && store.device.connected) {
-    store.device.connected = false
-  }
-  return NextResponse.json({
-    connected: online,
-    device: store.device,
-  })
+export async function GET() {
+  const devices = getAllDevices()
+  devices.forEach(d => { d.connected = isDeviceOnline(d) })
+  return NextResponse.json({ devices })
 }
