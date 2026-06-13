@@ -86,7 +86,15 @@ const DEFAULT_STATS: DeviceStats = {
 
 export function isDeviceOnline(d: { lastSeen: string | null }): boolean {
   if (!d.lastSeen) return false
-  return Date.now() - new Date(d.lastSeen).getTime() < 30000
+  return Date.now() - new Date(d.lastSeen).getTime() < 90000
+}
+
+export function getDeviceStatus(d: { lastSeen: string | null }): 'online' | 'recent' | 'offline' {
+  if (!d.lastSeen) return 'offline'
+  const ageMs = Date.now() - new Date(d.lastSeen).getTime()
+  if (ageMs < 90000)   return 'online'
+  if (ageMs < 600000)  return 'recent'
+  return 'offline'
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
