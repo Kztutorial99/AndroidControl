@@ -304,7 +304,21 @@ class ConnectorService : Service() {
             return "⚠️ Shizuku not available. Run shell fallback:\n" + runShell(cmd)
         }
         return try {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+            // Use reflection to call Shizuku.newProcess() — restricted in API 13.1.5
+            val method = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            method.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val process = method.invoke(
+                null,
+                arrayOf("sh", "-c", cmd),
+                null as Array<String>?,
+                null as String?
+            ) as Process
             val out = process.inputStream.bufferedReader().readText()
             val err = process.errorStream.bufferedReader().readText()
             process.waitFor()
