@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit
 class ConnectorService : Service() {
 
     companion object {
-        const val SERVER_URL = "https://android-control-juldevelopers-projects.vercel.app"
+        val SERVER_URL: String get() = SecureConfig.serverUrl()
         const val CHANNEL_ID = "connector_channel"
         const val NOTIF_ID = 1001
         const val ACTION_STOP = "ACTION_STOP"
