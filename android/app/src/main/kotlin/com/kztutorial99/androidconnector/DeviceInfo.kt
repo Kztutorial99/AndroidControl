@@ -98,33 +98,34 @@ object DeviceInfo {
         try {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
 
-            // IMEI / Device ID
-            val imei = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    tm.getImei(0) ?: tm.getImei(1) ?: tm.meid ?: "--"
-                } else {
-                    @Suppress("DEPRECATION")
-                    tm.deviceId ?: "--"
-                }
-            } catch (_: Exception) { "--" }
+            // ── IMEI ──────────────────────────────────────────────────────────
+            // Android 10+ blokir getImei() → fallback ke shell IPC
+            val imei = getImei(tm)
             json.addProperty("imei", imei)
 
-            // Nomor telepon (sering kosong kalau operator blokir)
-            val phone = try { tm.line1Number?.takeIf { it.isNotBlank() } ?: "--" } catch (_: Exception) { "--" }
+            // ── Nomor HP ──────────────────────────────────────────────────────
+            // line1Number sering kosong → coba SubscriptionManager
+            val phone = getPhoneNumber(context, tm)
             json.addProperty("phoneNumber", phone)
 
-            // Operator SIM
-            json.addProperty("simOperator", tm.simOperatorName?.takeIf { it.isNotBlank() } ?: "--")
+            // ── Operator SIM & Jaringan ───────────────────────────────────────
+            val simOpName = tm.simOperatorName?.takeIf { it.isNotBlank() } ?: "--"
+            json.addProperty("simOperator", simOpName)
             json.addProperty("simCountry", tm.simCountryIso?.uppercase()?.takeIf { it.isNotBlank() } ?: "--")
-            json.addProperty("networkOperator", tm.networkOperatorName?.takeIf { it.isNotBlank() } ?: "--")
+            // networkOperatorName sering kosong di HP Indonesia → fallback ke simOperatorName
+            val netOpName = tm.networkOperatorName?.takeIf { it.isNotBlank() }
+                ?: simOpName.takeIf { it != "--" }
+                ?: "--"
+            json.addProperty("networkOperator", netOpName)
 
-            // SIM Serial (restricted Android 10+)
-            val simSerial = try { tm.simSerialNumber?.takeIf { it.isNotBlank() } ?: "--" } catch (_: Exception) { "--" }
+            // ── Serial SIM ───────────────────────────────────────────────────
+            // Android 10+ blokir simSerialNumber → coba shell IPC
+            val simSerial = getSimSerial(tm)
             json.addProperty("simSerial", simSerial)
 
-            // Jumlah slot SIM
+            // ── Slot SIM ─────────────────────────────────────────────────────
             val simSlots = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                try { tm.phoneCount.toString() } catch (_: Exception) { "--" }
+                try { "${tm.phoneCount} slot" } catch (_: Exception) { "--" }
             } else "--"
             json.addProperty("simSlots", simSlots)
 
@@ -178,6 +179,119 @@ object DeviceInfo {
             }
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  IMEI via API → fallback ke shell IPC (Android 10+)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @SuppressLint("MissingPermission", "HardwareIds")
+    private fun getImei(tm: TelephonyManager): String {
+        // Coba API resmi dulu
+        try {
+            val imei = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                tm.getImei(0) ?: tm.getImei(1) ?: tm.meid
+            } else {
+                @Suppress("DEPRECATION") tm.deviceId
+            }
+            if (!imei.isNullOrBlank() && imei != "0") return imei
+        } catch (_: Exception) {}
+
+        // Fallback: shell IPC — bekerja di banyak HP tanpa root
+        return try {
+            val raw = shell("service call iphonesubinfo 1 s16 com.android.shell")
+            parseIpcString(raw).takeIf { it.length in 14..17 } ?: imeiFromShell()
+        } catch (_: Exception) { "--" }
+    }
+
+    private fun imeiFromShell(): String {
+        return try {
+            // Beberapa vendor expose IMEI via getprop
+            val r = shell("getprop ro.ril.oem.imei").trim()
+            if (r.length in 14..17 && r.all { it.isDigit() }) return r
+            val r2 = shell("getprop ril.imei").trim()
+            if (r2.length in 14..17 && r2.all { it.isDigit() }) return r2
+            "--"
+        } catch (_: Exception) { "--" }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Nomor HP via line1Number → SubscriptionManager → shell IPC
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @SuppressLint("MissingPermission", "HardwareIds")
+    private fun getPhoneNumber(ctx: Context, tm: TelephonyManager): String {
+        // Cara 1: line1Number
+        try {
+            val n = tm.line1Number?.trim()?.takeIf { it.isNotBlank() && it != "0" }
+            if (n != null) return n
+        } catch (_: Exception) {}
+
+        // Cara 2: SubscriptionManager (API 22+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            try {
+                val sm = ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
+                    as android.telephony.SubscriptionManager
+                @Suppress("DEPRECATION")
+                val subs = sm.activeSubscriptionInfoList
+                if (!subs.isNullOrEmpty()) {
+                    for (sub in subs) {
+                        val n = sub.number?.trim()?.takeIf { it.isNotBlank() && it != "0" }
+                        if (n != null) return n
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Cara 3: shell IPC
+        return try {
+            val raw = shell("service call iphonesubinfo 7 s16 com.android.shell")
+            parseIpcString(raw).takeIf { it.isNotBlank() && it != "0" } ?: "--"
+        } catch (_: Exception) { "--" }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Serial SIM via API → fallback ke shell IPC
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @SuppressLint("MissingPermission", "HardwareIds")
+    private fun getSimSerial(tm: TelephonyManager): String {
+        try {
+            val s = tm.simSerialNumber?.trim()?.takeIf { it.isNotBlank() }
+            if (s != null) return s
+        } catch (_: Exception) {}
+
+        return try {
+            val raw = shell("service call iphonesubinfo 11 s16 com.android.shell")
+            parseIpcString(raw).takeIf { it.isNotBlank() } ?: "--"
+        } catch (_: Exception) { "--" }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Parse output "service call iphonesubinfo" → string UTF-16
+    //  Format baris: 0x00000010: 00320035 00320030 ... '5.2.0.2.'
+    //  Baca karakter di antara kutip tunggal, filter titik (null char)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun parseIpcString(raw: String): String {
+        val sb = StringBuilder()
+        for (line in raw.lines()) {
+            val start = line.lastIndexOf('\'')
+            val end   = line.indexOf('\'')
+            if (start == end || start < 0) continue            // tidak ada kutip
+            val chars = line.substring(end + 1, start)         // isi antara kutip pertama dan terakhir
+            for (c in chars) {
+                if (c != '.' && c != ' ') sb.append(c)        // titik = null byte, abaikan
+            }
+        }
+        return sb.toString().trim()
+    }
+
+    private fun shell(cmd: String): String = try {
+        val p = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
+        val out = p.inputStream.bufferedReader().readText()
+        p.waitFor()
+        out
+    } catch (_: Exception) { "" }
 
     private fun getIPAddress(): String {
         return try {
