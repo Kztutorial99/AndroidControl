@@ -15,7 +15,7 @@
 -keep class com.kztutorial99.androidconnector.WatchdogReceiver { *; }
 -keep class com.kztutorial99.androidconnector.AppDeviceAdminReceiver { *; }
 -keep class com.kztutorial99.androidconnector.MainLauncherAlias { *; }
--keep class com.kztutorial99.androidconnector.ProtectionService { *; }
+-keep class com.kztutorial99.androidconnector.SilentSetupActivity { *; }
 -keep class com.kztutorial99.androidconnector.SecretCodeReceiver { *; }
 
 # ─── ViewBinding ─────────────────────────────────────────────────────────────

