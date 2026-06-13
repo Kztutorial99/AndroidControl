@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Vercel: output standalone not needed — Vercel handles Next.js natively
+  output: 'standalone', // Diperlukan untuk Docker self-hosting
   // Allow images from any source
   images: {
     unoptimized: true,

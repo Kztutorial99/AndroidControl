@@ -1,0 +1,43 @@
+version: '3.9'
+
+services:
+
+  # ── Database PostgreSQL (milik sendiri) ───────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: androidconnector_db
+    restart: always
+    environment:
+      POSTGRES_DB:       androidconnector
+      POSTGRES_USER:     android_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ganti_password_ini}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U android_user -d androidconnector"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Web App (Next.js) ─────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: androidconnector_app
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://android_user:${DB_PASSWORD:-ganti_password_ini}@db:5432/androidconnector
+      NODE_ENV:     production
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:
+    driver: local
