@@ -69,7 +69,7 @@ const DEFAULT_STATS: DeviceStats = {
 
 export function isDeviceOnline(d: { lastSeen: string | null }): boolean {
   if (!d.lastSeen) return false
-  return Date.now() - new Date(d.lastSeen).getTime() < 12000
+  return Date.now() - new Date(d.lastSeen).getTime() < 30000
 }
 
 export async function getOrCreateDevice(deviceId: string, deviceName?: string): Promise<DeviceEntry> {

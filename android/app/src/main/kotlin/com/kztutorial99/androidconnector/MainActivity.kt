@@ -64,7 +64,10 @@ class MainActivity : AppCompatActivity() {
 
         ConnectorService.statusCallback = { msg, running ->
             runOnUiThread {
-                appendLog(msg)
+                // "Connected" fires every 2s — only update status UI, don't spam log
+                if (msg != "Connected") {
+                    appendLog(msg)
+                }
                 updateServiceState(running)
             }
         }
