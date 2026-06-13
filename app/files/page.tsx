@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import {
   Folder, File, ArrowLeft, RefreshCw,
-  HardDrive, Circle, ChevronRight, Download
+  HardDrive, Circle, ChevronRight
 } from 'lucide-react'
 
 interface FileEntry {
@@ -20,14 +20,14 @@ interface FileListing {
 }
 
 const QUICK_PATHS = [
-  '/storage/emulated/0',
-  '/storage/emulated/0/DCIM',
-  '/storage/emulated/0/Download',
-  '/storage/emulated/0/Pictures',
-  '/storage/emulated/0/Documents',
-  '/sdcard',
-  '/data/local/tmp',
-  '/proc',
+  { label: 'Internal', path: '/storage/emulated/0' },
+  { label: 'DCIM', path: '/storage/emulated/0/DCIM' },
+  { label: 'Downloads', path: '/storage/emulated/0/Download' },
+  { label: 'Pictures', path: '/storage/emulated/0/Pictures' },
+  { label: 'Documents', path: '/storage/emulated/0/Documents' },
+  { label: '/sdcard', path: '/sdcard' },
+  { label: '/tmp', path: '/data/local/tmp' },
+  { label: '/proc', path: '/proc' },
 ]
 
 export default function FilesPage() {
@@ -35,7 +35,6 @@ export default function FilesPage() {
   const [listing, setListing] = useState<FileListing | null>(null)
   const [path, setPath] = useState('/storage/emulated/0')
   const [loading, setLoading] = useState(false)
-  const [rawOutput, setRawOutput] = useState<string | null>(null)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -49,20 +48,14 @@ export default function FilesPage() {
     try {
       const res = await fetch('/api/device/files')
       const data = await res.json()
-      if (data.listing) {
-        setListing(data.listing)
-        setRawOutput(null)
-      }
+      if (data.listing) setListing(data.listing)
     } catch {}
   }, [])
 
   useEffect(() => {
     fetchStatus()
     fetchListing()
-    const interval = setInterval(() => {
-      fetchStatus()
-      fetchListing()
-    }, 3000)
+    const interval = setInterval(() => { fetchStatus(); fetchListing() }, 3000)
     return () => clearInterval(interval)
   }, [fetchStatus, fetchListing])
 
@@ -84,92 +77,107 @@ export default function FilesPage() {
   const goUp = () => {
     const parts = path.split('/').filter(Boolean)
     if (parts.length <= 1) return
-    const parent = '/' + parts.slice(0, -1).join('/')
-    navigate(parent)
+    navigate('/' + parts.slice(0, -1).join('/'))
   }
 
   const viewFile = async (filePath: string) => {
     await fetch('/api/device/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: `cat "${filePath}" 2>&1 | head -100` }),
+      body: JSON.stringify({ command: `read_text:${filePath}` }),
     })
   }
 
   const breadcrumbs = path.split('/').filter(Boolean)
+  // On mobile, only show last 2 breadcrumbs
+  const visibleCrumbs = breadcrumbs.slice(-2)
+  const hiddenCount = breadcrumbs.length - visibleCrumbs.length
 
   return (
     <div className="flex min-h-screen">
       <Sidebar connected={connected} />
 
-      <main className="flex-1 p-6 overflow-y-auto">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
+      <main className="flex-1 page-content overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-3 md:px-6 py-3 md:py-6">
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-xl font-bold text-white">File Manager</h2>
-              <p className="text-android-muted text-sm mt-0.5">Browse your Android device storage</p>
+              <h2 className="text-base md:text-xl font-bold text-white">File Manager</h2>
+              <p className="text-android-muted text-xs hidden sm:block">Browse your Android device storage</p>
             </div>
-            <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border ${connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'}`}>
+            <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border ${connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'}`}>
               <Circle size={7} className={connected ? 'fill-android-green' : 'fill-android-red'} />
               {connected ? 'Online' : 'Offline'}
             </div>
           </div>
 
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {QUICK_PATHS.map(p => (
+          {/* Quick path shortcuts — horizontal scroll on mobile */}
+          <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+            {QUICK_PATHS.map(({ label, path: p }) => (
               <button
                 key={p}
                 onClick={() => navigate(p)}
                 disabled={!connected}
-                className="px-3 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-blue hover:border-android-blue/50 transition-colors disabled:opacity-40 font-mono"
+                className="shrink-0 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-blue hover:border-android-blue/50 transition-colors disabled:opacity-40 font-mono whitespace-nowrap"
               >
-                {p.split('/').pop() || '/'}
+                {label}
               </button>
             ))}
           </div>
 
+          {/* File browser */}
           <div className="bg-android-surface border border-android-border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-android-border flex items-center gap-2">
+
+            {/* Path bar */}
+            <div className="px-3 py-2.5 border-b border-android-border flex items-center gap-2">
               <button
                 onClick={goUp}
                 disabled={!connected || path === '/'}
-                className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30 transition-colors shrink-0 active:bg-android-border/70"
               >
                 <ArrowLeft size={15} className="text-android-muted" />
               </button>
 
-              <div className="flex items-center gap-1 flex-1 overflow-x-auto text-sm">
-                <HardDrive size={13} className="text-android-muted shrink-0" />
-                {breadcrumbs.map((part, i) => (
-                  <span key={i} className="flex items-center gap-1 shrink-0">
-                    <ChevronRight size={13} className="text-android-border" />
-                    <button
-                      onClick={() => navigate('/' + breadcrumbs.slice(0, i + 1).join('/'))}
-                      className="text-android-text hover:text-android-blue font-mono transition-colors"
-                    >
-                      {part}
-                    </button>
-                  </span>
-                ))}
+              <div className="flex items-center gap-1 flex-1 overflow-hidden text-xs">
+                <HardDrive size={12} className="text-android-muted shrink-0" />
+                {hiddenCount > 0 && (
+                  <span className="text-android-muted shrink-0">…</span>
+                )}
+                {visibleCrumbs.map((part, i) => {
+                  const actualIdx = hiddenCount + i
+                  return (
+                    <span key={actualIdx} className="flex items-center gap-1 shrink-0 min-w-0">
+                      <ChevronRight size={12} className="text-android-border shrink-0" />
+                      <button
+                        onClick={() => navigate('/' + breadcrumbs.slice(0, actualIdx + 1).join('/'))}
+                        className="text-android-text hover:text-android-blue font-mono transition-colors truncate max-w-[80px] md:max-w-none"
+                      >
+                        {part}
+                      </button>
+                    </span>
+                  )
+                })}
               </div>
 
               <button
                 onClick={() => navigate(path)}
                 disabled={!connected}
-                className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30 transition-colors shrink-0"
               >
                 <RefreshCw size={13} className="text-android-muted" />
               </button>
             </div>
 
+            {/* Content */}
             {!connected ? (
-              <div className="p-12 text-center">
-                <HardDrive size={36} className="text-android-border mx-auto mb-3" />
+              <div className="p-10 text-center">
+                <HardDrive size={32} className="text-android-border mx-auto mb-3" />
                 <p className="text-android-muted text-sm">Connect your device to browse files</p>
               </div>
             ) : loading ? (
-              <div className="p-12 text-center">
-                <RefreshCw size={24} className="text-android-green mx-auto mb-3 animate-spin" />
+              <div className="p-10 text-center">
+                <RefreshCw size={22} className="text-android-green mx-auto mb-3 animate-spin" />
                 <p className="text-android-muted text-sm">Loading…</p>
               </div>
             ) : listing && listing.entries.length > 0 ? (
@@ -183,7 +191,7 @@ export default function FilesPage() {
                   .map(entry => (
                     <div
                       key={entry.name}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 cursor-pointer group transition-colors"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 active:bg-white/10 cursor-pointer group transition-colors"
                       onClick={() =>
                         entry.type === 'dir'
                           ? navigate(`${path}/${entry.name}`)
@@ -198,27 +206,18 @@ export default function FilesPage() {
                       <span className="flex-1 text-sm text-android-text font-medium truncate">
                         {entry.name}
                       </span>
-                      <span className="text-xs text-android-muted font-mono hidden md:block">
-                        {entry.permissions}
-                      </span>
-                      <span className="text-xs text-android-muted font-mono w-20 text-right hidden sm:block">
+                      <span className="text-xs text-android-muted font-mono shrink-0">
                         {entry.size}
                       </span>
-                      {entry.type === 'file' && (
-                        <button
-                          onClick={e => { e.stopPropagation(); viewFile(`${path}/${entry.name}`) }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-android-blue transition-all"
-                          title="View file in terminal"
-                        >
-                          <Download size={13} />
-                        </button>
+                      {entry.type === 'dir' && (
+                        <ChevronRight size={14} className="text-android-border shrink-0" />
                       )}
                     </div>
                   ))}
               </div>
             ) : (
-              <div className="p-12 text-center">
-                <Folder size={36} className="text-android-border mx-auto mb-3" />
+              <div className="p-10 text-center">
+                <Folder size={32} className="text-android-border mx-auto mb-3" />
                 <p className="text-android-muted text-sm">
                   {listing ? 'Empty folder or access denied' : 'Navigate to a folder to see its contents'}
                 </p>
@@ -227,15 +226,15 @@ export default function FilesPage() {
                     onClick={() => navigate(path)}
                     className="mt-4 px-4 py-2 bg-android-green text-android-bg rounded-lg text-sm font-medium"
                   >
-                    Browse {path}
+                    Browse {path.split('/').pop()}
                   </button>
                 )}
               </div>
             )}
           </div>
 
-          <p className="text-xs text-android-muted mt-3">
-            Click a folder to navigate · Click a file to view contents in Terminal · File results appear in the <a href="/terminal" className="text-android-blue">Terminal</a>
+          <p className="text-xs text-android-muted mt-2 hidden md:block">
+            Tap folder to navigate · Tap file to view in Terminal
           </p>
         </div>
       </main>

@@ -8,6 +8,7 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html, body {
@@ -15,27 +16,34 @@ html, body {
   background-color: #0d1117;
   color: #c9d1d9;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Prevent layout shift on mobile from scrollbar */
+html {
+  overflow-x: hidden;
+  scroll-behavior: smooth;
 }
-::-webkit-scrollbar-track {
-  background: #0d1117;
-}
-::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+
+/* Mobile scrollbar (thin) */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* Mobile: hide scrollbar but keep scroll */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar { width: 0; height: 0; }
 }
 
 .terminal-output {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
+}
+
+@media (min-width: 768px) {
+  .terminal-output { font-size: 13px; }
 }
 
 .glow-green {
@@ -63,4 +71,25 @@ html, body {
 
 .battery-bar {
   transition: width 0.5s ease;
+}
+
+/* Mobile safe area (notch / home bar) */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Page layout helpers */
+.page-content {
+  /* Mobile: space for top header (56px) + bottom nav (56px) */
+  padding-top: 3.75rem; /* 60px */
+  padding-bottom: 4.5rem; /* 72px — extra room above bottom nav */
+  min-height: 100dvh;
+}
+
+@media (min-width: 768px) {
+  .page-content {
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: 100vh;
+  }
 }

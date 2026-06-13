@@ -12,18 +12,16 @@ interface HistoryEntry {
 }
 
 const QUICK_CMDS = [
-  'uname -a',
-  'whoami',
-  'pwd',
-  'ls -la',
+  'ls /sdcard',
   'df -h',
   'free -h',
-  'top -bn1 | head -20',
+  'uname -a',
+  'whoami',
   'ip addr',
-  'cat /proc/cpuinfo | head -20',
-  'ls /storage/emulated/0',
-  'ls /sdcard',
-  'pm list packages | head -20',
+  'pm list packages',
+  'top -bn1',
+  'shizuku_status',
+  'ping',
 ]
 
 export default function TerminalPage() {
@@ -105,56 +103,61 @@ export default function TerminalPage() {
     <div className="flex min-h-screen">
       <Sidebar connected={connected} />
 
-      <main className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="max-w-5xl mx-auto w-full flex flex-col flex-1">
-          <div className="flex items-center justify-between mb-4">
+      <main className="flex-1 page-content flex flex-col overflow-hidden">
+        <div className="flex flex-col flex-1 px-3 md:px-6 py-3 md:py-6 max-w-5xl mx-auto w-full min-h-0">
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-xl font-bold text-white">Terminal</h2>
-              <p className="text-android-muted text-sm mt-0.5">Execute shell commands on your Android device</p>
+              <h2 className="text-base md:text-xl font-bold text-white">Terminal</h2>
+              <p className="text-android-muted text-xs hidden sm:block">Execute shell commands on your Android device</p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border ${connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'}`}>
+            <div className="flex items-center gap-2">
+              <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border ${connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'}`}>
                 <Circle size={7} className={connected ? 'fill-android-green' : 'fill-android-red'} />
                 {connected ? 'Online' : 'Offline'}
               </div>
               <button
                 onClick={clearHistory}
-                className="flex items-center gap-2 px-3 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-red hover:border-android-red/50 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-red hover:border-android-red/50 transition-colors"
               >
-                <Trash2 size={13} /> Clear
+                <Trash2 size={12} />
+                <span className="hidden sm:inline">Clear</span>
               </button>
             </div>
           </div>
 
-          <div className="flex gap-2 mb-3 flex-wrap">
+          {/* Quick commands — horizontal scroll on mobile */}
+          <div className="flex gap-1.5 mb-2.5 overflow-x-auto pb-1 scrollbar-none">
             {QUICK_CMDS.map(cmd => (
               <button
                 key={cmd}
                 onClick={() => sendCommand(cmd)}
                 disabled={!connected}
-                className="px-2.5 py-1 bg-android-surface border border-android-border rounded text-xs text-android-muted hover:text-android-green hover:border-android-green/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-mono"
+                className="shrink-0 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-green hover:border-android-green/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-mono whitespace-nowrap"
               >
                 {cmd}
               </button>
             ))}
           </div>
 
+          {/* Output area — fills remaining space */}
           <div
             ref={outputRef}
-            className="flex-1 min-h-[300px] max-h-[calc(100vh-320px)] bg-[#0a0c10] border border-android-border rounded-xl p-4 overflow-y-auto terminal-output"
+            className="flex-1 min-h-0 bg-[#0a0c10] border border-android-border rounded-xl p-3 md:p-4 overflow-y-auto terminal-output"
           >
             {history.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="flex flex-col items-center justify-center h-full text-center gap-2">
                 <p className="text-android-muted text-sm">
-                  {connected ? 'Type a command below and press Enter ↵' : 'Connect your Android device to start'}
+                  {connected ? 'Type a command and tap Send ↓' : 'Connect your Android device to start'}
                 </p>
               </div>
             ) : (
               [...history].reverse().map(entry => (
                 <div key={entry.id} className="mb-4">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-android-green text-xs">$</span>
-                    <span className="text-white text-xs font-semibold">{entry.command}</span>
+                    <span className="text-white text-xs font-semibold break-all">{entry.command}</span>
                     <span className="text-android-muted text-xs ml-auto">
                       {new Date(entry.timestamp).toLocaleTimeString()}
                     </span>
@@ -162,7 +165,7 @@ export default function TerminalPage() {
                       <span className="text-android-red text-xs">exit {entry.exitCode}</span>
                     )}
                   </div>
-                  <pre className="text-android-text text-xs whitespace-pre-wrap break-all pl-4 border-l border-android-border/50">
+                  <pre className="text-android-text text-xs whitespace-pre-wrap break-all pl-3 border-l border-android-border/50">
                     {entry.result || <span className="text-android-muted italic">(no output)</span>}
                   </pre>
                 </div>
@@ -170,31 +173,36 @@ export default function TerminalPage() {
             )}
           </div>
 
-          <div className="mt-3 flex gap-2">
-            <div className="flex-1 flex items-center bg-[#0a0c10] border border-android-border rounded-xl px-4 py-3 gap-2 focus-within:border-android-green/50 transition-colors">
+          {/* Input bar — mobile-friendly with large tap target */}
+          <div className="mt-2.5 flex gap-2">
+            <div className="flex-1 flex items-center bg-[#0a0c10] border border-android-border rounded-xl px-3 py-3 gap-2 focus-within:border-android-green/50 transition-colors">
               <span className="text-android-green font-mono text-sm select-none">$</span>
               <input
                 ref={inputRef}
                 type="text"
+                inputMode="text"
+                autoCapitalize="none"
+                autoCorrect="off"
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={connected ? 'Enter command… (↑↓ for history)' : 'No device connected'}
+                placeholder={connected ? 'Enter command…' : 'No device connected'}
                 disabled={!connected || sending}
-                className="flex-1 bg-transparent text-android-text font-mono text-sm outline-none placeholder:text-android-muted/50 disabled:opacity-50"
-                autoComplete="off"
+                className="flex-1 bg-transparent text-android-text font-mono text-sm outline-none placeholder:text-android-muted/50 disabled:opacity-50 min-w-0"
                 spellCheck={false}
               />
             </div>
             <button
               onClick={() => sendCommand()}
               disabled={!connected || sending || !input.trim()}
-              className="px-4 py-3 bg-android-green text-android-bg rounded-xl hover:bg-android-green/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-3 bg-android-green text-android-bg rounded-xl hover:bg-android-green/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 active:scale-95"
             >
               <Send size={16} />
             </button>
           </div>
-          <p className="text-xs text-android-muted mt-2">↑↓ arrow keys to navigate command history · Enter to send</p>
+
+          <p className="text-xs text-android-muted mt-1.5 hidden md:block">↑↓ arrow keys to navigate command history · Enter to send</p>
+
         </div>
       </main>
     </div>
