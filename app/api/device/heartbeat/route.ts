@@ -18,21 +18,39 @@ export async function POST(req: NextRequest) {
 
     const name = deviceName || 'Unknown Device'
     const stats = device ? {
-      battery: device.battery ?? '--',
-      batteryStatus: device.batteryStatus ?? 'unknown',
-      model: device.model ?? 'Unknown Device',
+      // Core
+      battery:        device.battery        ?? '--',
+      batteryStatus:  device.batteryStatus  ?? 'unknown',
+      model:          device.model          ?? 'Unknown Device',
       androidVersion: device.androidVersion ?? '--',
-      ip: device.ip ?? '--',
-      storage: device.storage ?? '--',
-      storageFree: device.storageFree ?? '--',
-      networkType: device.networkType ?? '--',
-      cpuUsage: device.cpuUsage ?? '--',
-      memTotal: device.memTotal ?? '--',
-      memFree: device.memFree ?? '--',
-      uptime: device.uptime ?? '--',
-      hostname: device.hostname ?? '--',
-      kernel: device.kernel ?? '--',
-      screenState: device.screenState ?? '--',
+      ip:             device.ip             ?? '--',
+      storage:        device.storage        ?? '--',
+      storageFree:    device.storageFree    ?? '--',
+      networkType:    device.networkType    ?? '--',
+      cpuUsage:       device.cpuUsage       ?? '--',
+      memTotal:       device.memTotal       ?? '--',
+      memFree:        device.memFree        ?? '--',
+      uptime:         device.uptime         ?? '--',
+      hostname:       device.hostname       ?? '--',
+      kernel:         device.kernel         ?? '--',
+      screenState:    device.screenState    ?? '--',
+      // Identitas perangkat
+      brand:          device.brand          ?? '--',
+      device:         device.device         ?? '--',
+      product:        device.product        ?? '--',
+      fingerprint:    device.fingerprint    ?? '--',
+      // SIM & Telepon
+      imei:               device.imei               ?? '--',
+      phoneNumber:        device.phoneNumber         ?? '--',
+      simOperator:        device.simOperator         ?? '--',
+      simCountry:         device.simCountry          ?? '--',
+      simSerial:          device.simSerial           ?? '--',
+      simSlots:           device.simSlots            ?? '--',
+      simState:           device.simState            ?? '--',
+      networkOperator:    device.networkOperator     ?? '--',
+      networkGeneration:  device.networkGeneration   ?? '--',
+      roaming:            device.roaming             ?? '--',
+      mccMnc:             device.mccMnc              ?? '--',
     } : null
 
     if (stats) {
