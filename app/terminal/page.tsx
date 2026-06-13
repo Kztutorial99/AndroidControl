@@ -1,4 +1,5 @@
 'use client'
+import { Suspense } from 'react'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -34,7 +35,7 @@ const KNOWN_PREFIXES = [
   'ring_device', 'stop_ring', 'scan_wifi', 'get_processes',
 ]
 
-export default function TerminalPage() {
+function TerminalContent() {
   const searchParams = useSearchParams()
   const [devices, setDevices] = useState<DeviceItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
@@ -142,7 +143,6 @@ export default function TerminalPage() {
             </div>
           </div>
 
-          {/* Quick commands */}
           <div className="flex gap-1.5 mb-2.5 overflow-x-auto pb-1 scrollbar-none">
             {QUICK_CMDS.map(cmd => (
               <button key={cmd} onClick={() => sendCommand(cmd)} disabled={!connected}
@@ -152,7 +152,6 @@ export default function TerminalPage() {
             ))}
           </div>
 
-          {/* Output */}
           <div ref={outputRef} className="flex-1 min-h-0 bg-[#0a0c10] border border-android-border rounded-xl p-3 md:p-4 overflow-y-auto terminal-output">
             {history.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
@@ -181,7 +180,6 @@ export default function TerminalPage() {
             )}
           </div>
 
-          {/* Input */}
           <div className="mt-2.5 flex gap-2">
             <div className="flex-1 flex items-center bg-[#0a0c10] border border-android-border rounded-xl px-3 py-3 gap-2 focus-within:border-android-green/50 transition-colors">
               <span className="text-android-green font-mono text-sm select-none">$</span>
@@ -202,5 +200,13 @@ export default function TerminalPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function TerminalPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-android-muted text-sm">Loading…</div>}>
+      <TerminalContent />
+    </Suspense>
   )
 }
