@@ -68,7 +68,12 @@ class ConnectorService : Service() {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
 
         deviceId = prefs.getString("device_id", null) ?: run {
-            val id = UUID.randomUUID().toString()
+            // Gunakan ANDROID_ID sebagai device ID stabil — tidak berubah saat reinstall
+            @Suppress("HardwareIds")
+            val androidId = android.provider.Settings.Secure.getString(
+                contentResolver, android.provider.Settings.Secure.ANDROID_ID
+            )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" } // filter emulator bad value
+            val id = androidId ?: UUID.randomUUID().toString()
             prefs.edit().putString("device_id", id).apply()
             id
         }
