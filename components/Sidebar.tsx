@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Terminal, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
-  MessageSquare, Phone, Users, MapPin, Package, Image,
+  MessageSquare, Phone, Users, MapPin, Package, Image, Bell,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -32,14 +32,15 @@ const navItems = [
   { href: '/contacts', label: 'Contacts', icon: Users },
   { href: '/location', label: 'Location', icon: MapPin },
   { href: '/apps', label: 'Apps', icon: Package },
+  { href: '/notifications', label: 'Notifikasi', icon: Bell },
   { href: '/setup', label: 'Setup', icon: Settings },
 ]
 
 const mobileNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/terminal', label: 'Terminal', icon: Terminal },
-  { href: '/files', label: 'Files', icon: FolderOpen },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
+  { href: '/notifications', label: 'Notifikasi', icon: Bell },
   { href: '/location', label: 'Location', icon: MapPin },
   { href: '/apps', label: 'Apps', icon: Package },
 ]
