@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOrCreateDevice, isDeviceOnline, getAllDevices } from '@/lib/store'
+import { updateDeviceHeartbeat, getAllDevices, isDeviceOnline, getOrCreateDevice } from '@/lib/store'
+import { initSchema } from '@/lib/db'
+
+let schemaInit = false
+async function ensureSchema() {
+  if (!schemaInit) { await initSchema(); schemaInit = true }
+}
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureSchema()
     const body = await req.json()
     const { deviceId, deviceName, device } = body
 
@@ -10,38 +17,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
-    const entry = getOrCreateDevice(deviceId, deviceName)
-    entry.lastSeen = new Date().toISOString()
-    entry.connected = true
+    const name = deviceName || 'Unknown Device'
+    const stats = device ? {
+      battery: device.battery ?? '--',
+      batteryStatus: device.batteryStatus ?? 'unknown',
+      model: device.model ?? 'Unknown Device',
+      androidVersion: device.androidVersion ?? '--',
+      ip: device.ip ?? '--',
+      storage: device.storage ?? '--',
+      storageFree: device.storageFree ?? '--',
+      networkType: device.networkType ?? '--',
+      cpuUsage: device.cpuUsage ?? '--',
+      memTotal: device.memTotal ?? '--',
+      memFree: device.memFree ?? '--',
+      uptime: device.uptime ?? '--',
+      hostname: device.hostname ?? '--',
+      kernel: device.kernel ?? '--',
+      screenState: device.screenState ?? '--',
+    } : null
 
-    if (device) {
-      entry.stats = {
-        battery: device.battery ?? entry.stats.battery,
-        batteryStatus: device.batteryStatus ?? entry.stats.batteryStatus,
-        model: device.model ?? entry.stats.model,
-        androidVersion: device.androidVersion ?? entry.stats.androidVersion,
-        ip: device.ip ?? entry.stats.ip,
-        storage: device.storage ?? entry.stats.storage,
-        storageFree: device.storageFree ?? entry.stats.storageFree,
-        networkType: device.networkType ?? entry.stats.networkType,
-        cpuUsage: device.cpuUsage ?? entry.stats.cpuUsage,
-        memTotal: device.memTotal ?? entry.stats.memTotal,
-        memFree: device.memFree ?? entry.stats.memFree,
-        uptime: device.uptime ?? entry.stats.uptime,
-        hostname: device.hostname ?? entry.stats.hostname,
-        kernel: device.kernel ?? entry.stats.kernel,
-        screenState: device.screenState ?? entry.stats.screenState,
-      }
+    if (stats) {
+      await updateDeviceHeartbeat(deviceId, name, stats)
+    } else {
+      await getOrCreateDevice(deviceId, name)
     }
 
     return NextResponse.json({ ok: true, serverTime: new Date().toISOString() })
-  } catch {
+  } catch (e) {
+    console.error('heartbeat error:', e)
     return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   }
 }
 
 export async function GET() {
-  const devices = getAllDevices()
-  devices.forEach(d => { d.connected = isDeviceOnline(d) })
-  return NextResponse.json({ devices })
+  try {
+    await ensureSchema()
+    const devices = await getAllDevices()
+    return NextResponse.json({
+      devices: devices.map(d => ({ ...d, connected: isDeviceOnline(d) }))
+    })
+  } catch (e) {
+    console.error('heartbeat GET error:', e)
+    return NextResponse.json({ devices: [] })
+  }
 }
