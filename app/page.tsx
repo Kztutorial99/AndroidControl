@@ -196,6 +196,12 @@ export default function Dashboard() {
 
   const connected = device ? device.connected : false
   const stats = device?.stats
+  const hasData = !!device && (stats?.battery !== '--' || stats?.model !== 'Unknown Device')
+  const lastSeenMs = device?.lastSeen ? Date.now() - new Date(device.lastSeen).getTime() : null
+  const lastSeenLabel = lastSeenMs == null ? null
+    : lastSeenMs < 90000   ? null
+    : lastSeenMs < 3600000 ? `${Math.round(lastSeenMs / 60000)}m ago`
+    : `${Math.round(lastSeenMs / 3600000)}h ago`
   const battPct = parseInt(stats?.battery ?? '0') || 0
   const battColor = battPct > 50 ? 'green' : battPct > 20 ? 'yellow' : 'red'
   const isCharging = stats?.batteryStatus === 'Charging'
@@ -221,6 +227,8 @@ export default function Dashboard() {
               <p className="text-android-muted text-xs md:text-sm mt-0.5">
                 {connected
                   ? `Connected · ${device?.lastSeen ? new Date(device.lastSeen).toLocaleTimeString() : '--'}`
+                  : hasData && lastSeenLabel
+                  ? <span className="text-android-yellow">Offline · last seen {lastSeenLabel}</span>
                   : devices.length > 0 ? 'Select a device below' : 'Waiting for device…'}
               </p>
             </div>
@@ -282,35 +290,35 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3 mb-4">
             <StatCard
               label="Battery"
-              value={connected ? `${stats?.battery ?? '--'}%` : '--'}
-              sub={isCharging ? 'Charging' : connected ? 'Discharging' : 'No device'}
+              value={hasData ? `${stats?.battery ?? '--'}%` : '--'}
+              sub={isCharging ? 'Charging' : hasData ? (connected ? 'Discharging' : 'Last known') : 'No device'}
               icon={isCharging ? <BatteryCharging size={17} /> : <Battery size={17} />}
-              color={connected ? battColor : 'default'}
-              bar={connected ? battPct : undefined}
+              color={hasData ? battColor : 'default'}
+              bar={hasData ? battPct : undefined}
             />
             <StatCard
               label="CPU Usage"
-              value={connected ? (stats?.cpuUsage ?? '--') : '--'}
-              sub="Processor load"
+              value={hasData ? (stats?.cpuUsage ?? '--') : '--'}
+              sub={connected ? 'Processor load' : hasData ? 'Last known' : 'No device'}
               icon={<Cpu size={17} />}
               color="blue"
-              bar={connected ? parseInt(stats?.cpuUsage ?? '0') : undefined}
+              bar={hasData ? parseInt(stats?.cpuUsage ?? '0') : undefined}
             />
             <StatCard
               label="RAM Free"
-              value={connected ? (stats?.memFree ?? '--') : '--'}
-              sub={connected ? `of ${stats?.memTotal ?? '--'}` : 'No device'}
+              value={hasData ? (stats?.memFree ?? '--') : '--'}
+              sub={hasData ? `of ${stats?.memTotal ?? '--'}` : 'No device'}
               icon={<Server size={17} />}
               color="yellow"
-              bar={connected ? memUsedPct : undefined}
+              bar={hasData ? memUsedPct : undefined}
             />
             <StatCard
               label="Storage"
-              value={connected ? (stats?.storageFree ?? '--') : '--'}
-              sub={connected ? `free of ${storageTotal ? storageTotal.toFixed(1) + ' GB' : '--'}` : 'No device'}
+              value={hasData ? (stats?.storageFree ?? '--') : '--'}
+              sub={hasData ? `free of ${storageTotal ? storageTotal.toFixed(1) + ' GB' : '--'}` : 'No device'}
               icon={<HardDrive size={17} />}
               color="green"
-              bar={connected ? storageUsedPct : undefined}
+              bar={hasData ? storageUsedPct : undefined}
             />
           </div>
 
@@ -331,7 +339,7 @@ export default function Dashboard() {
                   <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
                     <span className="text-android-muted text-xs">{label}</span>
                     <span className="text-android-text text-xs font-medium font-mono truncate max-w-[160px] md:max-w-[200px]">
-                      {connected ? (value || '--') : '--'}
+                      {hasData ? (value || '--') : '--'}
                     </span>
                   </div>
                 ))}
@@ -347,13 +355,13 @@ export default function Dashboard() {
                   { label: 'IP Address', value: stats?.ip },
                   { label: 'Network', value: stats?.networkType },
                   { label: 'Uptime', value: stats?.uptime },
-                  { label: 'Storage Used', value: connected ? `${storageUsedPct}%` : '--' },
-                  { label: 'RAM Used', value: connected ? `${memUsedPct}%` : '--' },
+                  { label: 'Storage Used', value: hasData ? `${storageUsedPct}%` : '--' },
+                  { label: 'RAM Used', value: hasData ? `${memUsedPct}%` : '--' },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
                     <span className="text-android-muted text-xs">{label}</span>
                     <span className="text-android-text text-xs font-medium font-mono truncate max-w-[160px] md:max-w-[200px]">
-                      {connected ? (value || '--') : '--'}
+                      {hasData ? (value || '--') : '--'}
                     </span>
                   </div>
                 ))}
@@ -366,13 +374,13 @@ export default function Dashboard() {
             <div className="bg-android-surface border border-android-border rounded-xl p-4">
               <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
                 <CreditCard size={13} /> SIM Card & Telepon
-                {connected && stats?.simSlots && (
+                {hasData && stats?.simSlots && (
                   <span className="ml-auto text-android-blue font-mono normal-case">{stats.simSlots}</span>
                 )}
               </h3>
 
               {/* Dual SIM cards */}
-              {connected && stats?.sims && stats.sims.length > 0 ? (
+              {hasData && stats?.sims && stats.sims.length > 0 ? (
                 <div className="space-y-3">
                   {stats.sims.map((sim, i) => (
                     <div key={i} className="bg-android-bg border border-android-border rounded-lg p-3">
@@ -413,7 +421,7 @@ export default function Dashboard() {
                     <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
                       <span className="text-android-muted text-xs">{label}</span>
                       <span className={`text-xs font-medium font-mono truncate max-w-[180px] ${color}`}>
-                        {connected ? (value || '--') : '--'}
+                        {hasData ? (value || '--') : '--'}
                       </span>
                     </div>
                   ))}
@@ -441,7 +449,7 @@ export default function Dashboard() {
                       label === 'Generasi' ? 'text-android-green' :
                       label === 'Roaming' && value === 'Ya' ? 'text-android-red' : 'text-android-text'
                     }`}>
-                      {connected ? (value || '--') : '--'}
+                      {hasData ? (value || '--') : '--'}
                     </span>
                   </div>
                 ))}
