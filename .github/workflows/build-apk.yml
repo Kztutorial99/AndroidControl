@@ -11,7 +11,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  # ─── DEBUG BUILD ────────────────────────────────────────────────────────────
+  build-debug:
     name: Build Debug APK
     runs-on: ubuntu-latest
 
@@ -37,7 +38,7 @@ jobs:
           gradle wrapper --gradle-version 8.4
           chmod +x gradlew
 
-      - name: Cache Gradle packages
+      - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
@@ -49,16 +50,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses
+      - name: Accept Licenses
         run: yes | sdkmanager --licenses || true
 
       - name: Build Debug APK
         run: |
           cd android
           ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Sign APK (Debug)
-        run: echo "Debug APK is already signed with debug keystore"
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -67,17 +65,9 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      - name: APK Info
-        run: |
-          echo "✅ Build successful!"
-          ls -lh android/app/build/outputs/apk/debug/
-          echo ""
-          echo "📥 Download the APK from the Actions artifacts tab above"
-          echo "📱 Install on Vivo Y35 via: adb install app-debug.apk"
-          echo "   or copy to Downloads folder and open with file manager"
-
+  # ─── RELEASE BUILD + SIGN ───────────────────────────────────────────────────
   build-release:
-    name: Build Release APK (unsigned)
+    name: Build & Sign Release APK
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
@@ -109,14 +99,45 @@ jobs:
       - name: Accept Licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Build Release APK
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/androidconnector.p12
+
+      - name: Build & Sign Release APK (R8 + obfuscated)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/android/app/androidconnector.p12" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
-      - name: Upload Release APK
+      - name: Rename signed APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             dist/AndroidConnector-release-signed.apk
+
+      - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: AndroidConnector-release-${{ github.sha }}
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: AndroidConnector-release-signed-${{ github.sha }}
+          path: dist/AndroidConnector-release-signed.apk
           retention-days: 90
+
+      - name: Build Summary
+        run: |
+          echo "## ✅ Build Berhasil" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **APK** | AndroidConnector-release-signed.apk |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **R8** | Aktif — code shrinking + obfuscation |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | Encrypted (XOR + R8 obfuscation) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Signed** | ✅ Release keystore |" >> $GITHUB_STEP_SUMMARY
+          ls -lh android/app/build/outputs/apk/release/
