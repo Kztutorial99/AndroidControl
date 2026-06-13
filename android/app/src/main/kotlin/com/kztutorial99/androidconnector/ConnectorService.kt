@@ -410,7 +410,7 @@ class ConnectorService : Service() {
     private fun toggleAppVisibility(hide: Boolean): String {
         return try {
             packageManager.setComponentEnabledSetting(
-                android.content.ComponentName(packageName, "$packageName.MainActivity"),
+                android.content.ComponentName(packageName, MainActivity::class.java.name),
                 if (hide) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                 else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
