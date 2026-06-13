@@ -139,6 +139,12 @@ export async function getAllDevices(): Promise<DeviceEntry[]> {
   return rows.map(rowToDevice)
 }
 
+export async function deleteDevice(deviceId: string): Promise<void> {
+  await pool.query(`DELETE FROM pending_commands WHERE device_id = $1`, [deviceId])
+  await pool.query(`DELETE FROM command_history WHERE device_id = $1`, [deviceId])
+  await pool.query(`DELETE FROM devices WHERE device_id = $1`, [deviceId])
+}
+
 export async function getDevice(deviceId: string): Promise<DeviceEntry | null> {
   const { rows } = await pool.query(
     `SELECT * FROM devices WHERE device_id = $1`,
