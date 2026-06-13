@@ -59,9 +59,23 @@ export default function TerminalPage() {
     }
   }, [history])
 
+  const KNOWN_PREFIXES = [
+    'ls_json:', 'read_b64:', 'read_text:', 'write_b64:', 'write_text:',
+    'mkdir:', 'delete:', 'move:', 'file_info:', 'shell:', 'shizuku:',
+    'pm_grant:', 'pm_revoke:', 'settings_put:', 'settings_get:',
+    'pm_list_packages', 'device_info', 'ping', 'shizuku_status',
+  ]
+
+  const normalizeCommand = (raw: string) => {
+    const trimmed = raw.trim()
+    const hasPrefix = KNOWN_PREFIXES.some(p => trimmed.startsWith(p))
+    return hasPrefix ? trimmed : `shell:${trimmed}`
+  }
+
   const sendCommand = async (cmd?: string) => {
-    const command = (cmd ?? input).trim()
-    if (!command) return
+    const raw = (cmd ?? input).trim()
+    if (!raw) return
+    const command = normalizeCommand(raw)
     setSending(true)
     try {
       await fetch('/api/device/command', {
@@ -157,7 +171,9 @@ export default function TerminalPage() {
                 <div key={entry.id} className="mb-4">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-android-green text-xs">$</span>
-                    <span className="text-white text-xs font-semibold break-all">{entry.command}</span>
+                    <span className="text-white text-xs font-semibold break-all">
+                      {entry.command.startsWith('shell:') ? entry.command.slice(6) : entry.command}
+                    </span>
                     <span className="text-android-muted text-xs ml-auto">
                       {new Date(entry.timestamp).toLocaleTimeString()}
                     </span>
