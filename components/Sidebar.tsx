@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Terminal, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
-  MessageSquare, Phone, Users, MapPin, Package,
+  MessageSquare, Phone, Users, MapPin, Package, Image,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -26,6 +26,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/terminal', label: 'Terminal', icon: Terminal },
   { href: '/files', label: 'Files', icon: FolderOpen },
+  { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
   { href: '/calls', label: 'Calls', icon: Phone },
   { href: '/contacts', label: 'Contacts', icon: Users },
@@ -38,6 +39,7 @@ const mobileNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/terminal', label: 'Terminal', icon: Terminal },
   { href: '/files', label: 'Files', icon: FolderOpen },
+  { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
   { href: '/apps', label: 'Apps', icon: Package },
 ]
@@ -137,7 +139,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
         </nav>
 
         <div className="px-4 py-3 border-t border-android-border">
-          <p className="text-xs text-android-muted">AndroidConnector v0.3.0</p>
+          <p className="text-xs text-android-muted">AndroidConnector v0.4.0</p>
           <p className="text-xs text-android-muted/60 mt-0.5">by Kztutorial99</p>
         </div>
       </aside>

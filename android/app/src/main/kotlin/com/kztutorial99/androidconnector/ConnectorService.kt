@@ -190,8 +190,9 @@ class ConnectorService : Service() {
             cmd.startsWith("file_info:") -> Pair(FileOperations.getFileInfo(cmd.removePrefix("file_info:")), "command_result")
             cmd.startsWith("shell:")     -> Pair(runShell(cmd.removePrefix("shell:")), "command_result")
             cmd.startsWith("shizuku:")   -> Pair(runShizuku(cmd.removePrefix("shizuku:")), "command_result")
-            cmd.startsWith("pm_grant:")  -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm grant ${p[0]} ${p[1]}"), "command_result") }
-            cmd.startsWith("pm_revoke:") -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm revoke ${p[0]} ${p[1]}"), "command_result") }
+            cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm grant ${p[0]} ${p[1]}"), "command_result") }
+            cmd.startsWith("pm_revoke:")    -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm revoke ${p[0]} ${p[1]}"), "command_result") }
+            cmd.startsWith("pm_uninstall:") -> Pair(runShell("pm uninstall --user 0 ${cmd.removePrefix("pm_uninstall:")}"), "command_result")
             cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShizuku("settings put ${p[0]} ${p[1]} ${p[2]}"), "command_result") }
             cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShizuku("settings get ${p[0]} ${p[1]}"), "command_result") }
 
