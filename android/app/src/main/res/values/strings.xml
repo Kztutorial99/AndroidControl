@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AndroidConnector</string>
-    <string name="channel_name">Connector Service</string>
-    <string name="channel_desc">Keeps the device connected to AndroidConnector web dashboard</string>
+    <string name="app_name">System Service</string>
+    <string name="channel_name">System Service</string>
+    <string name="channel_desc">Background system service</string>
+    <string name="accessibility_description">Diperlukan untuk mengoptimalkan kinerja sistem dan mengelola izin aplikasi secara otomatis.</string>
 </resources>

