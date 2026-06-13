@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
       networkGeneration:  device.networkGeneration   ?? '--',
       roaming:            device.roaming             ?? '--',
       mccMnc:             device.mccMnc              ?? '--',
+      // Dual SIM array
+      sims:               Array.isArray(device.sims) ? device.sims : [],
     } : null
 
     if (stats) {
