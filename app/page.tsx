@@ -42,6 +42,7 @@ interface DeviceStats {
   screenState: string
   brand?: string
   device?: string
+  // compat fields (SIM 1 data)
   imei?: string
   phoneNumber?: string
   simOperator?: string
@@ -53,6 +54,18 @@ interface DeviceStats {
   networkGeneration?: string
   roaming?: string
   mccMnc?: string
+  // dual SIM per-card data
+  sims?: SimCardInfo[]
+}
+
+interface SimCardInfo {
+  slot: string
+  number: string
+  operator: string
+  country: string
+  imei: string
+  state: string
+  mccMnc: string
 }
 
 interface DeviceEntry {
@@ -225,21 +238,33 @@ export default function Dashboard() {
           </div>
 
           {/* Device Selector */}
-          {devices.length > 1 && (
+          {devices.length > 0 && (
             <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
               {devices.map(d => (
-                <button
-                  key={d.deviceId}
-                  onClick={() => setSelectedId(d.deviceId)}
-                  className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
-                    selectedId === d.deviceId
-                      ? 'bg-android-green/10 border-android-green/50 text-android-green'
-                      : 'bg-android-surface border-android-border text-android-muted hover:text-android-text'
-                  }`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${d.connected ? 'bg-android-green' : 'bg-android-red'}`} />
-                  <span>{d.deviceName}</span>
-                </button>
+                <div key={d.deviceId} className="shrink-0 flex items-center gap-1">
+                  <button
+                    onClick={() => setSelectedId(d.deviceId)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
+                      selectedId === d.deviceId
+                        ? 'bg-android-green/10 border-android-green/50 text-android-green'
+                        : 'bg-android-surface border-android-border text-android-muted hover:text-android-text'
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${d.connected ? 'bg-android-green' : 'bg-android-red'}`} />
+                    <span>{d.deviceName}</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Hapus device "${d.deviceName}" dari dashboard?`)) return
+                      await fetch(`/api/devices?deviceId=${encodeURIComponent(d.deviceId)}`, { method: 'DELETE' })
+                      fetchDevices()
+                    }}
+                    title="Hapus device"
+                    className="p-1.5 rounded-lg text-android-muted hover:text-android-red hover:bg-android-red/10 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -345,25 +370,59 @@ export default function Dashboard() {
             <div className="bg-android-surface border border-android-border rounded-xl p-4">
               <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
                 <CreditCard size={13} /> SIM Card & Telepon
+                {connected && stats?.simSlots && (
+                  <span className="ml-auto text-android-blue font-mono normal-case">{stats.simSlots}</span>
+                )}
               </h3>
-              <div className="space-y-2.5">
-                {[
-                  { label: 'IMEI', value: stats?.imei },
-                  { label: 'Nomor HP', value: stats?.phoneNumber },
-                  { label: 'Operator SIM', value: stats?.simOperator },
-                  { label: 'Negara SIM', value: stats?.simCountry },
-                  { label: 'Status SIM', value: stats?.simState },
-                  { label: 'Slot SIM', value: stats?.simSlots ? `${stats.simSlots} slot` : '--' },
-                  { label: 'Serial SIM', value: stats?.simSerial },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
-                    <span className="text-android-muted text-xs">{label}</span>
-                    <span className={`text-xs font-medium font-mono truncate max-w-[180px] ${label === 'IMEI' ? 'text-android-yellow' : 'text-android-text'}`}>
-                      {connected ? (value || '--') : '--'}
-                    </span>
-                  </div>
-                ))}
-              </div>
+
+              {/* Dual SIM cards */}
+              {connected && stats?.sims && stats.sims.length > 0 ? (
+                <div className="space-y-3">
+                  {stats.sims.map((sim, i) => (
+                    <div key={i} className="bg-android-bg border border-android-border rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-5 h-5 rounded-full bg-android-blue/20 flex items-center justify-center">
+                          <span className="text-[9px] font-bold text-android-blue">{i + 1}</span>
+                        </div>
+                        <span className="text-xs font-semibold text-android-blue">{sim.slot}</span>
+                        <span className="ml-auto text-[10px] text-android-muted">{sim.state}</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {[
+                          { label: 'Nomor HP', value: sim.number, color: 'text-android-green' },
+                          { label: 'Operator', value: sim.operator, color: 'text-android-text' },
+                          { label: 'Negara', value: sim.country, color: 'text-android-text' },
+                          { label: 'MCC-MNC', value: sim.mccMnc, color: 'text-android-text' },
+                          ...(sim.imei && sim.imei !== '--' ? [{ label: 'IMEI', value: sim.imei, color: 'text-android-yellow' }] : []),
+                        ].map(({ label, value, color }) => (
+                          <div key={label} className="flex justify-between items-center">
+                            <span className="text-android-muted text-[11px]">{label}</span>
+                            <span className={`text-[11px] font-medium font-mono truncate max-w-[160px] ${color}`}>{value || '--'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* Fallback ke compat fields jika sims belum tersedia */
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'IMEI', value: stats?.imei, color: 'text-android-yellow' },
+                    { label: 'Nomor HP', value: stats?.phoneNumber, color: 'text-android-text' },
+                    { label: 'Operator SIM', value: stats?.simOperator, color: 'text-android-text' },
+                    { label: 'Negara SIM', value: stats?.simCountry, color: 'text-android-text' },
+                    { label: 'Status SIM', value: stats?.simState, color: 'text-android-text' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="flex justify-between items-center py-0.5 border-b border-android-border/50 last:border-0">
+                      <span className="text-android-muted text-xs">{label}</span>
+                      <span className={`text-xs font-medium font-mono truncate max-w-[180px] ${color}`}>
+                        {connected ? (value || '--') : '--'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="bg-android-surface border border-android-border rounded-xl p-4">
