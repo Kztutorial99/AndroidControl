@@ -61,19 +61,19 @@ function AppsContent() {
     setUninstallResult(null)
     try {
       const sentAt = Date.now()
+      const uninstallCmd = `pm_uninstall:${app.pkg}`
       await fetch('/api/device/command', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: `shell:pm uninstall --user 0 ${app.pkg}` }),
+        body: JSON.stringify({ deviceId: selectedId, command: uninstallCmd }),
       })
       await new Promise(r => setTimeout(r, 4000))
       let resultMsg = ''
       for (let i = 0; i < 15; i++) {
         const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
         const d = await r.json()
-        const cmd = `shell:pm uninstall --user 0 ${app.pkg}`
         const match = (d.history ?? [])
           .filter((h: { command: string; result: string; timestamp: string }) =>
-            h.command === cmd && new Date(h.timestamp).getTime() > sentAt - 1000)
+            h.command === uninstallCmd && new Date(h.timestamp).getTime() > sentAt - 1000)
           .sort((a: { timestamp: string }, b: { timestamp: string }) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
         if (match?.result) { resultMsg = match.result; break }
@@ -175,7 +175,7 @@ function AppsContent() {
             </div>
             <p className="text-android-text text-sm font-semibold mb-1">{confirmUninstall.name}</p>
             <p className="text-android-muted text-xs font-mono mb-5">{confirmUninstall.pkg}</p>
-            <p className="text-android-muted text-xs mb-5">This will remove the app for the current user (--user 0). System apps may not be fully removed.</p>
+            <p className="text-android-muted text-xs mb-5">This will uninstall the app via Shizuku. System apps cannot be removed.</p>
             <div className="flex gap-3">
               <button onClick={() => uninstallApp(confirmUninstall)}
                 className="flex-1 py-2 bg-android-red text-white rounded-xl text-sm font-semibold">Uninstall</button>

