@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
 
     if (type === 'file_listing') {
-      await setFileListing(deviceId, data?.path ?? '/\, data?.entries ?? [])
+      await setFileListing(deviceId, data?.path ?? '/', data?.entries ?? [])
       return NextResponse.json({ ok: true })
     }
 
