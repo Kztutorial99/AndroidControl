@@ -255,6 +255,14 @@ function ScreenshotContent() {
   useEffect(() => { stopLive() }, [selectedId])       // eslint-disable-line
   useEffect(() => () => { stopLive() }, [])            // eslint-disable-line
 
+  // Race condition fix: jika hasFrame flip true tapi imgRef belum siap saat frame pertama tiba,
+  // frameRef.current sudah menyimpan data → set src sekarang setelah img mount
+  useEffect(() => {
+    if (hasFrame && imgRef.current && frameRef.current && !imgRef.current.src) {
+      imgRef.current.src = frameRef.current
+    }
+  }, [hasFrame])
+
   // ── Kirim teks ke Android ──
   const sendText = useCallback(() => {
     const t = text.trim()
@@ -478,26 +486,32 @@ function ScreenshotContent() {
               <Monitor size={44} className="text-android-border" />
               <p className="text-android-muted text-sm">Connect device terlebih dahulu</p>
             </div>
-          ) : !hasFrame ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <Camera size={44} className="text-android-border" />
-              <p className="text-android-muted text-sm text-center px-4">
-                Tekan <span className="text-white font-semibold">Live</span> untuk streaming realtime
-                <br />
-                atau <span className="text-android-green font-semibold">Snap</span> untuk satu frame
-              </p>
-              <p className="text-android-muted text-xs opacity-60">Fast + Max = FPS tertinggi</p>
-            </div>
           ) : (
             <>
-              {/* img selalu ada setelah hasFrame=true, src diupdate langsung via ref */}
+              {/* img SELALU ada di DOM saat connected agar imgRef valid sejak frame pertama */}
               <img
                 ref={imgRef}
                 alt="Live Screen"
                 draggable={false}
                 className="absolute inset-0 w-full h-full object-contain"
-                style={{ imageRendering: 'auto', touchAction: 'none', userSelect: 'none', pointerEvents: 'none' }}
+                style={{
+                  display: hasFrame ? 'block' : 'none',
+                  imageRendering: 'auto', touchAction: 'none', userSelect: 'none', pointerEvents: 'none',
+                }}
               />
+
+              {/* Placeholder saat belum ada frame */}
+              {!hasFrame && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                  <Camera size={44} className="text-android-border" />
+                  <p className="text-android-muted text-sm text-center px-4">
+                    Tekan <span className="text-white font-semibold">Live</span> untuk streaming realtime
+                    <br />
+                    atau <span className="text-android-green font-semibold">Snap</span> untuk satu frame
+                  </p>
+                  <p className="text-android-muted text-xs opacity-60">Fast + Max = FPS tertinggi</p>
+                </div>
+              )}
 
               {/* Ripple tap effect */}
               {ripple && (
