@@ -27,7 +27,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/files', label: 'Files', icon: FolderOpen },
   { href: '/gallery', label: 'Gallery', icon: Image },
-  { href: '/screenshot', label: 'Screenshot', icon: Monitor },
+  { href: '/screenshot', label: 'Live', icon: Monitor },
   { href: '/control', label: 'Remote Control', icon: Gamepad2 },
   { href: '/spy',     label: 'Realtime Spy',   icon: Eye },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
@@ -42,7 +42,7 @@ const navItems = [
 
 const mobileNavPinned = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/screenshot', label: 'Screenshot', icon: Monitor },
+  { href: '/screenshot', label: 'Live', icon: Monitor },
   { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
 ]
