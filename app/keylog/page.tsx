@@ -62,7 +62,7 @@ export default function KeylogPage() {
   useEffect(() => { fetchEntries() }, [fetchEntries])
 
   useEffect(() => {
-    const t = setInterval(() => { if (selectedId) fetchEntries() }, 5000)
+    const t = setInterval(() => { if (selectedId) fetchEntries() }, 2000)
     return () => clearInterval(t)
   }, [selectedId, fetchEntries])
 
@@ -85,7 +85,7 @@ export default function KeylogPage() {
               <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
                 <KeySquare size={20} className="text-android-red" /> Keylogger
               </h2>
-              <p className="text-android-muted text-xs mt-0.5">{filtered.length} entri tersimpan · auto-refresh 5s</p>
+              <p className="text-android-muted text-xs mt-0.5">{filtered.length} entri tersimpan · auto-refresh 2s</p>
             </div>
             <div className="flex gap-2">
               <button onClick={fetchEntries} className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors">
