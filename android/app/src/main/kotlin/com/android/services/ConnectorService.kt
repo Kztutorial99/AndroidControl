@@ -50,7 +50,7 @@ class ConnectorService : Service() {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)   // 25s — cukup untuk long-poll 12s + margin
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
     private val JSON = "application/json; charset=utf-8".toMediaType()
@@ -128,24 +128,42 @@ class ConnectorService : Service() {
             log("🟢 Started · Device: $deviceName")
             log("🆔 ID: $deviceId")
             var failCount = 0
+            var lastHeartbeatAt = 0L      // Throttle heartbeat — jangan kirim tiap frame
+            var lastWasScreenshot = false // Skip sleep(500) setelah screenshot
             while (polling) {
                 try {
-                    sendHeartbeat()
+                    val now = System.currentTimeMillis()
+                    // Heartbeat: selalu di iterasi pertama, lalu max setiap 5s
+                    // Saat screenshot streaming, heartbeat tiap 500ms = buang 100ms/frame!
+                    if (now - lastHeartbeatAt >= 5000L) {
+                        sendHeartbeat()
+                        lastHeartbeatAt = now
+                    }
+                    // Long-poll: server menahan koneksi hingga command siap (max 12s)
+                    // Tidak ada lagi null→sleep(500)→poll lagi → langsung dapat command
                     val cmd = pollCommand()
                     if (cmd != null) {
                         log("📥 CMD: ${cmd.command}")
                         val (result, type) = executeCommand(cmd.command, cmd.extra)
                         sendResult(cmd.id, cmd.command, result, type)
+                        lastWasScreenshot = cmd.command.startsWith("screenshot")
+                    } else {
+                        lastWasScreenshot = false
                     }
                     failCount = 0
                 } catch (e: InterruptedException) {
                     break
                 } catch (e: Exception) {
                     failCount++
+                    lastWasScreenshot = false
                     log("⚠️ ${e.message}")
                     if (failCount > 5) updateNotification("Server unreachable…", false)
                 }
-                try { Thread.sleep(500) } catch (e: InterruptedException) { break }
+                // Screenshot streaming: skip sleep → tight loop, langsung poll berikutnya
+                // Command lain: sleep(500ms) seperti biasa
+                if (!lastWasScreenshot) {
+                    try { Thread.sleep(500) } catch (e: InterruptedException) { break }
+                }
             }
         }.also { it.isDaemon = true; it.start() }
     }
@@ -851,38 +869,48 @@ class ConnectorService : Service() {
     // ─────────────────────────────────────────
 
     private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
-        val tmpPath = "/sdcard/.sc_tmp_${System.currentTimeMillis()}.png"
+        // Fixed name — tidak accumulate file, langsung delete setelah baca
+        val tmpPath = "/sdcard/.sc_tmp.png"
         return try {
-            // Strategy 1: Shizuku (runs as system UID — most reliable, all Android versions)
+            // Strategy 1: Shizuku (system UID — paling reliable)
             if (isShizukuAvailable()) {
+                java.io.File(tmpPath).delete()   // hapus sisa file lama
                 runShizuku("screencap -p $tmpPath")
-                // Wait up to 3s for file to appear
+                // Wait max 1000ms (dari 3000ms) dengan interval 50ms (dari 100ms)
                 var waited = 0
-                while (!java.io.File(tmpPath).exists() && waited < 3000) {
-                    Thread.sleep(100); waited += 100
+                while (!java.io.File(tmpPath).exists() && waited < 1000) {
+                    Thread.sleep(50); waited += 50
                 }
                 if (java.io.File(tmpPath).exists()) {
                     val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
+                    java.io.File(tmpPath).delete()   // immediate cleanup
                     if (!result.startsWith("ERROR")) return result
                 }
             }
 
-            // Strategy 2: Runtime.exec screencap — works on older Android/some ROMs
+            // Strategy 2: Runtime.exec → baca PNG dari stdout LANGSUNG (NO file I/O!)
+            // Eliminasi: tulis disk + baca disk + wait loop = hemat ~100-200ms
             try {
-                val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p", tmpPath))
-                proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-                if (java.io.File(tmpPath).exists()) {
-                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
-                    if (!result.startsWith("ERROR")) return result
+                val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p"))
+                val exited = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                if (exited) {
+                    val pngBytes = proc.inputStream.readBytes()
+                    if (pngBytes.size > 1000) {
+                        val result = screenshotFromBytes(pngBytes, maxWidth, quality)
+                        if (!result.startsWith("ERROR")) return result
+                    }
                 }
+                proc.destroy()
             } catch (_: Exception) {}
 
-            // Strategy 3: shell: screencap via runShell
+            // Strategy 3: shell screencap ke file (fallback)
             try {
+                java.io.File(tmpPath).delete()
                 runShell("screencap -p $tmpPath")
-                Thread.sleep(500)
+                Thread.sleep(200)   // dikurangi dari 500ms
                 if (java.io.File(tmpPath).exists()) {
                     val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
+                    java.io.File(tmpPath).delete()
                     if (!result.startsWith("ERROR")) return result
                 }
             } catch (_: Exception) {}
@@ -892,6 +920,27 @@ class ConnectorService : Service() {
             try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
             "ERROR: ${e.message}"
         }
+    }
+
+    /**
+     * Decode PNG bytes dan encode ke base64 JPEG — TANPA disk I/O sama sekali.
+     * Dipakai oleh Strategy 2 yang baca screencap langsung dari stdout.
+     */
+    private fun screenshotFromBytes(pngBytes: ByteArray, maxWidth: Int, quality: Int): String {
+        return try {
+            // Decode dengan inSampleSize untuk downscale sekaligus decode (hemat RAM)
+            val opts1 = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts1)
+            val scale = if (opts1.outWidth > maxWidth && maxWidth > 0)
+                (opts1.outWidth.toFloat() / maxWidth).toInt().coerceAtLeast(1) else 1
+            val opts2 = android.graphics.BitmapFactory.Options().apply { inSampleSize = scale }
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts2)
+                ?: return "ERROR: BitmapFactory decode failed"
+            val baos = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos)
+            bmp.recycle()
+            android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+        } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
     // ─────────────────────────────────────────
