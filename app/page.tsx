@@ -3,9 +3,9 @@ import { useEffect, useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import StatCard from '@/components/StatCard'
 import {
-  Battery, BatteryCharging, Cpu, HardDrive, Wifi,
-  Clock, RefreshCw, Smartphone, EyeOff, Eye, Bell, BellOff,
-  CreditCard, Signal, Lock, Trash2, Vibrate, Clipboard, Copy
+  Battery, BatteryCharging, HardDrive, Wifi,
+  Clock, Smartphone, EyeOff, Eye, Bell, BellOff,
+  CreditCard, Signal, Lock, Trash2,
 } from 'lucide-react'
 import { Server } from 'lucide-react'
 
@@ -83,11 +83,7 @@ export default function Dashboard() {
   const [isHidden, setIsHidden] = useState(false)
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
-  const [vibrateCount, setVibrateCount] = useState(3)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-  const [clipboardContent, setClipboardContent] = useState<string | null>(null)
-  const [clipboardLoading, setClipboardLoading] = useState(false)
-  const [clipboardCopied, setClipboardCopied]   = useState(false)
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -137,18 +133,6 @@ export default function Dashboard() {
     }
   }
 
-  const sendControlWithExtra = async (command: string, extra: string) => {
-    if (!selectedId || ctrlBusy) return
-    setCtrlBusy(true)
-    try {
-      await fetch('/api/device/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command, extra }),
-      })
-    } finally { setCtrlBusy(false) }
-  }
-
   const handleHideToggle = async () => {
     const cmd = isHidden ? 'unhide_app' : 'hide_app'
     await sendControl(cmd)
@@ -159,39 +143,6 @@ export default function Dashboard() {
     const cmd = isRinging ? 'stop_ring' : 'ring_device'
     await sendControl(cmd)
     setIsRinging(r => !r)
-  }
-
-  const handleGetClipboard = async () => {
-    if (!selectedId) return
-    setClipboardLoading(true)
-    setClipboardContent(null)
-    try {
-      await fetch('/api/device/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: 'get_clipboard' }),
-      })
-      // Poll hasil selama maks 8 detik
-      for (let i = 0; i < 16; i++) {
-        await new Promise(r => setTimeout(r, 500))
-        const res  = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const data = await res.json()
-        const entry = (data.history ?? []).find(
-          (h: { command: string; result: string }) => h.command === 'get_clipboard'
-        )
-        if (entry?.result) {
-          setClipboardContent(entry.result)
-          break
-        }
-      }
-    } finally { setClipboardLoading(false) }
-  }
-
-  const handleCopyClipboard = async () => {
-    if (!clipboardContent) return
-    await navigator.clipboard.writeText(clipboardContent)
-    setClipboardCopied(true)
-    setTimeout(() => setClipboardCopied(false), 2000)
   }
 
   const connected = device ? device.connected : false
@@ -221,24 +172,15 @@ export default function Dashboard() {
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-4 md:py-6">
 
           {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg md:text-xl font-bold text-white">Device Dashboard</h2>
-              <p className="text-android-muted text-xs md:text-sm mt-0.5">
-                {connected
-                  ? `Connected · ${device?.lastSeen ? new Date(device.lastSeen).toLocaleTimeString() : '--'}`
-                  : hasData && lastSeenLabel
-                  ? <span className="text-android-yellow">Offline · last seen {lastSeenLabel}</span>
-                  : devices.length > 0 ? 'Select a device below' : 'Waiting for device…'}
-              </p>
-            </div>
-            <button
-              onClick={fetchDevices}
-              className="flex items-center gap-1.5 px-3 py-2 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-text transition-colors"
-            >
-              <RefreshCw size={13} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
+          <div className="mb-4">
+            <h2 className="text-lg md:text-xl font-bold text-white">Device Dashboard</h2>
+            <p className="text-android-muted text-xs md:text-sm mt-0.5">
+              {connected
+                ? `Connected · sync otomatis · ${device?.lastSeen ? new Date(device.lastSeen).toLocaleTimeString() : '--'}`
+                : hasData && lastSeenLabel
+                ? <span className="text-android-yellow">Offline · last seen {lastSeenLabel}</span>
+                : devices.length > 0 ? 'Pilih device di navigasi' : 'Menunggu device…'}
+            </p>
           </div>
 
           {/* No device banner */}
@@ -263,14 +205,6 @@ export default function Dashboard() {
               icon={isCharging ? <BatteryCharging size={17} /> : <Battery size={17} />}
               color={hasData ? battColor : 'default'}
               bar={hasData ? battPct : undefined}
-            />
-            <StatCard
-              label="CPU Usage"
-              value={hasData ? (stats?.cpuUsage ?? '--') : '--'}
-              sub={connected ? 'Processor load' : hasData ? 'Last known' : 'No device'}
-              icon={<Cpu size={17} />}
-              color="blue"
-              bar={hasData ? parseInt(stats?.cpuUsage ?? '0') : undefined}
             />
             <StatCard
               label="RAM Free"
@@ -520,67 +454,6 @@ export default function Dashboard() {
                   </div>
                   <span className="text-xs font-medium text-android-text">Kunci Layar</span>
                 </button>
-
-                {/* Vibrate */}
-                <div className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl">
-                  <div className="p-2 rounded-lg bg-purple-500/10">
-                    <Vibrate size={18} className="text-purple-400" />
-                  </div>
-                  <span className="text-xs font-medium text-android-text mb-1">Getar</span>
-                  <div className="flex items-center gap-1.5 w-full">
-                    <button onClick={() => setVibrateCount(v => Math.max(1, v - 1))} className="w-6 h-6 rounded bg-android-surface text-android-muted hover:text-white text-sm flex items-center justify-center">−</button>
-                    <span className="flex-1 text-center text-xs font-mono text-android-text">{vibrateCount}×</span>
-                    <button onClick={() => setVibrateCount(v => Math.min(10, v + 1))} className="w-6 h-6 rounded bg-android-surface text-android-muted hover:text-white text-sm flex items-center justify-center">+</button>
-                  </div>
-                  <button
-                    onClick={() => sendControl(`vibrate:${vibrateCount}`)}
-                    disabled={ctrlBusy}
-                    className="w-full py-1.5 rounded-lg text-xs font-semibold bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
-                  >
-                    {ctrlBusy ? '…' : '📳 Getar'}
-                  </button>
-                </div>
-
-                {/* Clipboard */}
-                <div className="flex flex-col gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl sm:col-span-1">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-lg bg-android-yellow/10">
-                      <Clipboard size={18} className="text-android-yellow" />
-                    </div>
-                    <span className="text-xs font-medium text-android-text">Clipboard HP</span>
-                    {clipboardContent && (
-                      <button
-                        onClick={handleCopyClipboard}
-                        title="Salin ke clipboard browser"
-                        className="ml-auto p-1.5 rounded-lg bg-android-surface hover:bg-android-yellow/10 text-android-muted hover:text-android-yellow transition-colors"
-                      >
-                        <Copy size={13} />
-                      </button>
-                    )}
-                  </div>
-
-                  {clipboardContent ? (
-                    <div className="bg-android-surface border border-android-border rounded-lg px-3 py-2 text-xs font-mono text-android-text break-all max-h-20 overflow-y-auto">
-                      {clipboardContent}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-android-muted">
-                      {clipboardLoading ? 'Mengambil clipboard…' : 'Tekan tombol untuk membaca clipboard HP'}
-                    </p>
-                  )}
-
-                  {clipboardCopied && (
-                    <p className="text-xs text-android-green">✓ Disalin ke clipboard browser</p>
-                  )}
-
-                  <button
-                    onClick={handleGetClipboard}
-                    disabled={ctrlBusy || clipboardLoading}
-                    className="w-full py-1.5 rounded-lg text-xs font-semibold bg-android-yellow/10 border border-android-yellow/30 text-android-yellow hover:bg-android-yellow/20 transition-colors disabled:opacity-50"
-                  >
-                    {clipboardLoading ? '⏳ Mengambil…' : '📋 Baca Clipboard'}
-                  </button>
-                </div>
 
                 {/* Wipe Device */}
                 <button

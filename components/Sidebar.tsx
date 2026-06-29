@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Terminal, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock,
-  MoreHorizontal, X, Trash2,
+  MoreHorizontal, X, Trash2, CheckSquare, Square,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -47,25 +47,40 @@ const mobileNavPinned = [
 
 export default function Sidebar({ connected, devices = [], selectedId, onSelect }: SidebarProps) {
   const pathname = usePathname()
-  const [showPicker, setShowPicker] = useState(false)
-  const [showDrawer, setShowDrawer] = useState(false)
+  const [showPicker, setShowPicker]   = useState(false)
+  const [showDrawer, setShowDrawer]   = useState(false)
+  const [toDelete, setToDelete]       = useState<Set<string>>(new Set())
+  const [deleting, setDeleting]       = useState(false)
 
   const selected = devices.find(d => d.deviceId === selectedId)
-  const multiDevice = devices.length > 1
 
-  const DeviceBadge = () => (
-    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
-      connected
-        ? 'bg-android-green/10 text-android-green border border-android-green/20'
-        : 'bg-android-red/10 text-android-red border border-android-red/20'
-    }`}>
-      {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
-      <span className="flex-1 truncate">
-        {connected ? (selected?.deviceName ?? 'Device Connected') : 'No Device'}
-      </span>
-      <div className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
-    </div>
-  )
+  const toggleDelete = (id: string) => {
+    setToDelete(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const deleteSelected = async () => {
+    if (toDelete.size === 0) return
+    const names = devices.filter(d => toDelete.has(d.deviceId)).map(d => d.deviceName).join(', ')
+    if (!confirm(`Hapus device: ${names}?`)) return
+    setDeleting(true)
+    await Promise.all([...toDelete].map(id =>
+      fetch(`/api/devices?deviceId=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    ))
+    setDeleting(false)
+    setToDelete(new Set())
+    setShowPicker(false)
+    window.location.reload()
+  }
+
+  const deleteSingle = async (d: DeviceItem) => {
+    if (!confirm(`Hapus device "${d.deviceName}"?`)) return
+    await fetch(`/api/devices?deviceId=${encodeURIComponent(d.deviceId)}`, { method: 'DELETE' })
+    window.location.reload()
+  }
 
   return (
     <>
@@ -83,44 +98,65 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           </div>
         </div>
 
+        {/* Desktop device picker */}
         <div className="px-3 py-3 border-b border-android-border">
-          {multiDevice ? (
-            <div className="relative">
-              <button
-                onClick={() => setShowPicker(v => !v)}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                  connected
-                    ? 'bg-android-green/10 text-android-green border-android-green/20'
-                    : 'bg-android-red/10 text-android-red border-android-red/20'
-                }`}
-              >
-                {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
-                <span className="flex-1 truncate text-left">
-                  {selected?.deviceName ?? 'Select device'}
-                </span>
+          <div className="relative">
+            <button
+              onClick={() => setShowPicker(v => !v)}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                connected
+                  ? 'bg-android-green/10 text-android-green border-android-green/20'
+                  : 'bg-android-red/10 text-android-red border-android-red/20'
+              }`}
+            >
+              {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
+              <span className="flex-1 truncate text-left">
+                {selected?.deviceName ?? (devices.length > 0 ? 'Pilih device' : 'No Device')}
+              </span>
+              {devices.length > 0 && (
                 <ChevronDown size={12} className={`shrink-0 transition-transform ${showPicker ? 'rotate-180' : ''}`} />
-              </button>
+              )}
+            </button>
 
-              {showPicker && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-android-bg border border-android-border rounded-lg z-50 overflow-hidden shadow-lg">
-                  {devices.map(d => (
+            {showPicker && devices.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-android-bg border border-android-border rounded-lg z-50 overflow-hidden shadow-lg">
+                {devices.map(d => (
+                  <div key={d.deviceId} className="flex items-center gap-1 px-2 py-1.5 hover:bg-white/5 transition-colors">
                     <button
-                      key={d.deviceId}
-                      onClick={() => { onSelect?.(d.deviceId); setShowPicker(false) }}
-                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs text-left transition-colors hover:bg-white/5 ${
-                        d.deviceId === selectedId ? 'text-android-green' : 'text-android-muted'
-                      }`}
+                      onClick={() => toggleDelete(d.deviceId)}
+                      className="text-android-muted hover:text-android-text shrink-0"
+                    >
+                      {toDelete.has(d.deviceId)
+                        ? <CheckSquare size={13} className="text-android-green" />
+                        : <Square size={13} />}
+                    </button>
+                    <button
+                      onClick={() => { onSelect?.(d.deviceId); setShowPicker(false); setToDelete(new Set()) }}
+                      className={`flex-1 flex items-center gap-2 text-xs text-left ${d.deviceId === selectedId ? 'text-android-green' : 'text-android-muted'}`}
                     >
                       <div className={`w-2 h-2 rounded-full shrink-0 ${d.connected ? 'bg-android-green' : 'bg-android-muted'}`} />
                       <span className="truncate">{d.deviceName}</span>
                     </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <DeviceBadge />
-          )}
+                    <button
+                      onClick={() => deleteSingle(d)}
+                      className="p-1 rounded hover:bg-android-red/20 text-android-muted hover:text-android-red transition-colors shrink-0"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                ))}
+                {toDelete.size > 0 && (
+                  <button
+                    onClick={deleteSelected}
+                    disabled={deleting}
+                    className="w-full py-2 text-xs font-semibold text-android-red bg-android-red/10 hover:bg-android-red/20 border-t border-android-border transition-colors disabled:opacity-50"
+                  >
+                    {deleting ? 'Menghapus…' : `🗑 Hapus ${toDelete.size} device`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
@@ -154,36 +190,95 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           <span className="text-sm font-bold text-white">AndroidConnector</span>
         </div>
 
-        {multiDevice ? (
-          <div className="relative">
-            <button
-              onClick={() => setShowPicker(v => !v)}
-              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border border-android-border text-android-muted"
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-android-green' : 'bg-android-red'}`} />
-              <span className="max-w-[80px] truncate">{selected?.deviceName ?? 'Device'}</span>
-              <ChevronDown size={10} />
-            </button>
-            {showPicker && (
-              <div className="absolute top-full right-0 mt-1 w-48 bg-android-surface border border-android-border rounded-lg z-50 overflow-hidden shadow-lg">
-                {devices.map(d => (
-                  <button key={d.deviceId} onClick={() => { onSelect?.(d.deviceId); setShowPicker(false) }}
-                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs text-left ${d.deviceId === selectedId ? 'text-android-green' : 'text-android-muted'}`}>
-                    <div className={`w-2 h-2 rounded-full ${d.connected ? 'bg-android-green' : 'bg-android-muted'}`} />
-                    <span className="truncate">{d.deviceName}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border ${
-            connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'
-          }`}>
+        {/* Device Manager — top right */}
+        <div className="relative">
+          <button
+            onClick={() => { setShowPicker(v => !v); setToDelete(new Set()) }}
+            className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors ${
+              connected
+                ? 'text-android-green border-android-green/30 bg-android-green/10'
+                : 'text-android-muted border-android-border'
+            }`}
+          >
             <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
-            {connected ? 'Online' : 'Offline'}
-          </div>
-        )}
+            <span className="max-w-[80px] truncate">
+              {selected?.deviceName ?? (devices.length > 0 ? 'Device' : 'Offline')}
+            </span>
+            <ChevronDown size={10} className={`transition-transform ${showPicker ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showPicker && (
+            <>
+              {/* Backdrop */}
+              <div className="fixed inset-0 z-40" onClick={() => { setShowPicker(false); setToDelete(new Set()) }} />
+              <div className="absolute top-full right-0 mt-2 w-60 bg-android-surface border border-android-border rounded-xl z-50 overflow-hidden shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-android-border">
+                  <span className="text-xs font-semibold text-android-text">Pilih / Kelola Device</span>
+                  {toDelete.size > 0 && (
+                    <span className="text-[10px] text-android-green">{toDelete.size} dipilih</span>
+                  )}
+                </div>
+
+                {devices.length === 0 ? (
+                  <div className="px-4 py-4 text-xs text-android-muted text-center">Belum ada device</div>
+                ) : (
+                  devices.map(d => (
+                    <div key={d.deviceId} className={`flex items-center gap-2 px-3 py-2.5 border-b border-android-border/50 last:border-0 transition-colors ${
+                      d.deviceId === selectedId ? 'bg-android-green/5' : 'hover:bg-white/3'
+                    }`}>
+                      {/* Checkbox bulk delete */}
+                      <button
+                        onClick={() => toggleDelete(d.deviceId)}
+                        className="shrink-0 text-android-muted hover:text-android-text"
+                      >
+                        {toDelete.has(d.deviceId)
+                          ? <CheckSquare size={14} className="text-android-red" />
+                          : <Square size={14} />}
+                      </button>
+
+                      {/* Select device */}
+                      <button
+                        className="flex-1 flex items-center gap-2 text-xs text-left min-w-0"
+                        onClick={() => { onSelect?.(d.deviceId); setShowPicker(false); setToDelete(new Set()) }}
+                      >
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${d.connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
+                        <div className="min-w-0">
+                          <p className={`font-medium truncate ${d.deviceId === selectedId ? 'text-android-green' : 'text-android-text'}`}>
+                            {d.deviceName}
+                          </p>
+                          <p className="text-[10px] text-android-muted">
+                            {d.connected ? 'Online' : 'Offline'}
+                            {d.model ? ` · ${d.model}` : ''}
+                          </p>
+                        </div>
+                      </button>
+
+                      {/* Single delete */}
+                      <button
+                        onClick={() => { setShowPicker(false); deleteSingle(d) }}
+                        className="shrink-0 p-1.5 rounded-lg hover:bg-android-red/20 text-android-muted hover:text-android-red transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))
+                )}
+
+                {/* Bulk delete footer */}
+                {toDelete.size > 0 && (
+                  <button
+                    onClick={deleteSelected}
+                    disabled={deleting}
+                    className="w-full py-2.5 text-xs font-semibold text-android-red bg-android-red/10 hover:bg-android-red/20 border-t border-android-border transition-colors disabled:opacity-50"
+                  >
+                    {deleting ? 'Menghapus…' : `🗑 Hapus ${toDelete.size} device yang dipilih`}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </header>
 
       {/* ─── MOBILE BOTTOM NAV ─── */}
@@ -215,12 +310,10 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
       {/* ─── MOBILE DRAWER (semua menu) ─── */}
       {showDrawer && (
         <>
-          {/* Backdrop */}
           <div
             className="md:hidden fixed inset-0 z-50 bg-black/60"
             onClick={() => setShowDrawer(false)}
           />
-          {/* Sheet */}
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-android-surface rounded-t-2xl border-t border-android-border pb-safe">
             {/* Handle + header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-android-border">
@@ -260,39 +353,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
               })}
             </div>
 
-            {/* Device list + delete */}
-            {devices.length > 0 && (
-              <div className="px-4 pb-2">
-                <p className="text-[10px] text-android-muted uppercase tracking-wider mb-2">Devices</p>
-                <div className="space-y-1.5">
-                  {devices.map(d => (
-                    <div key={d.deviceId} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-                      d.deviceId === selectedId
-                        ? 'bg-android-green/10 border-android-green/20 text-android-green'
-                        : 'bg-white/3 border-android-border text-android-muted'
-                    }`}>
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${d.connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
-                      <button
-                        className="flex-1 text-left truncate"
-                        onClick={() => { onSelect?.(d.deviceId) }}
-                      >
-                        {d.deviceName}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (!confirm(`Hapus device "${d.deviceName}"?`)) return
-                          await fetch(`/api/devices?deviceId=${encodeURIComponent(d.deviceId)}`, { method: 'DELETE' })
-                          window.location.reload()
-                        }}
-                        className="p-1 rounded-lg hover:bg-android-red/20 text-android-muted hover:text-android-red transition-colors shrink-0"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
             <div className="px-4 pb-4" />
           </div>
         </>

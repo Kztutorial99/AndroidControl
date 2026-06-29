@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 import {
   Smartphone, Globe, Shield, Zap, ChevronDown,
@@ -58,9 +58,32 @@ function Tag({ color, label }: { color: 'green' | 'yellow' | 'red' | 'blue'; lab
 }
 
 export default function SetupPage() {
+  const [devices, setDevices] = useState<{ deviceId: string; deviceName: string; connected: boolean }[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/api/devices')
+        const data = await res.json()
+        const list = data.devices ?? []
+        setDevices(list)
+        if (list.length > 0) {
+          const online = list.find((d: { connected: boolean }) => d.connected) ?? list[0]
+          setSelectedId(online.deviceId)
+        }
+      } catch {}
+    }
+    load()
+    const t = setInterval(load, 5000)
+    return () => clearInterval(t)
+  }, [])
+
+  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
+
   return (
     <div className="flex min-h-screen">
-      <Sidebar connected={false} />
+      <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
       <main className="flex-1 p-6 overflow-y-auto">
         <div className="max-w-3xl mx-auto">
 

