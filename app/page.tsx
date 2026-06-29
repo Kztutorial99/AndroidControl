@@ -111,7 +111,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDevices()
-    const t = setInterval(fetchDevices, 5000)
+    const t = setInterval(fetchDevices, 1000)
     return () => clearInterval(t)
   }, [fetchDevices])
 
