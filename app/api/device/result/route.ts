@@ -19,16 +19,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
+    // ── FAST PATH: screenshot ─────────────────────────────────────────────────
     if (
       typeof command === 'string' && command.startsWith('screenshot:') &&
       typeof result  === 'string' && result.length > 0 && !result.startsWith('ERROR')
     ) {
       if (isStreaming(deviceId)) {
         const delayMs = getStreamDelay(deviceId)
-        if (delayMs <= 0) {
+
+        if (delayMs < 0) {
+          // ACK mode: broadcast frame but do NOT set pending.
+          // Browser calls /api/device/stream-ack when ready for next frame.
+          // This eliminates queue buildup on slow networks.
+          broadcastFrame(deviceId, result.trim())
+        } else if (delayMs === 0) {
+          // Max speed: set pending BEFORE broadcast (pre-pipeline)
           setStreamPending(deviceId)
           broadcastFrame(deviceId, result.trim())
         } else {
+          // Fixed FPS: broadcast first, then set pending after delay
           broadcastFrame(deviceId, result.trim())
           setTimeout(() => setStreamPending(deviceId), delayMs)
         }
@@ -38,6 +47,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    // ── NORMAL PATH: other commands ───────────────────────────────────────────
     const device = await getDevice(deviceId)
     if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
 
