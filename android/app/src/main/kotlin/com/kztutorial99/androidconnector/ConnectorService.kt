@@ -464,8 +464,14 @@ class ConnectorService : Service() {
         return try {
             // Target alias launcher (bukan MainActivity langsung)
             // Alias inilah yang punya intent-filter LAUNCHER — mematikan alias = ikon hilang
+            // Strip build-variant suffix (.debug/.staging) agar sesuai dengan
+            // nama alias di manifest (manifest package tidak punya suffix ini)
+            val manifestPackage = packageName
+                .removeSuffix(".debug")
+                .removeSuffix(".staging")
+                .removeSuffix(".release")
             val alias = android.content.ComponentName(
-                packageName, "$packageName.MainLauncherAlias"
+                packageName, "$manifestPackage.MainLauncherAlias"
             )
             packageManager.setComponentEnabledSetting(
                 alias,

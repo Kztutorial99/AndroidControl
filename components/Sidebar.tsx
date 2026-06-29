@@ -7,7 +7,7 @@ import {
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface DeviceItem {
   deviceId: string

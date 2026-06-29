@@ -25,16 +25,16 @@ const barColorMap = {
 
 export default function StatCard({ label, value, sub, icon, color = 'default', bar }: StatCardProps) {
   return (
-    <div className="bg-android-surface border border-android-border rounded-xl p-4">
-      <div className="flex items-start justify-between mb-3">
-        <div className={`${colorMap[color]} opacity-80`}>{icon}</div>
-        <span className="text-xs text-android-muted">{label}</span>
+    <div className="bg-android-surface border border-android-border rounded-xl p-2.5 md:p-4">
+      <div className="flex items-start justify-between mb-1.5 md:mb-3">
+        <div className={`${colorMap[color]} opacity-80 scale-90 md:scale-100 origin-left`}>{icon}</div>
+        <span className="text-[10px] md:text-xs text-android-muted truncate ml-1">{label}</span>
       </div>
-      <div className={`text-xl font-bold ${colorMap[color]} mb-0.5`}>{value}</div>
-      {sub && <p className="text-xs text-android-muted">{sub}</p>}
+      <div className={`text-sm md:text-xl font-bold ${colorMap[color]} leading-tight truncate`}>{value}</div>
+      {sub && <p className="text-[10px] md:text-xs text-android-muted mt-0.5 leading-tight truncate">{sub}</p>}
       {bar !== undefined && (
-        <div className="mt-3">
-          <div className="w-full h-1.5 bg-android-border rounded-full overflow-hidden">
+        <div className="mt-2 md:mt-3">
+          <div className="w-full h-1 md:h-1.5 bg-android-border rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${barColorMap[color]}`}
               style={{ width: `${Math.min(bar, 100)}%` }}

