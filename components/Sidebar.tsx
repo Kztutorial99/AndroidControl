@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Terminal, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock,
-  MoreHorizontal, X, Trash2, CheckSquare, Square, GitBranch,
+  MoreHorizontal, X, Trash2, CheckSquare, Square,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 
@@ -35,7 +35,6 @@ const navItems = [
   { href: '/apps', label: 'Apps', icon: Package },
   { href: '/keylog', label: 'Keylogger', icon: KeySquare },
   { href: '/pinlog', label: 'PIN / Pola', icon: Lock },
-  { href: '/build', label: 'Build Monitor', icon: GitBranch },
   { href: '/setup', label: 'Setup', icon: Settings },
 ]
 

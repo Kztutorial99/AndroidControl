@@ -3,7 +3,7 @@ import { Suspense } from 'react'
 import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
-import { Package, RefreshCw, Circle, Search, Download, Trash2, X, AlertTriangle } from 'lucide-react'
+import { Package, RefreshCw, Circle, Search, Download, X } from 'lucide-react'
 
 interface AppEntry { name: string; pkg: string; version: string }
 
@@ -17,13 +17,10 @@ function parseApps(text: string): AppEntry[] {
 
 function AppsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
-  const [apps, setApps] = useState<AppEntry[]>([])
+  const [apps, setApps]         = useState<AppEntry[]>([])
   const [filtered, setFiltered] = useState<AppEntry[]>([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [confirmUninstall, setConfirmUninstall] = useState<AppEntry | null>(null)
-  const [uninstalling, setUninstalling] = useState<string | null>(null)
-  const [uninstallResult, setUninstallResult] = useState<{ pkg: string; msg: string } | null>(null)
+  const [search, setSearch]     = useState('')
+  const [loading, setLoading]   = useState(false)
 
   useEffect(() => {
     const q = search.toLowerCase()
@@ -54,42 +51,6 @@ function AppsContent() {
     } finally { setLoading(false) }
   }
 
-  const uninstallApp = async (app: AppEntry) => {
-    if (!selectedId) return
-    setConfirmUninstall(null)
-    setUninstalling(app.pkg)
-    setUninstallResult(null)
-    try {
-      const sentAt = Date.now()
-      const uninstallCmd = `pm_uninstall:${app.pkg}`
-      await fetch('/api/device/command', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: uninstallCmd }),
-      })
-      await new Promise(r => setTimeout(r, 4000))
-      let resultMsg = ''
-      for (let i = 0; i < 15; i++) {
-        const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const d = await r.json()
-        const match = (d.history ?? [])
-          .filter((h: { command: string; result: string; timestamp: string }) =>
-            h.command === uninstallCmd && new Date(h.timestamp).getTime() > sentAt - 1000)
-          .sort((a: { timestamp: string }, b: { timestamp: string }) =>
-            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
-        if (match?.result) { resultMsg = match.result; break }
-        await new Promise(r2 => setTimeout(r2, 2000))
-      }
-      const success = resultMsg.toLowerCase().includes('success') || resultMsg.toLowerCase().includes('deleted')
-      setUninstallResult({ pkg: app.pkg, msg: resultMsg || 'Done' })
-      if (success) {
-        setApps(prev => prev.filter(a => a.pkg !== app.pkg))
-        setFiltered(prev => prev.filter(a => a.pkg !== app.pkg))
-      }
-    } finally {
-      setUninstalling(null)
-    }
-  }
-
   return (
     <div className="flex min-h-screen">
       <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
@@ -97,11 +58,14 @@ function AppsContent() {
         <div className="max-w-4xl mx-auto px-3 md:px-6 py-4 md:py-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2"><Package size={20} className="text-android-green" /> Installed Apps</h2>
-              <p className="text-android-muted text-xs mt-0.5">Browse and uninstall apps on the device</p>
+              <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
+                <Package size={20} className="text-android-green" /> Installed Apps
+              </h2>
+              <p className="text-android-muted text-xs mt-0.5">Browse apps on the device</p>
             </div>
             <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border ${connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'}`}>
-              <Circle size={7} className={connected ? 'fill-android-green' : 'fill-android-red'} />{connected ? 'Online' : 'Offline'}
+              <Circle size={7} className={connected ? 'fill-android-green' : 'fill-android-red'} />
+              {connected ? 'Online' : 'Offline'}
             </div>
           </div>
 
@@ -121,17 +85,16 @@ function AppsContent() {
             </button>
           </div>
 
-          {uninstallResult && (
-            <div className={`mb-4 flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${uninstallResult.msg.toLowerCase().includes('success') ? 'bg-android-green/10 border-android-green/30 text-android-green' : 'bg-android-red/10 border-android-red/30 text-android-red'}`}>
-              <span className="flex-1">{uninstallResult.pkg}: {uninstallResult.msg}</span>
-              <button onClick={() => setUninstallResult(null)}><X size={14} /></button>
+          {!connected && (
+            <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
+              <Package size={32} className="mx-auto mb-3 text-android-border" />
+              Connect a device to list apps
             </div>
           )}
-
-          {!connected && <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl"><Package size={32} className="mx-auto mb-3 text-android-border" />Connect a device to list apps</div>}
           {connected && apps.length === 0 && !loading && (
             <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
-              <Package size={32} className="mx-auto mb-3 text-android-border" /><p>Click "Fetch Apps" to list installed apps</p>
+              <Package size={32} className="mx-auto mb-3 text-android-border" />
+              <p>Click "Fetch Apps" to list installed apps</p>
             </div>
           )}
 
@@ -142,7 +105,7 @@ function AppsContent() {
               </div>
               <div className="divide-y divide-android-border/50">
                 {filtered.map((app, i) => (
-                  <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 group">
+                  <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-white/5">
                     <div className="w-9 h-9 rounded-xl bg-android-green/10 border border-android-green/20 flex items-center justify-center shrink-0">
                       <span className="text-android-green text-sm font-bold">{app.name[0]?.toUpperCase() ?? '?'}</span>
                     </div>
@@ -150,14 +113,7 @@ function AppsContent() {
                       <p className="text-android-text text-sm font-semibold truncate">{app.name}</p>
                       <p className="text-android-muted text-xs font-mono truncate">{app.pkg}</p>
                     </div>
-                    <span className="text-android-muted text-xs shrink-0 mr-2">{app.version}</span>
-                    <button
-                      onClick={() => setConfirmUninstall(app)}
-                      disabled={uninstalling === app.pkg}
-                      className="p-2 rounded-lg text-android-muted hover:text-android-red hover:bg-android-red/10 transition-colors disabled:opacity-50 opacity-0 group-hover:opacity-100"
-                      title="Uninstall">
-                      {uninstalling === app.pkg ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                    </button>
+                    <span className="text-android-muted text-xs shrink-0">{app.version}</span>
                   </div>
                 ))}
               </div>
@@ -165,26 +121,6 @@ function AppsContent() {
           )}
         </div>
       </main>
-
-      {confirmUninstall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="bg-android-surface border border-android-border rounded-2xl p-6 w-full max-w-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle size={20} className="text-android-red shrink-0" />
-              <p className="text-android-text font-semibold">Uninstall App?</p>
-            </div>
-            <p className="text-android-text text-sm font-semibold mb-1">{confirmUninstall.name}</p>
-            <p className="text-android-muted text-xs font-mono mb-5">{confirmUninstall.pkg}</p>
-            <p className="text-android-muted text-xs mb-5">This will uninstall the app via Shizuku. System apps cannot be removed.</p>
-            <div className="flex gap-3">
-              <button onClick={() => uninstallApp(confirmUninstall)}
-                className="flex-1 py-2 bg-android-red text-white rounded-xl text-sm font-semibold">Uninstall</button>
-              <button onClick={() => setConfirmUninstall(null)}
-                className="flex-1 py-2 bg-android-border text-android-text rounded-xl text-sm">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

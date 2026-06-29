@@ -1,6 +1,6 @@
 'use client'
 import { Suspense } from 'react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
@@ -16,49 +16,84 @@ const isImage = (name: string) => IMAGE_EXTS.includes(name.split('.').pop()?.toL
 
 const GALLERY_PATHS = [
   { label: 'DCIM/Camera', path: '/storage/emulated/0/DCIM/Camera' },
-  { label: 'DCIM', path: '/storage/emulated/0/DCIM' },
-  { label: 'Pictures', path: '/storage/emulated/0/Pictures' },
+  { label: 'DCIM',        path: '/storage/emulated/0/DCIM' },
+  { label: 'Pictures',    path: '/storage/emulated/0/Pictures' },
   { label: 'Screenshots', path: '/storage/emulated/0/Pictures/Screenshots' },
-  { label: 'Download', path: '/storage/emulated/0/Download' },
+  { label: 'Download',    path: '/storage/emulated/0/Download' },
 ]
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
 interface PreviewItem { path: string; name: string; b64: string; mime: string }
 
+function getMime(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? 'jpeg'
+  return ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
+}
+
 function GalleryContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
-  const [path, setPath] = useState('/storage/emulated/0/DCIM/Camera')
-  const [listing, setListing] = useState<FileListing | null>(null)
+  const [path, setPath]           = useState('/storage/emulated/0/DCIM/Camera')
+  const [listing, setListing]     = useState<FileListing | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
-  const [previews, setPreviews] = useState<Record<string, string>>({})
-  const [loadingPreviews, setLoadingPreviews] = useState(false)
-  const [fullscreen, setFullscreen] = useState<PreviewItem | null>(null)
+  const [previews, setPreviews]   = useState<Record<string, string>>({})
+  const [thumbLoading, setThumbLoading] = useState(0)
+  const [thumbTotal, setThumbTotal]     = useState(0)
+  const [fullscreen, setFullscreen]     = useState<PreviewItem | null>(null)
   const [fsLoading, setFsLoading] = useState(false)
+  const loadingRef = useRef(false)
 
-  const sendAndWait = useCallback(async (command: string): Promise<string> => {
+  const sendCmd = useCallback(async (command: string): Promise<string> => {
     if (!selectedId) return ''
     const sentAt = Date.now()
     await fetch('/api/device/command', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId: selectedId, command }),
     })
-    await sleep(2500)
-    for (let i = 0; i < 20; i++) {
+    await sleep(1200)
+    for (let i = 0; i < 25; i++) {
       const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
       const d = await r.json()
       const match = (d.history ?? [])
         .filter((h: { command: string; result: string; timestamp: string }) =>
-          h.command === command && new Date(h.timestamp).getTime() > sentAt - 1000
-        )
+          h.command === command && new Date(h.timestamp).getTime() > sentAt - 500)
         .sort((a: { timestamp: string }, b: { timestamp: string }) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        )[0]
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
       if (match?.result) return match.result
-      await sleep(1500)
+      await sleep(800)
     }
     return ''
   }, [selectedId])
+
+  const loadThumbnails = useCallback(async (entries: FileEntry[], currentPath: string, previewsSnap: Record<string, string>) => {
+    if (!selectedId || loadingRef.current) return
+    loadingRef.current = true
+    const images = entries.filter(e => e.type === 'file' && isImage(e.name)).slice(0, 20)
+    const needed = images.filter(img => !previewsSnap[`${currentPath}/${img.name}`])
+    if (needed.length === 0) { loadingRef.current = false; return }
+
+    setThumbTotal(needed.length)
+    setThumbLoading(0)
+
+    const BATCH = 3
+    for (let i = 0; i < needed.length; i += BATCH) {
+      const batch = needed.slice(i, i + BATCH)
+      await Promise.all(batch.map(async img => {
+        const fp = `${currentPath}/${img.name}`
+        try {
+          const b64 = await sendCmd(`read_b64:${fp}`)
+          if (b64 && !b64.startsWith('ERROR')) {
+            const dataUrl = `data:${getMime(img.name)};base64,${b64.trim()}`
+            setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
+          }
+        } catch {}
+        setThumbLoading(prev => prev + 1)
+      }))
+    }
+    loadingRef.current = false
+    setThumbTotal(0)
+    setThumbLoading(0)
+  }, [selectedId, sendCmd])
 
   const browse = useCallback(async (targetPath: string) => {
     if (!selectedId) return
@@ -66,72 +101,56 @@ function GalleryContent() {
     setListing(null)
     setPreviews({})
     setPath(targetPath)
+    loadingRef.current = false
     try {
       await fetch('/api/device/files', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, path: targetPath }),
       })
-      await sleep(3000)
-      const res = await fetch(`/api/device/files?deviceId=${selectedId}`)
-      const data = await res.json()
-      if (data.listing) setListing(data.listing)
-    } finally { setBrowseLoading(false) }
-  }, [selectedId])
-
-  const loadThumbnails = async (entries: FileEntry[], currentPath: string) => {
-    if (!selectedId || loadingPreviews) return
-    setLoadingPreviews(true)
-    const images = entries.filter(e => e.type === 'file' && isImage(e.name)).slice(0, 12)
-    for (const img of images) {
-      const filePath = `${currentPath}/${img.name}`
-      if (previews[filePath]) continue
-      try {
-        const b64 = await sendAndWait(`read_b64:${filePath}`)
-        if (b64 && !b64.startsWith('ERROR')) {
-          const ext = img.name.split('.').pop()?.toLowerCase() ?? 'jpeg'
-          const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-          setPreviews(prev => ({ ...prev, [filePath]: `data:${mime};base64,${b64.trim()}` }))
+      await sleep(2500)
+      for (let i = 0; i < 10; i++) {
+        const res = await fetch(`/api/device/files?deviceId=${selectedId}`)
+        const data = await res.json()
+        if (data.listing && data.listing.path === targetPath) {
+          setListing(data.listing)
+          loadThumbnails(data.listing.entries, targetPath, {})
+          break
         }
-      } catch {}
-    }
-    setLoadingPreviews(false)
-  }
+        await sleep(1000)
+      }
+    } finally { setBrowseLoading(false) }
+  }, [selectedId, loadThumbnails])
 
   const openFullscreen = async (entry: FileEntry) => {
-    const filePath = `${path}/${entry.name}`
-    const ext = entry.name.split('.').pop()?.toLowerCase() ?? 'jpeg'
-    const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-
-    if (previews[filePath]) {
-      setFullscreen({ path: filePath, name: entry.name, b64: previews[filePath].split(',')[1], mime })
+    const fp = `${path}/${entry.name}`
+    const mime = getMime(entry.name)
+    if (previews[fp]) {
+      setFullscreen({ path: fp, name: entry.name, b64: previews[fp].split(',')[1], mime })
       return
     }
     setFsLoading(true)
-    setFullscreen({ path: filePath, name: entry.name, b64: '', mime })
+    setFullscreen({ path: fp, name: entry.name, b64: '', mime })
     try {
-      const b64 = await sendAndWait(`read_b64:${filePath}`)
+      const b64 = await sendCmd(`read_b64:${fp}`)
       const dataUrl = `data:${mime};base64,${b64.trim()}`
-      setPreviews(prev => ({ ...prev, [filePath]: dataUrl }))
-      setFullscreen({ path: filePath, name: entry.name, b64: b64.trim(), mime })
+      setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
+      setFullscreen({ path: fp, name: entry.name, b64: b64.trim(), mime })
     } finally { setFsLoading(false) }
   }
 
   const downloadImage = () => {
     if (!fullscreen?.b64) return
-    const byteChars = atob(fullscreen.b64)
-    const bytes = new Uint8Array(byteChars.length)
-    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
-    const blob = new Blob([bytes], { type: fullscreen.mime })
-    const url = URL.createObjectURL(blob)
+    const bytes = new Uint8Array(atob(fullscreen.b64).split('').map(c => c.charCodeAt(0)))
+    const url = URL.createObjectURL(new Blob([bytes], { type: fullscreen.mime }))
     const a = document.createElement('a'); a.href = url; a.download = fullscreen.name; a.click()
     URL.revokeObjectURL(url)
   }
 
-  const imageEntries = listing?.entries.filter(e => e.type === 'file' && isImage(e.name)) ?? []
+  const imageEntries  = listing?.entries.filter(e => e.type === 'file' && isImage(e.name)) ?? []
   const folderEntries = listing?.entries.filter(e => e.type === 'dir') ?? []
-  const breadcrumbs = path.split('/').filter(Boolean)
+  const breadcrumbs   = path.split('/').filter(Boolean)
   const visibleCrumbs = breadcrumbs.slice(-2)
-  const hiddenCount = breadcrumbs.length - visibleCrumbs.length
+  const hiddenCount   = breadcrumbs.length - visibleCrumbs.length
 
   const goUp = () => {
     const parts = path.split('/').filter(Boolean)
@@ -158,7 +177,6 @@ function GalleryContent() {
             </div>
           </div>
 
-          {/* Quick gallery paths */}
           <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
             {GALLERY_PATHS.map(({ label, path: p }) => (
               <button key={p} onClick={() => browse(p)} disabled={!connected}
@@ -168,7 +186,6 @@ function GalleryContent() {
             ))}
           </div>
 
-          {/* Path bar */}
           <div className="bg-android-surface border border-android-border rounded-xl overflow-hidden mb-3">
             <div className="px-3 py-2 flex items-center gap-2">
               <button onClick={goUp} disabled={!connected} className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30 transition-colors">
@@ -188,15 +205,10 @@ function GalleryContent() {
                   )
                 })}
               </div>
-              <button onClick={() => browse(path)} disabled={!connected} className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30">
-                <RefreshCw size={12} className="text-android-muted" />
+              <button onClick={() => browse(path)} disabled={!connected || browseLoading}
+                className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30">
+                <RefreshCw size={12} className={`text-android-muted ${browseLoading ? 'animate-spin' : ''}`} />
               </button>
-              {listing && imageEntries.length > 0 && !loadingPreviews && (
-                <button onClick={() => loadThumbnails(listing.entries, path)}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-android-blue/10 border border-android-blue/30 text-android-blue rounded-lg text-xs font-medium">
-                  <Image size={12} /> Load Thumbnails
-                </button>
-              )}
             </div>
           </div>
 
@@ -213,14 +225,10 @@ function GalleryContent() {
           ) : !listing ? (
             <div className="p-12 text-center bg-android-surface border border-android-border rounded-xl">
               <FolderOpen size={40} className="text-android-border mx-auto mb-3" />
-              <p className="text-android-muted text-sm mb-4">Select a folder above to browse</p>
-              <button onClick={() => browse(path)} className="px-5 py-2 bg-android-green text-android-bg rounded-xl text-sm font-semibold">
-                Browse {path.split('/').pop()}
-              </button>
+              <p className="text-android-muted text-sm">Pilih folder di atas untuk mulai browse</p>
             </div>
           ) : (
             <>
-              {/* Subfolders */}
               {folderEntries.length > 0 && (
                 <div className="mb-4">
                   <p className="text-xs text-android-muted mb-2">Folders ({folderEntries.length})</p>
@@ -236,7 +244,6 @@ function GalleryContent() {
                 </div>
               )}
 
-              {/* Images */}
               {imageEntries.length === 0 ? (
                 <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
                   <Image size={32} className="mx-auto mb-3 text-android-border" />
@@ -245,8 +252,11 @@ function GalleryContent() {
               ) : (
                 <>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-android-muted">{imageEntries.length} images {loadingPreviews && '· Loading thumbnails…'}</p>
-                    {loadingPreviews && <RefreshCw size={12} className="text-android-muted animate-spin" />}
+                    <p className="text-xs text-android-muted">
+                      {imageEntries.length} images
+                      {thumbTotal > 0 && ` · loading ${thumbLoading}/${thumbTotal} thumbnails…`}
+                    </p>
+                    {thumbTotal > 0 && <RefreshCw size={12} className="text-android-muted animate-spin" />}
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                     {imageEntries.map(entry => {
@@ -275,7 +285,6 @@ function GalleryContent() {
         </div>
       </main>
 
-      {/* Fullscreen viewer */}
       {fullscreen && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col" onClick={e => { if (e.target === e.currentTarget) setFullscreen(null) }}>
           <div className="flex items-center justify-between px-4 py-3 bg-black/60 backdrop-blur shrink-0">
@@ -299,11 +308,8 @@ function GalleryContent() {
                 <p className="text-white/60 text-sm">Loading image…</p>
               </div>
             ) : (
-              <img
-                src={`data:${fullscreen.mime};base64,${fullscreen.b64}`}
-                alt={fullscreen.name}
-                className="max-w-full max-h-full object-contain rounded-lg"
-              />
+              <img src={`data:${fullscreen.mime};base64,${fullscreen.b64}`} alt={fullscreen.name}
+                className="max-w-full max-h-full object-contain rounded-lg" />
             )}
           </div>
           <div className="px-4 py-2 bg-black/60 shrink-0">
