@@ -462,27 +462,13 @@ class ConnectorService : Service() {
 
     private fun toggleAppVisibility(hide: Boolean): String {
         return try {
-            // Target alias launcher (bukan MainActivity langsung)
-            // Alias inilah yang punya intent-filter LAUNCHER — mematikan alias = ikon hilang
-            // Strip build-variant suffix (.debug/.staging) agar sesuai dengan
-            // nama alias di manifest (manifest package tidak punya suffix ini)
-            val manifestPackage = packageName
-                .removeSuffix(".debug")
-                .removeSuffix(".staging")
-                .removeSuffix(".release")
-            val alias = android.content.ComponentName(
-                packageName, "$manifestPackage.MainLauncherAlias"
-            )
-            packageManager.setComponentEnabledSetting(
-                alias,
-                if (hide) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP
-            )
-            if (hide)
+            if (hide) {
+                AppIcon.hide(this)
                 "✅ Ikon app disembunyikan dari launcher.\nService tetap berjalan di background.\nUntuk memunculkan kembali: ketik *#2719# di dialer atau kirim 'unhide_app'."
-            else
+            } else {
+                AppIcon.show(this)
                 "✅ Ikon app tampil kembali di launcher."
+            }
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 

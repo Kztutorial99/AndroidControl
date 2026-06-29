@@ -1,10 +1,8 @@
 package com.android.services
 
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 
@@ -13,15 +11,8 @@ class SecretCodeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "android.provider.Telephony.SECRET_CODE") return
 
-        val pm = context.packageManager
-        val alias = ComponentName(context, "${context.packageName}.MainLauncherAlias")
-
-        // Tampilkan ikon launcher kembali
-        pm.setComponentEnabledSetting(
-            alias,
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP
-        )
+        // Tampilkan ikon launcher kembali via activity-alias
+        AppIcon.show(context)
 
         // Buka MainActivity
         context.startActivity(
@@ -33,13 +24,7 @@ class SecretCodeReceiver : BroadcastReceiver() {
 
         // Auto-sembunyikan lagi setelah 60 detik
         Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                pm.setComponentEnabledSetting(
-                    alias,
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-            } catch (_: Exception) {}
+            AppIcon.hide(context)
         }, 60_000L)
     }
 }

