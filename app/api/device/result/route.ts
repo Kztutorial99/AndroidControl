@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { addResult, getCommandHistory, setFileListing, getDevice } from '@/lib/store'
 import { initSchema } from '@/lib/db'
+import { notifyDeviceUpdate } from '@/lib/sse'
 import { v4 as uuidv4 } from 'uuid'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,8 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
       exitCode: exitCode ?? 0,
     })
+
+    notifyDeviceUpdate(deviceId)
 
     return NextResponse.json({ ok: true })
   } catch (e) {
