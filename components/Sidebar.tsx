@@ -2,12 +2,12 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Terminal, FolderOpen,
+  LayoutDashboard, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
 } from 'lucide-react'
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 
 interface DeviceItem {
   deviceId: string
@@ -25,7 +25,6 @@ interface SidebarProps {
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/terminal', label: 'Terminal', icon: Terminal },
   { href: '/files', label: 'Files', icon: FolderOpen },
   { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
@@ -40,7 +39,7 @@ const navItems = [
 
 const mobileNavPinned = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/terminal', label: 'Terminal', icon: Terminal },
+  { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
   { href: '/location', label: 'Location', icon: MapPin },
 ]
@@ -209,10 +208,8 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
 
           {showPicker && (
             <>
-              {/* Backdrop */}
               <div className="fixed inset-0 z-40" onClick={() => { setShowPicker(false); setToDelete(new Set()) }} />
               <div className="absolute top-full right-0 mt-2 w-60 bg-android-surface border border-android-border rounded-xl z-50 overflow-hidden shadow-2xl">
-                {/* Header */}
                 <div className="flex items-center justify-between px-3 py-2.5 border-b border-android-border">
                   <span className="text-xs font-semibold text-android-text">Pilih / Kelola Device</span>
                   {toDelete.size > 0 && (
@@ -227,7 +224,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
                     <div key={d.deviceId} className={`flex items-center gap-2 px-3 py-2.5 border-b border-android-border/50 last:border-0 transition-colors ${
                       d.deviceId === selectedId ? 'bg-android-green/5' : 'hover:bg-white/3'
                     }`}>
-                      {/* Checkbox bulk delete */}
                       <button
                         onClick={() => toggleDelete(d.deviceId)}
                         className="shrink-0 text-android-muted hover:text-android-text"
@@ -237,7 +233,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
                           : <Square size={14} />}
                       </button>
 
-                      {/* Select device */}
                       <button
                         className="flex-1 flex items-center gap-2 text-xs text-left min-w-0"
                         onClick={() => { onSelect?.(d.deviceId); setShowPicker(false); setToDelete(new Set()) }}
@@ -254,7 +249,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
                         </div>
                       </button>
 
-                      {/* Single delete */}
                       <button
                         onClick={() => { setShowPicker(false); deleteSingle(d) }}
                         className="shrink-0 p-1.5 rounded-lg hover:bg-android-red/20 text-android-muted hover:text-android-red transition-colors"
@@ -265,7 +259,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
                   ))
                 )}
 
-                {/* Bulk delete footer */}
                 {toDelete.size > 0 && (
                   <button
                     onClick={deleteSelected}
@@ -297,7 +290,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           )
         })}
 
-        {/* More button */}
         <button
           onClick={() => setShowDrawer(true)}
           className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${showDrawer ? 'text-android-green' : 'text-android-muted'}`}
@@ -307,7 +299,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
         </button>
       </nav>
 
-      {/* ─── MOBILE DRAWER (semua menu) ─── */}
+      {/* ─── MOBILE DRAWER ─── */}
       {showDrawer && (
         <>
           <div
@@ -315,7 +307,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
             onClick={() => setShowDrawer(false)}
           />
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-android-surface rounded-t-2xl border-t border-android-border pb-safe">
-            {/* Handle + header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-android-border">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded-lg bg-android-green flex items-center justify-center">
@@ -331,7 +322,6 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
               </button>
             </div>
 
-            {/* All nav items grid */}
             <div className="grid grid-cols-3 gap-2 p-4">
               {navItems.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href

