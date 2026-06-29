@@ -97,15 +97,15 @@ function FilesContent() {
     navigate('/' + parts.slice(0, -1).join('/'))
   }
 
-  const sendAndWait = async (command: string, extraData?: string): Promise<string> => {
+  const sendAndWait = async (command: string, extra?: string): Promise<string> => {
     const sentAt = Date.now()
     await fetch('/api/device/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId: selectedId, command, extra: extraData }),
+      body: JSON.stringify({ deviceId: selectedId, command, ...(extra ? { extra } : {}) }),
     })
-    await sleep(2000)
-    for (let i = 0; i < 20; i++) {
+    await sleep(1000)
+    for (let i = 0; i < 30; i++) {
       const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
       const d = await r.json()
       const match = (d.history ?? [])
@@ -114,9 +114,9 @@ function FilesContent() {
         .sort((a: { timestamp: string }, b: { timestamp: string }) =>
           new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
       if (match?.result) return match.result
-      await sleep(1000)
+      await sleep(800)
     }
-    throw new Error('Timeout: no response from device')
+    throw new Error('Timeout: device tidak merespons')
   }
 
   const openFile = async (entry: FileEntry) => {
@@ -191,22 +191,26 @@ function FilesContent() {
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !selectedId) return
-    setUploadStatus(`Uploading ${file.name}…`)
+    setUploadStatus(`📤 Membaca ${file.name}…`)
     const reader = new FileReader()
     reader.onload = async () => {
       try {
         const result = reader.result as string
         const b64 = result.includes(',') ? result.split(',')[1] : result
         const destPath = `${path}/${file.name}`
-        await fetch('/api/device/command', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId: selectedId, command: `write_b64:${destPath}`, extra: b64 }),
-        })
-        setUploadStatus(`✅ ${file.name} berhasil diupload`)
-        setTimeout(() => { setUploadStatus(''); navigate(path) }, 2000)
-      } catch {
-        setUploadStatus('❌ Upload gagal')
-        setTimeout(() => setUploadStatus(''), 3000)
+        const command = `write_b64:${destPath}`
+        setUploadStatus(`⬆ Mengirim ${file.name} ke device…`)
+        const res = await sendAndWait(command, b64)
+        if (res && !res.startsWith('ERROR')) {
+          setUploadStatus(`✅ ${file.name} berhasil diupload`)
+          setTimeout(() => { setUploadStatus(''); navigate(path) }, 2000)
+        } else {
+          setUploadStatus(`❌ Upload gagal: ${res || 'device tidak merespons'}`)
+          setTimeout(() => setUploadStatus(''), 4000)
+        }
+      } catch (err) {
+        setUploadStatus(`❌ Upload error: ${String(err)}`)
+        setTimeout(() => setUploadStatus(''), 4000)
       }
     }
     reader.onerror = () => { setUploadStatus('❌ Gagal baca file'); setTimeout(() => setUploadStatus(''), 3000) }

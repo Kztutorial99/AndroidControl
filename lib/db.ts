@@ -37,8 +37,12 @@ export async function initSchema() {
       id TEXT PRIMARY KEY,
       device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
       command TEXT NOT NULL,
+      extra TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `)
+  await pool.query(`
+    ALTER TABLE pending_commands ADD COLUMN IF NOT EXISTS extra TEXT
   `)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS command_history (

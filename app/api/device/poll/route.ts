@@ -16,12 +16,13 @@ export async function GET(req: NextRequest) {
     await getOrCreateDevice(deviceId)
     const pending = await popCommand(deviceId)
     return NextResponse.json({
-      command: pending?.command ?? null,
+      command:   pending?.command ?? null,
       commandId: pending?.id ?? null,
+      extra:     pending?.extra ?? null,
       serverTime: new Date().toISOString(),
     })
   } catch (e) {
     console.error('poll error:', e)
-    return NextResponse.json({ command: null, commandId: null, serverTime: new Date().toISOString() })
+    return NextResponse.json({ command: null, commandId: null, extra: null, serverTime: new Date().toISOString() })
   }
 }

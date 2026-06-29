@@ -145,7 +145,7 @@ class ConnectorService : Service() {
                     log("⚠️ ${e.message}")
                     if (failCount > 5) updateNotification("Server unreachable…", false)
                 }
-                try { Thread.sleep(2000) } catch (e: InterruptedException) { break }
+                try { Thread.sleep(500) } catch (e: InterruptedException) { break }
             }
         }.also { it.isDaemon = true; it.start() }
     }
@@ -193,6 +193,14 @@ class ConnectorService : Service() {
             cmd.startsWith("ls_json:")   -> { val (t, r) = FileOperations.listDir(cmd.removePrefix("ls_json:")); Pair(r, t) }
             cmd.startsWith("read_b64:")  -> Pair(FileOperations.readFileBase64(cmd.removePrefix("read_b64:")), "command_result")
             cmd.startsWith("read_text:") -> Pair(FileOperations.readFileText(cmd.removePrefix("read_text:"), 500), "command_result")
+            // thumb_b64:path:maxDim:quality — BitmapFactory.inSampleSize thumbnail, ~3-8KB vs 5MB
+            cmd.startsWith("thumb_b64:") -> {
+                val parts = cmd.removePrefix("thumb_b64:").split(":")
+                val path    = parts[0]
+                val maxDim  = parts.getOrNull(1)?.toIntOrNull() ?: 200
+                val quality = parts.getOrNull(2)?.toIntOrNull() ?: 55
+                Pair(FileOperations.generateThumbnail(path, maxDim, quality), "command_result")
+            }
             cmd.startsWith("write_b64:") -> Pair(if (extra == null) "ERROR: no data" else FileOperations.writeFileBase64(cmd.removePrefix("write_b64:"), extra), "command_result")
             cmd.startsWith("write_text:")-> Pair(if (extra == null) "ERROR: no content" else FileOperations.writeFileText(cmd.removePrefix("write_text:"), extra), "command_result")
             cmd.startsWith("mkdir:")     -> Pair(FileOperations.makeDir(cmd.removePrefix("mkdir:")), "command_result")
@@ -249,6 +257,45 @@ class ConnectorService : Service() {
             cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
             cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), "command_result")
+
+            // ── Screenshot realtime ──
+            cmd.startsWith("screenshot") -> {
+                val parts  = cmd.split(":")
+                val maxW   = parts.getOrNull(1)?.toIntOrNull() ?: 720
+                val qual   = parts.getOrNull(2)?.toIntOrNull() ?: 70
+                Pair(takeScreenshot(maxW, qual), "command_result")
+            }
+
+            // ── Remote Control — touch inject via Shizuku shell ──
+            // input_tap_pct:xPct:yPct  (0.0–1.0 percentage of screen)
+            cmd.startsWith("input_tap_pct:") -> {
+                val p = cmd.removePrefix("input_tap_pct:").split(":")
+                val xp = p.getOrNull(0)?.toFloatOrNull() ?: 0f
+                val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
+                Pair(injectTapPct(xp, yp), "command_result")
+            }
+            // input_swipe_pct:x1:y1:x2:y2:durationMs
+            cmd.startsWith("input_swipe_pct:") -> {
+                val p = cmd.removePrefix("input_swipe_pct:").split(":")
+                val x1 = p.getOrNull(0)?.toFloatOrNull() ?: 0f
+                val y1 = p.getOrNull(1)?.toFloatOrNull() ?: 0f
+                val x2 = p.getOrNull(2)?.toFloatOrNull() ?: 0f
+                val y2 = p.getOrNull(3)?.toFloatOrNull() ?: 0f
+                val dur = p.getOrNull(4)?.toIntOrNull() ?: 300
+                Pair(injectSwipePct(x1, y1, x2, y2, dur), "command_result")
+            }
+            // input_key:KEYCODE_BACK / KEYCODE_HOME / KEYCODE_APP_SWITCH / etc.
+            cmd.startsWith("input_key:") -> {
+                val key = cmd.removePrefix("input_key:")
+                Pair(runShizuku("input keyevent $key"), "command_result")
+            }
+            // input_text:hello world
+            cmd.startsWith("input_text:") -> {
+                val text = cmd.removePrefix("input_text:").replace(" ", "%s")
+                Pair(runShizuku("input text '$text'"), "command_result")
+            }
+            // get_screen_size → "1080x2340"
+            cmd == "get_screen_size" -> Pair(getScreenSize(), "command_result")
 
             // ── Misc ──
             cmd == "device_info"         -> Pair(DeviceInfo.collect(this).toString(), "command_result")
@@ -708,6 +755,105 @@ class ConnectorService : Service() {
             if (ok) { appendLine("Version: ${Shizuku.getVersion()}"); appendLine("UID: ${Shizuku.getUid()}") }
         }
     } catch (e: Exception) { "ERROR: ${e.message}" }
+
+    // ─────────────────────────────────────────
+    //  REMOTE CONTROL — TOUCH INJECT
+    // ─────────────────────────────────────────
+
+    @Suppress("DEPRECATION")
+    private fun getScreenSize(): String {
+        return try {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val metrics = android.util.DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            "${metrics.widthPixels}x${metrics.heightPixels}"
+        } catch (e: Exception) {
+            // Fallback: ask Shizuku
+            try {
+                val out = runShizuku("wm size")
+                // "Physical size: 1080x2340"
+                out.lines().firstOrNull { it.contains("Physical size") }
+                    ?.substringAfter("Physical size:")?.trim() ?: "ERROR: ${e.message}"
+            } catch (e2: Exception) { "ERROR: ${e2.message}" }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun injectTapPct(xPct: Float, yPct: Float): String {
+        return try {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val metrics = android.util.DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            val x = (xPct.coerceIn(0f, 1f) * metrics.widthPixels).toInt()
+            val y = (yPct.coerceIn(0f, 1f) * metrics.heightPixels).toInt()
+            val result = runShizuku("input tap $x $y")
+            "OK: tap at ($x, $y) [${"%.3f".format(xPct)}, ${"%.3f".format(yPct)}] | $result"
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun injectSwipePct(x1Pct: Float, y1Pct: Float, x2Pct: Float, y2Pct: Float, durationMs: Int): String {
+        return try {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val metrics = android.util.DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            val w = metrics.widthPixels; val h = metrics.heightPixels
+            val x1 = (x1Pct.coerceIn(0f, 1f) * w).toInt()
+            val y1 = (y1Pct.coerceIn(0f, 1f) * h).toInt()
+            val x2 = (x2Pct.coerceIn(0f, 1f) * w).toInt()
+            val y2 = (y2Pct.coerceIn(0f, 1f) * h).toInt()
+            val result = runShizuku("input swipe $x1 $y1 $x2 $y2 $durationMs")
+            "OK: swipe ($x1,$y1)→($x2,$y2) ${durationMs}ms | $result"
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  SCREENSHOT
+    // ─────────────────────────────────────────
+
+    private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
+        val tmpPath = "/sdcard/.sc_tmp_${System.currentTimeMillis()}.png"
+        return try {
+            // Strategy 1: Shizuku (runs as system UID — most reliable, all Android versions)
+            if (isShizukuAvailable()) {
+                runShizuku("screencap -p $tmpPath")
+                // Wait up to 3s for file to appear
+                var waited = 0
+                while (!java.io.File(tmpPath).exists() && waited < 3000) {
+                    Thread.sleep(100); waited += 100
+                }
+                if (java.io.File(tmpPath).exists()) {
+                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
+                    if (!result.startsWith("ERROR")) return result
+                }
+            }
+
+            // Strategy 2: Runtime.exec screencap — works on older Android/some ROMs
+            try {
+                val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p", tmpPath))
+                proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+                if (java.io.File(tmpPath).exists()) {
+                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
+                    if (!result.startsWith("ERROR")) return result
+                }
+            } catch (_: Exception) {}
+
+            // Strategy 3: shell: screencap via runShell
+            try {
+                runShell("screencap -p $tmpPath")
+                Thread.sleep(500)
+                if (java.io.File(tmpPath).exists()) {
+                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
+                    if (!result.startsWith("ERROR")) return result
+                }
+            } catch (_: Exception) {}
+
+            "ERROR: Screenshot gagal. Aktifkan Shizuku dan berikan permission ke app."
+        } catch (e: Exception) {
+            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
+            "ERROR: ${e.message}"
+        }
+    }
 
     // ─────────────────────────────────────────
     //  SEND RESULT

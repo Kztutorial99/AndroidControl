@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     await _ready
     const body = await req.json()
-    const { deviceId, command } = body
+    const { deviceId, command, extra } = body
 
     if (!deviceId || typeof deviceId !== 'string') {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     const device = await getDevice(deviceId)
     if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
 
-    const pending = await enqueueCommand(deviceId, command.trim())
+    const pending = await enqueueCommand(deviceId, command.trim(), extra ?? undefined)
     return NextResponse.json({ ok: true, commandId: pending.id, command: pending.command })
   } catch (e) {
     console.error('command POST error:', e)

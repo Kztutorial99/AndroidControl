@@ -165,18 +165,21 @@ function GalleryContent() {
     return fastPoll(selectedId, command, sentAt)
   }, [selectedId])
 
-  /* ── Called by IntersectionObserver when thumb enters viewport ── */
+  /* ── Called by IntersectionObserver when thumb enters viewport ──
+     Uses thumb_b64: → BitmapFactory.inSampleSize on Android → ~3-8KB JPEG
+     vs read_b64: which sends full 3-10MB photo. 100-1000x faster. ── */
   const loadOne = useCallback(async (fp: string) => {
     if (!selectedId) return
     if (previewsRef.current[fp] || pendingRef.current.has(fp)) return
     pendingRef.current.add(fp)
     setLoadingSet(prev => new Set(prev).add(fp))
     try {
-      const b64 = await sendCmd(`read_b64:${fp}`)
+      // thumb_b64:path:maxDim:quality — Android generates 200px JPEG q55 thumbnail
+      const b64 = await sendCmd(`thumb_b64:${fp}:200:55`)
       if (b64 && !b64.startsWith('ERROR')) {
-        const name = fp.split('/').pop() ?? ''
-        const dataUrl = `data:${getMime(name)};base64,${b64.trim()}`
+        const dataUrl = `data:image/jpeg;base64,${b64.trim()}`
         setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
+        previewsRef.current = { ...previewsRef.current, [fp]: dataUrl }
       }
     } catch {}
     pendingRef.current.delete(fp)
@@ -204,17 +207,15 @@ function GalleryContent() {
   const openFullscreen = async (entry: FileEntry) => {
     const fp = `${path}/${entry.name}`
     const mime = getMime(entry.name)
-    if (previews[fp]) {
-      setFullscreen({ path: fp, name: entry.name, b64: previews[fp].split(',')[1], mime })
-      return
-    }
+    // Show thumbnail immediately while loading full resolution
+    const thumbDataUrl = previews[fp] ?? null
+    const thumbB64 = thumbDataUrl ? thumbDataUrl.split(',')[1] : ''
     setFsLoading(true)
-    setFullscreen({ path: fp, name: entry.name, b64: '', mime })
+    setFullscreen({ path: fp, name: entry.name, b64: thumbB64, mime })
     try {
+      // Load full quality image for fullscreen viewing
       const b64 = await sendCmd(`read_b64:${fp}`)
       if (b64 && !b64.startsWith('ERROR')) {
-        const dataUrl = `data:${mime};base64,${b64.trim()}`
-        setPreviews(prev => ({ ...prev, [fp]: dataUrl }))
         setFullscreen({ path: fp, name: entry.name, b64: b64.trim(), mime })
       }
     } finally { setFsLoading(false) }
@@ -390,18 +391,28 @@ function GalleryContent() {
               </button>
             </div>
           </div>
-          <div className="flex-1 flex items-center justify-center overflow-hidden p-4">
-            {fsLoading || !fullscreen.b64 ? (
+          <div className="flex-1 flex items-center justify-center overflow-hidden p-4 relative">
+            {fullscreen.b64 ? (
+              <>
+                <img
+                  src={`data:${fullscreen.mime};base64,${fullscreen.b64}`}
+                  alt={fullscreen.name}
+                  className={`max-w-full max-h-full object-contain rounded-lg transition-all duration-300 ${fsLoading ? 'blur-sm scale-95' : 'blur-0 scale-100'}`}
+                />
+                {fsLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-2 bg-black/50 rounded-xl px-5 py-3">
+                      <RefreshCw size={22} className="text-android-green animate-spin" />
+                      <p className="text-white/70 text-xs">Loading HD…</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
               <div className="flex flex-col items-center gap-3">
                 <RefreshCw size={28} className="text-android-green animate-spin" />
                 <p className="text-white/60 text-sm">Loading image…</p>
               </div>
-            ) : (
-              <img
-                src={`data:${fullscreen.mime};base64,${fullscreen.b64}`}
-                alt={fullscreen.name}
-                className="max-w-full max-h-full object-contain rounded-lg"
-              />
             )}
           </div>
           <div className="px-4 py-2 bg-black/60 shrink-0">

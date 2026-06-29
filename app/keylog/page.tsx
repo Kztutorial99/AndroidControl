@@ -43,6 +43,7 @@ const fetcher = (url: string) => fetch(url).then(r => r.json())
 export default function KeylogPage() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [search, setSearch] = useState('')
+  const [clearing, setClearing] = useState(false)
 
   const { data, isLoading, mutate } = useSWR(
     selectedId ? `/api/device/keylog?deviceId=${selectedId}&limit=500` : null,
@@ -57,9 +58,17 @@ export default function KeylogPage() {
   const entries: Entry[] = data?.entries ?? []
 
   const clearAll = useCallback(async () => {
-    if (!selectedId || !confirm('Hapus semua data keylogger?')) return
-    await fetch(`/api/device/keylog?deviceId=${selectedId}`, { method: 'DELETE' })
-    mutate({ entries: [] }, { revalidate: false })
+    if (!selectedId || !confirm('Hapus semua data keylogger dari database?')) return
+    setClearing(true)
+    try {
+      const res = await fetch(`/api/device/keylog?deviceId=${selectedId}`, { method: 'DELETE' })
+      if (res.ok) {
+        mutate({ entries: [] }, { revalidate: false })
+        setTimeout(() => mutate(), 500)
+      }
+    } finally {
+      setClearing(false)
+    }
   }, [selectedId, mutate])
 
   const filtered = entries.filter(e =>
@@ -87,8 +96,8 @@ export default function KeylogPage() {
               <button onClick={() => mutate()} className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors">
                 <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
               </button>
-              <button onClick={clearAll} className="p-2 bg-android-surface border border-android-red/30 rounded-lg text-android-red hover:bg-android-red/10 transition-colors">
-                <Trash2 size={14} />
+              <button onClick={clearAll} disabled={clearing} className="p-2 bg-android-surface border border-android-red/30 rounded-lg text-android-red hover:bg-android-red/10 transition-colors disabled:opacity-50">
+                {clearing ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
               </button>
             </div>
           </div>

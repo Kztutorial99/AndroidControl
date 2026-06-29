@@ -1,8 +1,11 @@
 package com.android.services
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Base64
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,6 +44,116 @@ object FileOperations {
             Pair("error", "Permission denied: $path")
         } catch (e: Exception) {
             Pair("error", e.message ?: "Unknown error")
+        }
+    }
+
+    /**
+     * Generate thumbnail using BitmapFactory.inSampleSize — industry standard technique.
+     * Returns base64-encoded JPEG thumbnail (~3-8KB vs 3-10MB original).
+     * maxDim: max width/height in pixels (default 200)
+     * quality: JPEG compression quality 0-100 (default 50)
+     */
+    fun generateThumbnail(path: String, maxDim: Int = 200, quality: Int = 55): String {
+        return try {
+            val file = File(path)
+            if (!file.exists()) return "ERROR: File not found: $path"
+
+            // Step 1: Read dimensions without loading full image into memory
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, opts)
+
+            if (opts.outWidth <= 0 || opts.outHeight <= 0) {
+                return "ERROR: Cannot decode image dimensions"
+            }
+
+            // Step 2: Calculate inSampleSize — largest power of 2 that keeps image >= maxDim
+            var sampleSize = 1
+            var w = opts.outWidth
+            var h = opts.outHeight
+            while (w / 2 >= maxDim && h / 2 >= maxDim) {
+                sampleSize *= 2
+                w /= 2
+                h /= 2
+            }
+
+            // Step 3: Decode with inSampleSize (loads tiny version into memory)
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565  // half memory of ARGB_8888
+            }
+            val sampled = BitmapFactory.decodeFile(path, decodeOpts)
+                ?: return "ERROR: BitmapFactory returned null"
+
+            // Step 4: Scale to exact maxDim if still too large
+            val thumb = if (sampled.width > maxDim || sampled.height > maxDim) {
+                val scale = maxDim.toFloat() / maxOf(sampled.width, sampled.height)
+                val tw = (sampled.width * scale).toInt().coerceAtLeast(1)
+                val th = (sampled.height * scale).toInt().coerceAtLeast(1)
+                val scaled = Bitmap.createScaledBitmap(sampled, tw, th, true)
+                sampled.recycle()
+                scaled
+            } else {
+                sampled
+            }
+
+            // Step 5: Compress to JPEG and base64 encode
+            val out = ByteArrayOutputStream()
+            thumb.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            thumb.recycle()
+
+            Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        } catch (e: SecurityException) {
+            "ERROR: Permission denied"
+        } catch (e: OutOfMemoryError) {
+            "ERROR: Out of memory — image too large"
+        } catch (e: Exception) {
+            "ERROR: ${e.message}"
+        }
+    }
+
+    /**
+     * Take a screenshot using screencap, resize to maxWidth, return base64 JPEG.
+     * Works on all Android via Shizuku or fallback shell.
+     * Caller should provide the raw screencap PNG bytes (already captured externally).
+     * This function: reads temp file → generates thumbnail → deletes temp file.
+     */
+    fun screenshotFromFile(tmpPath: String, maxWidth: Int = 720, quality: Int = 70): String {
+        return try {
+            val file = java.io.File(tmpPath)
+            if (!file.exists()) return "ERROR: Screenshot file not found: $tmpPath"
+
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(tmpPath, opts)
+
+            var sampleSize = 1
+            if (opts.outWidth > maxWidth) {
+                sampleSize = (opts.outWidth / maxWidth).coerceAtLeast(1)
+            }
+
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val bmp = BitmapFactory.decodeFile(tmpPath, decodeOpts)
+                ?: return "ERROR: Cannot decode screenshot"
+
+            val scaled = if (bmp.width > maxWidth) {
+                val h = (bmp.height.toFloat() * maxWidth / bmp.width).toInt()
+                val s = Bitmap.createScaledBitmap(bmp, maxWidth, h, true)
+                bmp.recycle(); s
+            } else bmp
+
+            val out = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            scaled.recycle()
+
+            try { file.delete() } catch (_: Exception) {}
+
+            Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        } catch (e: OutOfMemoryError) {
+            "ERROR: Out of memory"
+        } catch (e: Exception) {
+            "ERROR: ${e.message}"
         }
     }
 

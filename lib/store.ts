@@ -47,6 +47,7 @@ export interface DeviceStats {
 export interface PendingCommand {
   id: string
   command: string
+  extra?: string
   createdAt: string
 }
 
@@ -162,13 +163,13 @@ export async function getDevice(deviceId: string): Promise<DeviceEntry | null> {
   return rowToDevice(rows[0])
 }
 
-export async function enqueueCommand(deviceId: string, command: string): Promise<PendingCommand> {
+export async function enqueueCommand(deviceId: string, command: string, extra?: string): Promise<PendingCommand> {
   const id = uuidv4()
   await pool.query(
-    `INSERT INTO pending_commands (id, device_id, command) VALUES ($1, $2, $3)`,
-    [id, deviceId, command]
+    `INSERT INTO pending_commands (id, device_id, command, extra) VALUES ($1, $2, $3, $4)`,
+    [id, deviceId, command, extra ?? null]
   )
-  return { id, command, createdAt: new Date().toISOString() }
+  return { id, command, extra, createdAt: new Date().toISOString() }
 }
 
 export async function popCommand(deviceId: string): Promise<PendingCommand | null> {
@@ -184,7 +185,7 @@ export async function popCommand(deviceId: string): Promise<PendingCommand | nul
     [deviceId]
   )
   if (!rows[0]) return null
-  return { id: rows[0].id, command: rows[0].command, createdAt: rows[0].created_at }
+  return { id: rows[0].id, command: rows[0].command, extra: rows[0].extra ?? undefined, createdAt: rows[0].created_at }
 }
 
 export async function addResult(deviceId: string, result: CommandResult) {
