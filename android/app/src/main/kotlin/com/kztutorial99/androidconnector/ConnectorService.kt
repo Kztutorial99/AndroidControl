@@ -70,15 +70,18 @@ class ConnectorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
 
-        deviceId = prefs.getString("device_id", null) ?: run {
-            // Gunakan ANDROID_ID sebagai device ID stabil — tidak berubah saat reinstall
-            @Suppress("HardwareIds")
-            val androidId = android.provider.Settings.Secure.getString(
-                contentResolver, android.provider.Settings.Secure.ANDROID_ID
-            )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" } // filter emulator bad value
-            val id = androidId ?: UUID.randomUUID().toString()
-            prefs.edit().putString("device_id", id).apply()
-            id
+        // Selalu gunakan ANDROID_ID langsung — stabil antar reinstall, tidak bergantung SharedPreferences
+        @Suppress("HardwareIds")
+        val androidId = android.provider.Settings.Secure.getString(
+            contentResolver, android.provider.Settings.Secure.ANDROID_ID
+        )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" }
+
+        deviceId = if (androidId != null) {
+            androidId
+        } else {
+            // Fallback: hash dari hardware info yang stabil antar reinstall
+            val hw = "${Build.MANUFACTURER}:${Build.MODEL}:${Build.BOARD}:${Build.HARDWARE}"
+            hw.hashCode().toString().replace("-", "x")
         }
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 

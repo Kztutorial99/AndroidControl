@@ -241,38 +241,6 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* Device Selector */}
-          {devices.length > 0 && (
-            <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-              {devices.map(d => (
-                <div key={d.deviceId} className="shrink-0 flex items-center gap-1">
-                  <button
-                    onClick={() => setSelectedId(d.deviceId)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
-                      selectedId === d.deviceId
-                        ? 'bg-android-green/10 border-android-green/50 text-android-green'
-                        : 'bg-android-surface border-android-border text-android-muted hover:text-android-text'
-                    }`}
-                  >
-                    <div className={`w-2 h-2 rounded-full ${d.connected ? 'bg-android-green' : 'bg-android-red'}`} />
-                    <span>{d.deviceName}</span>
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (!confirm(`Hapus device "${d.deviceName}" dari dashboard?`)) return
-                      await fetch(`/api/devices?deviceId=${encodeURIComponent(d.deviceId)}`, { method: 'DELETE' })
-                      fetchDevices()
-                    }}
-                    title="Hapus device"
-                    className="p-1.5 rounded-lg text-android-muted hover:text-android-red hover:bg-android-red/10 transition-colors"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* No device banner */}
           {!connected && !loading && devices.length === 0 && (
             <div className="mb-4 p-4 bg-android-yellow/10 border border-android-yellow/30 rounded-xl flex items-start gap-3">

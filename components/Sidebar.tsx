@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Terminal, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock,
-  MoreHorizontal, X,
+  MoreHorizontal, X, Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -260,20 +260,40 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
               })}
             </div>
 
-            {/* Device status */}
-            <div className="px-4 pb-4">
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-                connected
-                  ? 'bg-android-green/10 border-android-green/20 text-android-green'
-                  : 'bg-android-red/10 border-android-red/20 text-android-red'
-              }`}>
-                {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
-                <span className="flex-1 truncate">
-                  {connected ? (selected?.deviceName ?? 'Device Connected') : 'No Device'}
-                </span>
-                <div className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
+            {/* Device list + delete */}
+            {devices.length > 0 && (
+              <div className="px-4 pb-2">
+                <p className="text-[10px] text-android-muted uppercase tracking-wider mb-2">Devices</p>
+                <div className="space-y-1.5">
+                  {devices.map(d => (
+                    <div key={d.deviceId} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+                      d.deviceId === selectedId
+                        ? 'bg-android-green/10 border-android-green/20 text-android-green'
+                        : 'bg-white/3 border-android-border text-android-muted'
+                    }`}>
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${d.connected ? 'bg-android-green status-dot-online' : 'bg-android-red'}`} />
+                      <button
+                        className="flex-1 text-left truncate"
+                        onClick={() => { onSelect?.(d.deviceId) }}
+                      >
+                        {d.deviceName}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Hapus device "${d.deviceName}"?`)) return
+                          await fetch(`/api/devices?deviceId=${encodeURIComponent(d.deviceId)}`, { method: 'DELETE' })
+                          window.location.reload()
+                        }}
+                        className="p-1 rounded-lg hover:bg-android-red/20 text-android-muted hover:text-android-red transition-colors shrink-0"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+            <div className="px-4 pb-4" />
           </div>
         </>
       )}
