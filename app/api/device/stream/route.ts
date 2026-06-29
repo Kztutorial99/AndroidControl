@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getDevice, isDeviceOnline } from '@/lib/store'
 import { initSchema } from '@/lib/db'
-import { subscribeDevice } from '@/lib/sse'
+import { subscribeDevice, subscribeFrame } from '@/lib/sse'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -20,15 +20,18 @@ export async function GET(req: NextRequest) {
 
   const stream = new ReadableStream({
     start(controller) {
+      let closed = false
+
       const send = (data: object) => {
+        if (closed) return
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        } catch {}
+        } catch { closed = true }
       }
 
       send({ type: 'connected', deviceId })
 
-      const push = async () => {
+      const pushStatus = async () => {
         try {
           const device = await getDevice(deviceId)
           if (device) {
@@ -40,21 +43,30 @@ export async function GET(req: NextRequest) {
         } catch {}
       }
 
-      push()
+      pushStatus()
 
-      const unsubscribe = subscribeDevice(deviceId, () => push())
+      const unsubscribeDevice = subscribeDevice(deviceId, () => pushStatus())
+
+      // Push frame langsung ke browser tanpa polling
+      const unsubscribeFrame = subscribeFrame(deviceId, (b64: string) => {
+        send({ type: 'frame', b64 })
+      })
 
       const keepalive = setInterval(() => {
+        if (closed) { clearInterval(keepalive); return }
         try {
           controller.enqueue(encoder.encode(': ping\n\n'))
         } catch {
+          closed = true
           clearInterval(keepalive)
         }
       }, 20000)
 
       req.signal.addEventListener('abort', () => {
+        closed = true
         clearInterval(keepalive)
-        unsubscribe()
+        unsubscribeDevice()
+        unsubscribeFrame()
         try { controller.close() } catch {}
       })
     },

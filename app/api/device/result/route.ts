@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { addResult, getCommandHistory, setFileListing, getDevice } from '@/lib/store'
 import { initSchema } from '@/lib/db'
-import { notifyDeviceUpdate } from '@/lib/sse'
+import { notifyDeviceUpdate, broadcastFrame } from '@/lib/sse'
 import { v4 as uuidv4 } from 'uuid'
 
 export const dynamic = 'force-dynamic'
@@ -35,6 +35,12 @@ export async function POST(req: NextRequest) {
     })
 
     notifyDeviceUpdate(deviceId)
+
+    // Jika hasil adalah screenshot, langsung push frame ke semua SSE subscriber
+    if (typeof command === 'string' && command.startsWith('screenshot:') &&
+        typeof result === 'string' && result.length > 0 && !result.startsWith('ERROR')) {
+      broadcastFrame(deviceId, result.trim())
+    }
 
     return NextResponse.json({ ok: true })
   } catch (e) {
