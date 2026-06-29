@@ -3,8 +3,8 @@ import { Suspense, useState, useCallback, useRef, useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
-  Monitor, Play, Square, Download, RefreshCw, Circle,
-  Zap, Clock, Camera, AlertTriangle, ChevronLeft, Home,
+  Monitor, Square, Download, RefreshCw, Circle,
+  Clock, Camera, AlertTriangle, ChevronLeft, Home,
   LayoutGrid, ChevronUp, ChevronDown, MousePointer2, Hand,
   Keyboard, Send, Delete, X, Radio,
 } from 'lucide-react'
@@ -13,13 +13,6 @@ const QUALITY_OPTIONS = [
   { label: 'Fast',     maxW: 480,  quality: 55 },
   { label: 'Balanced', maxW: 720,  quality: 65 },
   { label: 'HD',       maxW: 1080, quality: 75 },
-]
-
-const INTERVAL_OPTIONS = [
-  { label: 'Max',  ms: 0    },
-  { label: '0.5s', ms: 500  },
-  { label: '1s',   ms: 1000 },
-  { label: '2s',   ms: 2000 },
 ]
 
 const QUICK_BTNS = [
@@ -33,11 +26,11 @@ const QUICK_BTNS = [
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
 /** Kirim ke /api/device/stream-mode */
-async function apiStreamMode(deviceId: string, action: 'start' | 'stop', cmd?: string) {
+async function apiStreamMode(deviceId: string, action: 'start' | 'stop', cmd?: string, targetFps?: number) {
   await fetch('/api/device/stream-mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceId, action, cmd }),
+    body: JSON.stringify({ deviceId, action, cmd, targetFps }),
   })
 }
 
@@ -46,7 +39,6 @@ function ScreenshotContent() {
 
   // ── UI state ──
   const [live,        setLive]        = useState(false)
-  const [pushMode,    setPushMode]    = useState(false)   // push streaming aktif?
   const [hasFrame,    setHasFrame]    = useState(false)
   const [frameCount,  setFrameCount]  = useState(0)
   const [lastTs,      setLastTs]      = useState<Date | null>(null)
@@ -54,8 +46,8 @@ function ScreenshotContent() {
   const [capturing,   setCapturing]   = useState(false)
   const [error,       setError]       = useState('')
   const [qualityIdx,  setQualityIdx]  = useState(0)
-  const [intervalIdx, setIntervalIdx] = useState(0)
   const [fps,         setFps]         = useState(0)
+  const [targetFps,   setTargetFps]   = useState(15)
   const [touchMode,   setTouchMode]   = useState(true)
   const [lastAct,     setLastAct]     = useState('')
   const [ripple,      setRipple]      = useState<{ x: number; y: number } | null>(null)
@@ -65,7 +57,6 @@ function ScreenshotContent() {
 
   // ── Refs (tidak trigger re-render) ──
   const liveRef        = useRef(false)
-  const pushModeRef    = useRef(false)
   const sseRef         = useRef<EventSource | null>(null)
   const fpsCountRef    = useRef(0)
   const fpsTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -78,16 +69,6 @@ function ScreenshotContent() {
   const frameRecvRef   = useRef(0)
 
   const q  = QUALITY_OPTIONS[qualityIdx]
-  const iv = INTERVAL_OPTIONS[intervalIdx]
-
-  // ── Kirim screenshot command (legacy mode) ──
-  const sendCmd = useCallback(async (devId: string) => {
-    await fetch('/api/device/command', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId: devId, command: `screenshot:${q.maxW}:${q.quality}` }),
-    })
-  }, [q.maxW, q.quality])
 
   // ── Kirim touch/key command ──
   const sendTouch = useCallback((cmd: string, label: string) => {
@@ -197,7 +178,7 @@ function ScreenshotContent() {
   }, [])
 
   // ── Buka SSE dan setup onmessage handler ──
-  const openSSE = useCallback((devId: string, isPush: boolean, cmdStr: string) => {
+  const openSSE = useCallback((devId: string, cmdStr: string) => {
     const es = new EventSource(`/api/device/stream?deviceId=${devId}`)
     sseRef.current = es
 
@@ -219,43 +200,21 @@ function ScreenshotContent() {
           fpsCountRef.current++
           pendingRef.current = false
 
-          if (pushModeRef.current) {
-            // Push mode: server sudah auto re-enqueue, reset watchdog saja
-            resetWatchdog(devId, cmdStr)
-          } else {
-            // Legacy mode: browser kirim command berikutnya
-            const doNext = async () => {
-              if (iv.ms > 0) await sleep(iv.ms)
-              if (liveRef.current && !pendingRef.current && !pushModeRef.current) {
-                pendingRef.current = true
-                sendCmd(devId)
-              }
-            }
-            doNext()
-          }
+          // Push mode: server auto re-enqueue, reset watchdog saja
+          resetWatchdog(devId, cmdStr)
         }
       } catch {}
     }
 
     es.onerror = () => { if (liveRef.current) setError('SSE terputus…') }
+    es.onopen  = () => { setError('') }
+  }, [resetWatchdog])
 
-    if (isPush) {
-      es.onopen = () => {
-        setError('')
-        // Server sudah enqueue command pertama via apiStreamMode, jangan dobel
-      }
-    } else {
-      es.onopen = () => {
-        setError(''); pendingRef.current = true; sendCmd(devId)
-      }
-    }
-  }, [iv.ms, sendCmd, resetWatchdog])
-
-  // ── Start Push Streaming (mode baru, server loop) ──
+  // ── Start Push Streaming ──
   const startPush = useCallback(async () => {
     if (!selectedId || liveRef.current) return
-    liveRef.current = true; pushModeRef.current = true; pendingRef.current = false
-    setLive(true); setPushMode(true); setFrameCount(0); setFps(0)
+    liveRef.current = true; pendingRef.current = false
+    setLive(true); setFrameCount(0); setFps(0)
     fpsCountRef.current = 0; setError(''); frameRecvRef.current = 0
 
     fpsTimerRef.current = setInterval(() => {
@@ -263,37 +222,21 @@ function ScreenshotContent() {
     }, 1000)
 
     const cmdStr = `screenshot:${q.maxW}:${q.quality}`
-    // Daftarkan server loop + enqueue command pertama
-    await apiStreamMode(selectedId, 'start', cmdStr).catch(() => {})
+    await apiStreamMode(selectedId, 'start', cmdStr, targetFps).catch(() => {})
 
-    openSSE(selectedId, true, cmdStr)
+    openSSE(selectedId, cmdStr)
     resetWatchdog(selectedId, cmdStr)
-  }, [selectedId, q.maxW, q.quality, openSSE, resetWatchdog])
+  }, [selectedId, q.maxW, q.quality, targetFps, openSSE, resetWatchdog])
 
-  // ── Start Legacy Live (browser kirim command tiap frame) ──
-  const startLive = useCallback(() => {
-    if (!selectedId || liveRef.current) return
-    liveRef.current = true; pushModeRef.current = false; pendingRef.current = false
-    setLive(true); setPushMode(false); setFrameCount(0); setFps(0)
-    fpsCountRef.current = 0; setError(''); frameRecvRef.current = 0
-
-    fpsTimerRef.current = setInterval(() => {
-      setFps(fpsCountRef.current); fpsCountRef.current = 0
-    }, 1000)
-
-    openSSE(selectedId, false, `screenshot:${q.maxW}:${q.quality}`)
-  }, [selectedId, q.maxW, q.quality, openSSE])
-
-  // ── Stop semua ──
+  // ── Stop ──
   const stopLive = useCallback(() => {
     const devId = selectedId
-    liveRef.current = false; pushModeRef.current = false; pendingRef.current = false
-    setLive(false); setPushMode(false)
+    liveRef.current = false; pendingRef.current = false
+    setLive(false)
     sseRef.current?.close(); sseRef.current = null
     if (fpsTimerRef.current) { clearInterval(fpsTimerRef.current); fpsTimerRef.current = null }
     if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null }
     setFps(0)
-    // Bersihkan server loop
     if (devId) apiStreamMode(devId, 'stop').catch(() => {})
   }, [selectedId])
 
@@ -366,18 +309,47 @@ function ScreenshotContent() {
                 </button>
               ))}
             </div>
-            {/* IV hanya untuk legacy mode */}
-            {!pushMode && (
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-android-muted">IV:</span>
-                {INTERVAL_OPTIONS.map((opt, i) => (
-                  <button key={i} onClick={() => setIntervalIdx(i)} disabled={live}
-                    className={`px-1.5 py-0.5 text-xs rounded border transition-colors disabled:opacity-40 ${intervalIdx === i ? 'bg-android-blue/20 border-android-blue/50 text-android-blue' : 'border-android-border text-android-muted'}`}>
-                    {opt.label}
+            {/* FPS slider + presets — Push mode */}
+            {!live && (
+              <div className="flex items-center gap-1.5">
+                <Radio size={10} className="text-android-green shrink-0" />
+                <span className="text-xs text-android-muted shrink-0">FPS:</span>
+                {/* Preset buttons */}
+                {([0, 30, 15, 10, 5] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setTargetFps(v === 0 ? 30 : v)}
+                    className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
+                      (v === 0 ? targetFps === 30 : targetFps === v)
+                        ? 'bg-android-green/20 border-android-green/50 text-android-green'
+                        : 'border-android-border text-android-muted hover:border-android-green/30 hover:text-android-green'
+                    }`}
+                  >
+                    {v === 0 ? 'Max' : `${v}`}
                   </button>
                 ))}
+                {/* Slider */}
+                <input
+                  type="range" min={1} max={30} step={1}
+                  value={targetFps}
+                  onChange={e => setTargetFps(Number(e.target.value))}
+                  className="w-16 h-1 accent-android-green cursor-pointer"
+                />
+                {/* Label */}
+                <span className="text-xs font-mono text-android-green w-16 shrink-0">
+                  {targetFps}fps <span className="text-android-muted">~{Math.round(1000 / targetFps)}ms</span>
+                </span>
               </div>
             )}
+            {live && pushMode && (
+              <div className="flex items-center gap-1.5">
+                <Radio size={10} className="text-android-green shrink-0" />
+                <span className="text-xs font-mono text-android-green shrink-0">
+                  {targetFps}fps <span className="text-android-muted">~{Math.round(1000 / targetFps)}ms</span>
+                </span>
+              </div>
+            )}
+
             <div className="flex-1" />
             <button onClick={downloadFrame} disabled={!hasFrame}
               className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-android-border text-android-muted hover:text-android-blue disabled:opacity-30 transition-colors">
@@ -389,20 +361,12 @@ function ScreenshotContent() {
               Snap
             </button>
 
-            {/* ── Tombol Push / Live / Stop ── */}
+            {/* ── Tombol Push / Stop ── */}
             {!live ? (
-              <>
-                {/* Push Streaming — server loop, tercepat */}
-                <button onClick={startPush} disabled={!connected}
-                  className="flex items-center gap-1 px-3 py-0.5 text-xs rounded bg-android-green text-black font-bold hover:opacity-90 disabled:opacity-30 transition-colors">
-                  <Radio size={11} /> Push
-                </button>
-                {/* Legacy Live — browser kirim command tiap frame */}
-                <button onClick={startLive} disabled={!connected}
-                  className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-android-blue/50 text-android-blue hover:bg-android-blue/10 disabled:opacity-30 transition-colors">
-                  <Play size={11} className="fill-current" /> Live
-                </button>
-              </>
+              <button onClick={startPush} disabled={!connected}
+                className="flex items-center gap-1 px-3 py-0.5 text-xs rounded bg-android-green text-black font-bold hover:opacity-90 disabled:opacity-30 transition-colors">
+                <Radio size={11} /> Push
+              </button>
             ) : (
               <button onClick={stopLive}
                 className="flex items-center gap-1 px-3 py-0.5 text-xs rounded bg-android-red text-white font-semibold hover:bg-android-red/80 transition-colors animate-pulse">
@@ -439,16 +403,13 @@ function ScreenshotContent() {
 
             {/* Stats */}
             <div className="flex items-center gap-2 text-xs flex-1 min-w-0">
-              {live && pushMode && (
+              {live && (
                 <span className="flex items-center gap-1 text-android-green animate-pulse shrink-0">
                   <Radio size={10} />
-                  PUSH{fps > 0 && <span className="font-mono ml-0.5">{fps}fps</span>}
-                </span>
-              )}
-              {live && !pushMode && (
-                <span className="flex items-center gap-1 text-android-blue shrink-0">
-                  <Zap size={10} className="fill-current" />
-                  LIVE{fps > 0 && <span className="font-mono ml-0.5">{fps}fps</span>}
+                  PUSH
+                  <span className={`font-mono ml-0.5 ${fps >= targetFps ? 'text-android-green' : fps >= targetFps * 0.7 ? 'text-android-yellow' : 'text-android-red'}`}>
+                    {fps}<span className="opacity-50">/{targetFps}</span>fps
+                  </span>
                 </span>
               )}
               {capturing && !live && (
@@ -532,13 +493,11 @@ function ScreenshotContent() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                   <Camera size={44} className="text-android-border" />
                   <p className="text-android-muted text-sm text-center px-4">
-                    Tekan <span className="text-android-green font-bold">Push</span> untuk streaming tercepat
-                    <br />
-                    atau <span className="text-android-blue font-semibold">Live</span> untuk mode manual
+                    Tekan <span className="text-android-green font-bold">Push</span> untuk streaming
                     <br />
                     atau <span className="text-android-green font-semibold">Snap</span> untuk satu frame
                   </p>
-                  <p className="text-android-muted text-xs opacity-60">Push mode = server loop, latency lebih rendah</p>
+                  <p className="text-android-muted text-xs opacity-60">Push mode = server loop, atur FPS target di toolbar</p>
                 </div>
               )}
 
