@@ -20,29 +20,30 @@ export async function POST(req: NextRequest) {
     }
 
     // ── FAST PATH: screenshot ─────────────────────────────────────────────────
-    // Zero DB — broadcast SSE in-memory, re-enqueue via in-memory flag only.
     if (
       typeof command === 'string' && command.startsWith('screenshot:') &&
       typeof result  === 'string' && result.length > 0 && !result.startsWith('ERROR')
     ) {
-      // 1. Broadcast frame ke semua SSE subscriber (zero DB, instant)
-      broadcastFrame(deviceId, result.trim())
-
-      // 2. Push Streaming: set in-memory pending setelah delayMs
-      //    (delayMs = 0 → max speed; >0 → FPS cap)
       if (isStreaming(deviceId)) {
         const delayMs = getStreamDelay(deviceId)
+        // PRE-PIPELINE: set pending BEFORE SSE broadcast.
+        // Android already waiting on long-poll gets woken up immediately,
+        // and starts next capture while browser is still receiving this frame.
         if (delayMs <= 0) {
           setStreamPending(deviceId)
+          broadcastFrame(deviceId, result.trim())
         } else {
+          broadcastFrame(deviceId, result.trim())
           setTimeout(() => setStreamPending(deviceId), delayMs)
         }
+      } else {
+        broadcastFrame(deviceId, result.trim())
       }
 
       return NextResponse.json({ ok: true })
     }
 
-    // ── NORMAL PATH: command lain (non-screenshot) ────────────────────────────
+    // ── NORMAL PATH: command lain ─────────────────────────────────────────────
     const device = await getDevice(deviceId)
     if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
 
@@ -60,7 +61,6 @@ export async function POST(req: NextRequest) {
     })
 
     notifyDeviceUpdate(deviceId)
-
     return NextResponse.json({ ok: true })
   } catch (e) {
     console.error('result POST error:', e)
