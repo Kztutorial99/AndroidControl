@@ -54,7 +54,7 @@ const TYPE_CONFIG: Record<string, {
 }
 
 function PatternDots({ value }: { value: string }) {
-  const nodes = value.split(/[,\s-]+/).map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 9)
+  const nodes = value.split(/[,\s\-→]+/).map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 9)
   if (nodes.length === 0) return <span className="font-mono text-android-text text-sm">{value}</span>
 
   const positions: Record<number, [number, number]> = {

