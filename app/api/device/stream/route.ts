@@ -1,20 +1,12 @@
 import { NextRequest } from 'next/server'
 import { getDevice, isDeviceOnline } from '@/lib/store'
 import { initSchema } from '@/lib/db'
+import { subscribeDevice } from '@/lib/sse'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const _ready = initSchema()
-
-const clients = new Map<string, Set<(data: string) => void>>()
-
-export function notifyDeviceUpdate(deviceId: string) {
-  const subs = clients.get(deviceId)
-  if (subs && subs.size > 0) {
-    subs.forEach(fn => fn(deviceId))
-  }
-}
 
 export async function GET(req: NextRequest) {
   await _ready
@@ -50,9 +42,7 @@ export async function GET(req: NextRequest) {
 
       push()
 
-      const notify = () => push()
-      if (!clients.has(deviceId)) clients.set(deviceId, new Set())
-      clients.get(deviceId)!.add(notify)
+      const unsubscribe = subscribeDevice(deviceId, () => push())
 
       const keepalive = setInterval(() => {
         try {
@@ -64,7 +54,7 @@ export async function GET(req: NextRequest) {
 
       req.signal.addEventListener('abort', () => {
         clearInterval(keepalive)
-        clients.get(deviceId)?.delete(notify)
+        unsubscribe()
         try { controller.close() } catch {}
       })
     },

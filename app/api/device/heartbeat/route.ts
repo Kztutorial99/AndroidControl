@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateDeviceHeartbeat, getAllDevices, isDeviceOnline, getOrCreateDevice } from '@/lib/store'
 import { initSchema } from '@/lib/db'
-import { notifyDeviceUpdate } from '@/app/api/device/stream/route'
+import { notifyDeviceUpdate } from '@/lib/sse'
 
 export const dynamic = 'force-dynamic'
 
