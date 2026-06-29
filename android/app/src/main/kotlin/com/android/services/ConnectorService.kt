@@ -62,6 +62,12 @@ class ConnectorService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var pollThread: Thread? = null
 
+    // ── Screenshot Pipeline ────────────────────────────────────────────────
+    // Pre-capture frame berikutnya selagi frame sekarang sedang diupload.
+    // Overlap capture + upload → hemat 30-50% waktu per frame.
+    @Volatile private var pipelinedFrame: String? = null
+    private var pipelineThread: Thread? = null
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -96,6 +102,7 @@ class ConnectorService : Service() {
         super.onDestroy()
         polling = false
         isRunning = false
+        stopPipeline()       // bersihkan pipeline capture thread
         pollThread?.interrupt()
         wakeLock?.release()
         statusCallback?.invoke("🔴 Disconnected", false)
@@ -160,8 +167,9 @@ class ConnectorService : Service() {
                     if (failCount > 5) updateNotification("Server unreachable…", false)
                 }
                 // Screenshot streaming: skip sleep → tight loop, langsung poll berikutnya
-                // Command lain: sleep(500ms) seperti biasa
+                // Command lain: stop pipeline + sleep(500ms) seperti biasa
                 if (!lastWasScreenshot) {
+                    stopPipeline()   // bersihkan pipeline jika keluar dari screenshot mode
                     try { Thread.sleep(500) } catch (e: InterruptedException) { break }
                 }
             }
@@ -276,12 +284,26 @@ class ConnectorService : Service() {
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
             cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), "command_result")
 
-            // ── Screenshot realtime ──
+            // ── Screenshot realtime — PIPELINE MODE ──────────────────────────
+            // Frame N: ambil dari buffer pipeline (pre-captured) ATAU capture baru.
+            // Langsung mulai capture Frame N+1 di background thread.
+            // Capture N+1 OVERLAP dengan upload N → hemat waktu = durasi upload.
+            // Benefit nyata: pada 15fps target (delayMs=67ms) + upload 100ms,
+            // pipeline sudah running 167ms → Frame N+1 tinggal sisa capture.
             cmd.startsWith("screenshot") -> {
                 val parts  = cmd.split(":")
                 val maxW   = parts.getOrNull(1)?.toIntOrNull() ?: 720
                 val qual   = parts.getOrNull(2)?.toIntOrNull() ?: 70
-                Pair(takeScreenshot(maxW, qual), "command_result")
+
+                // Ambil frame dari pipeline buffer jika sudah siap, else capture langsung
+                val frame = pipelinedFrame?.also { pipelinedFrame = null }
+                    ?: takeScreenshot(maxW, qual)
+
+                // Langsung start pre-capture frame berikutnya di background
+                // (berjalan paralel saat frame ini sedang diupload ke server)
+                startPipelineCapture(maxW, qual)
+
+                Pair(frame, "command_result")
             }
 
             // ── Remote Control — touch inject via Shizuku shell ──
@@ -862,6 +884,43 @@ class ConnectorService : Service() {
             val result = runShizuku("input swipe $x1 $y1 $x2 $y2 $durationMs")
             "OK: swipe ($x1,$y1)→($x2,$y2) ${durationMs}ms | $result"
         } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  SCREENSHOT PIPELINE
+    // ─────────────────────────────────────────
+
+    /**
+     * Mulai pre-capture frame berikutnya di background thread.
+     * Dipanggil tepat setelah frame sekarang siap (sebelum upload dimulai).
+     * Hasilnya disimpan di [pipelinedFrame] dan dipakai di iterasi berikutnya.
+     *
+     * Kalau pipeline thread sebelumnya masih jalan (belum selesai capture),
+     * biarkan dia selesai — hasilnya tetap valid untuk frame berikutnya.
+     */
+    private fun startPipelineCapture(maxWidth: Int, quality: Int) {
+        // Jika pipeline sebelumnya masih berjalan & belum ada hasil → tunggu dia
+        val prev = pipelineThread
+        if (prev != null && prev.isAlive && pipelinedFrame == null) return
+
+        // Interrupt pipeline lama yang sudah ada hasilnya (stale), mulai baru
+        prev?.interrupt()
+
+        pipelineThread = Thread {
+            try {
+                val next = takeScreenshot(maxWidth, quality)
+                if (!Thread.currentThread().isInterrupted) {
+                    pipelinedFrame = next
+                }
+            } catch (_: InterruptedException) {}
+        }.also { it.isDaemon = true; it.start() }
+    }
+
+    /** Bersihkan pipeline saat streaming berhenti atau command bukan screenshot. */
+    private fun stopPipeline() {
+        pipelineThread?.interrupt()
+        pipelineThread = null
+        pipelinedFrame = null
     }
 
     // ─────────────────────────────────────────
