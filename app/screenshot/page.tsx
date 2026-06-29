@@ -35,8 +35,9 @@ function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 function ScreenshotContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
 
+  // ── UI state (kecil, aman di-render) ──
   const [live,        setLive]        = useState(false)
-  const [frame,       setFrame]       = useState('')
+  const [hasFrame,    setHasFrame]    = useState(false)   // satu kali flip false→true
   const [frameCount,  setFrameCount]  = useState(0)
   const [lastTs,      setLastTs]      = useState<Date | null>(null)
   const [lastElapsed, setLastElapsed] = useState(0)
@@ -52,14 +53,17 @@ function ScreenshotContent() {
   const [showKbd,     setShowKbd]     = useState(false)
   const textRef = useRef<HTMLInputElement>(null)
 
-  const liveRef     = useRef(false)
-  const sseRef      = useRef<EventSource | null>(null)
-  const fpsCountRef = useRef(0)
-  const fpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const imgRef      = useRef<HTMLImageElement | null>(null)
-  const pendingRef  = useRef(false)
-  const dragRef     = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
-  const dragging    = useRef(false)
+  // ── Refs (tidak trigger re-render) ──
+  const liveRef      = useRef(false)
+  const sseRef       = useRef<EventSource | null>(null)
+  const fpsCountRef  = useRef(0)
+  const fpsTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null)
+  const imgRef       = useRef<HTMLImageElement | null>(null)
+  const frameRef     = useRef('')          // frame data untuk download — BUKAN state
+  const pendingRef   = useRef(false)
+  const dragRef      = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
+  const dragging     = useRef(false)
+  const frameRecvRef = useRef(0)           // timestamp frame terakhir diterima
 
   const q  = QUALITY_OPTIONS[qualityIdx]
   const iv = INTERVAL_OPTIONS[intervalIdx]
@@ -88,7 +92,6 @@ function ScreenshotContent() {
   const getPct = (cx: number, cy: number) => {
     const el = imgRef.current; if (!el) return null
     const r = el.getBoundingClientRect()
-    // gambar pakai object-contain — hitung area gambar aktual dalam container
     const containerW = r.width
     const containerH = r.height
     const naturalRatio = el.naturalWidth / el.naturalHeight
@@ -107,14 +110,14 @@ function ScreenshotContent() {
     return {
       x: Math.max(0, Math.min(1, relX / imgW)),
       y: Math.max(0, Math.min(1, relY / imgH)),
-      px: cx - r.left,   // pixel pos dalam container untuk ripple
+      px: cx - r.left,
       py: cy - r.top,
     }
   }
 
   // ── Pointer handlers ──
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!touchMode || !frame) return
+    if (!touchMode || !hasFrame) return
     const p = getPct(e.clientX, e.clientY); if (!p) return
     dragRef.current = p
     dragging.current = false
@@ -143,7 +146,6 @@ function ScreenshotContent() {
           `Swipe`
         )
       } else {
-        // Tampilkan ripple di posisi tap
         setRipple({ x: p.px, y: p.py })
         setTimeout(() => setRipple(null), 600)
         sendTouch(
@@ -168,6 +170,7 @@ function ScreenshotContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: cmdName }),
       })
+      // Snap pakai SSE — tunggu frame via ref
       await sleep(500)
       for (let i = 0; i < 30; i++) {
         if (i > 0) await sleep(300)
@@ -178,7 +181,10 @@ function ScreenshotContent() {
           .sort((a: { timestamp: string }, b: { timestamp: string }) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
         if (match?.result && !match.result.startsWith('ERROR')) {
-          setFrame(`data:image/jpeg;base64,${match.result.trim()}`)
+          const dataUrl = `data:image/jpeg;base64,${match.result.trim()}`
+          frameRef.current = dataUrl
+          if (imgRef.current) imgRef.current.src = dataUrl
+          setHasFrame(true)
           setLastTs(new Date()); setLastElapsed(Date.now() - sentAt)
           setFrameCount(n => n + 1); setError(''); break
         } else if (match?.result?.startsWith('ERROR')) { setError(match.result); break }
@@ -192,6 +198,7 @@ function ScreenshotContent() {
     if (!selectedId || liveRef.current) return
     liveRef.current = true; pendingRef.current = false
     setLive(true); setFrameCount(0); setFps(0); fpsCountRef.current = 0; setError('')
+    frameRecvRef.current = 0
 
     fpsTimerRef.current = setInterval(() => {
       setFps(fpsCountRef.current); fpsCountRef.current = 0
@@ -199,30 +206,41 @@ function ScreenshotContent() {
 
     const es = new EventSource(`/api/device/stream?deviceId=${selectedId}`)
     sseRef.current = es
-    let frameReceivedAt = 0
 
-    es.onmessage = async (evt) => {
+    es.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data)
         if (msg.type === 'frame' && liveRef.current) {
           const now = Date.now()
-          const elapsed = frameReceivedAt > 0 ? now - frameReceivedAt : 0
-          frameReceivedAt = now
+          const elapsed = frameRecvRef.current > 0 ? now - frameRecvRef.current : 0
+          frameRecvRef.current = now
+
+          // ── ZERO RE-RENDER: update DOM langsung, skip React state ──
           const dataUrl = `data:image/jpeg;base64,${msg.b64}`
           if (imgRef.current) imgRef.current.src = dataUrl
-          setFrame(dataUrl)
+          frameRef.current = dataUrl       // simpan untuk download
+          setHasFrame(true)                // hanya flip sekali false→true
           setLastTs(new Date())
           if (elapsed > 0) setLastElapsed(elapsed)
           setFrameCount(n => n + 1)
           fpsCountRef.current++
           pendingRef.current = false
+
+          // Kirim command berikutnya (non-blocking, tidak pakai await di sini)
           if (liveRef.current) {
-            if (iv.ms > 0) await sleep(iv.ms)
-            if (liveRef.current) { pendingRef.current = true; sendCmd(selectedId) }
+            const doNext = async () => {
+              if (iv.ms > 0) await sleep(iv.ms)
+              if (liveRef.current && !pendingRef.current) {
+                pendingRef.current = true
+                sendCmd(selectedId)
+              }
+            }
+            doNext()
           }
         }
       } catch {}
     }
+
     es.onerror = () => { if (liveRef.current) setError('SSE terputus…') }
     es.onopen  = () => { setError(''); pendingRef.current = true; sendCmd(selectedId) }
   }, [selectedId, iv.ms, sendCmd])
@@ -241,7 +259,6 @@ function ScreenshotContent() {
   const sendText = useCallback(() => {
     const t = text.trim()
     if (!t || !selectedId || !connected) return
-    // Encode spasi → %s agar aman dalam command string
     const encoded = t.replace(/ /g, '%s')
     sendTouch(`input_text:${encoded}`, `Type "${t.length > 20 ? t.slice(0, 20) + '…' : t}"`)
     setText('')
@@ -249,18 +266,16 @@ function ScreenshotContent() {
   }, [text, selectedId, connected, sendTouch])
 
   const downloadFrame = () => {
-    if (!frame) return
+    if (!frameRef.current) return
     const a = document.createElement('a')
-    a.href = frame; a.download = `screenshot_${Date.now()}.jpg`; a.click()
+    a.href = frameRef.current; a.download = `screenshot_${Date.now()}.jpg`; a.click()
   }
 
   const formatTs = (d: Date) =>
     d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
-  const latencyColor = lastElapsed < 500 ? 'text-android-green'
-    : lastElapsed < 1200 ? 'text-android-yellow' : 'text-android-red'
-
-  const hasFrame = !!frame
+  const latencyColor = lastElapsed < 300 ? 'text-android-green'
+    : lastElapsed < 700 ? 'text-android-yellow' : 'text-android-red'
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-android-bg">
@@ -278,7 +293,6 @@ function ScreenshotContent() {
               Live Screen
             </h2>
 
-            {/* Touch mode toggle */}
             <button
               onClick={() => setTouchMode(v => !v)}
               disabled={!hasFrame}
@@ -344,7 +358,6 @@ function ScreenshotContent() {
 
           {/* Row 3: quick buttons + stats */}
           <div className="flex items-center gap-2">
-            {/* Quick touch buttons */}
             <div className="flex items-center gap-1">
               {QUICK_BTNS.map(({ label, icon: Icon, cmd }) => (
                 <button
@@ -357,7 +370,6 @@ function ScreenshotContent() {
                   <Icon size={12} />
                 </button>
               ))}
-              {/* Backspace key */}
               <button
                 onClick={() => sendTouch('input_key:KEYCODE_DEL', 'Backspace')}
                 disabled={!connected}
@@ -370,7 +382,6 @@ function ScreenshotContent() {
 
             <div className="w-px h-4 bg-android-border" />
 
-            {/* Keyboard toggle */}
             <button
               onClick={() => { setShowKbd(v => !v); setTimeout(() => textRef.current?.focus(), 50) }}
               disabled={!connected}
@@ -417,7 +428,7 @@ function ScreenshotContent() {
             </div>
           </div>
 
-          {/* Row 4: keyboard text input (tampil saat showKbd aktif) */}
+          {/* Row 4: keyboard text input */}
           {showKbd && (
             <div className="flex items-center gap-1.5 pt-1 border-t border-android-border/60">
               <Keyboard size={12} className="text-android-blue shrink-0" />
@@ -479,9 +490,9 @@ function ScreenshotContent() {
             </div>
           ) : (
             <>
+              {/* img selalu ada setelah hasFrame=true, src diupdate langsung via ref */}
               <img
                 ref={imgRef}
-                src={frame}
                 alt="Live Screen"
                 draggable={false}
                 className="absolute inset-0 w-full h-full object-contain"
@@ -499,7 +510,7 @@ function ScreenshotContent() {
                 </div>
               )}
 
-              {/* Touch hint overlay (saat touch mode aktif) */}
+              {/* Touch hint */}
               {touchMode && (
                 <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded-full px-2 py-0.5">
                   <Hand size={9} className="text-android-blue" />
@@ -516,12 +527,10 @@ function ScreenshotContent() {
                 </div>
               )}
 
-              {/* Latency badge */}
-              {lastElapsed > 0 && (
-                <div className={`absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 text-xs font-mono ${latencyColor}`}>
-                  {lastElapsed}ms
-                </div>
-              )}
+              {/* Frame counter */}
+              <div className="absolute bottom-2 right-2 text-[10px] font-mono text-white/40">
+                #{frameCount}
+              </div>
             </>
           )}
         </div>
@@ -532,7 +541,7 @@ function ScreenshotContent() {
 
 export default function ScreenshotPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-android-muted text-sm">Loading…</div>}>
+    <Suspense>
       <ScreenshotContent />
     </Suspense>
   )

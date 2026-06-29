@@ -18,6 +18,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
+    // ── FAST PATH: screenshot → broadcast langsung, ZERO DB ops ──────────────
+    // Ini eliminasi 150–600ms lag per frame (skip getDevice + addResult queries)
+    if (
+      typeof command === 'string' && command.startsWith('screenshot:') &&
+      typeof result === 'string' && result.length > 0 && !result.startsWith('ERROR')
+    ) {
+      broadcastFrame(deviceId, result.trim())
+      return NextResponse.json({ ok: true })
+    }
+
+    // ── NORMAL PATH: command lain (non-screenshot) ────────────────────────────
     const device = await getDevice(deviceId)
     if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
 
@@ -35,12 +46,6 @@ export async function POST(req: NextRequest) {
     })
 
     notifyDeviceUpdate(deviceId)
-
-    // Jika hasil adalah screenshot, langsung push frame ke semua SSE subscriber
-    if (typeof command === 'string' && command.startsWith('screenshot:') &&
-        typeof result === 'string' && result.length > 0 && !result.startsWith('ERROR')) {
-      broadcastFrame(deviceId, result.trim())
-    }
 
     return NextResponse.json({ ok: true })
   } catch (e) {
