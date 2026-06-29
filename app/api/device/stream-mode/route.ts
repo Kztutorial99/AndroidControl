@@ -6,19 +6,6 @@ export const dynamic = 'force-dynamic'
 
 const _ready = initSchema()
 
-/**
- * POST /api/device/stream-mode
- * { deviceId, action: 'start'|'stop', cmd?: string, targetFps?: number }
- *
- * targetFps = 0 / undefined → Max speed
- * targetFps = 30 → ~30fps (33ms delay)
- * targetFps = 15 → ~15fps (67ms delay)
- * targetFps = 10 → ~10fps (100ms delay)
- * targetFps = 5  → ~5fps  (200ms delay)
- *
- * OPTIMIZED: First command set via in-memory flag (startStreaming sets pending=true).
- * No DB write needed — Android picks it up on next poll via popStreamCommand().
- */
 export async function POST(req: NextRequest) {
   try {
     await _ready
@@ -34,12 +21,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, streaming: false })
     }
 
-    // action === 'start'
     const command = typeof cmd === 'string' && cmd.startsWith('screenshot:') ? cmd : 'screenshot:480:55'
-    const fps     = typeof targetFps === 'number' && targetFps > 0 ? targetFps : 0
-    const delayMs = fps > 0 ? Math.round(1000 / fps) : 0
+    const fps = typeof targetFps === 'number' ? targetFps : 0
 
-    // startStreaming sets pending=true so Android picks up on next poll (no DB needed)
+    // fps = -1  → ACK mode: server waits for browser ACK before signalling Android
+    // fps = 0   → max speed (no delay)
+    // fps > 0   → fixed fps (delayMs = 1000/fps)
+    let delayMs: number
+    if (fps < 0)      delayMs = -1
+    else if (fps > 0) delayMs = Math.round(1000 / fps)
+    else              delayMs = 0
+
     startStreaming(deviceId, command, delayMs)
 
     return NextResponse.json({ ok: true, streaming: true, cmd: command, delayMs })
