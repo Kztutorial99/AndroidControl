@@ -36,6 +36,7 @@ function TerminalContent() {
   const [sending, setSending] = useState(false)
   const [cmdHistory, setCmdHistory] = useState<string[]>([])
   const [histIdx, setHistIdx] = useState(-1)
+  const clearedAtRef = useRef<number>(0)
   const outputRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -44,7 +45,9 @@ function TerminalContent() {
     try {
       const res = await fetch(`/api/device/result?deviceId=${selectedId}`)
       const data = await res.json()
-      setHistory(data.history ?? [])
+      const all: HistoryEntry[] = data.history ?? []
+      const cutoff = clearedAtRef.current
+      setHistory(cutoff > 0 ? all.filter(h => new Date(h.timestamp).getTime() > cutoff) : all)
     } catch {}
   }, [selectedId])
 
@@ -84,7 +87,10 @@ function TerminalContent() {
     }
   }
 
-  const clearHistory = () => setHistory([])
+  const clearHistory = () => {
+    clearedAtRef.current = Date.now()
+    setHistory([])
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') { sendCommand() }
