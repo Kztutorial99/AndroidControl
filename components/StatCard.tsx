@@ -25,15 +25,19 @@ const barColorMap = {
 
 export default function StatCard({ label, value, sub, icon, color = 'default', bar }: StatCardProps) {
   return (
-    <div className="bg-android-surface border border-android-border rounded-xl p-2.5 md:p-4">
-      <div className="flex items-start justify-between mb-1.5 md:mb-3">
-        <div className={`${colorMap[color]} opacity-80 scale-90 md:scale-100 origin-left`}>{icon}</div>
-        <span className="text-[10px] md:text-xs text-android-muted truncate ml-1">{label}</span>
+    <div className="bg-android-surface border border-android-border rounded-xl p-2 md:p-4">
+      <div className="flex items-center justify-between mb-1 md:mb-3">
+        <div className={`${colorMap[color]} opacity-80`}>{icon}</div>
+        <span className="text-[9px] md:text-xs text-android-muted truncate ml-1 max-w-[60%] md:max-w-none text-right">{label}</span>
       </div>
-      <div className={`text-sm md:text-xl font-bold ${colorMap[color]} leading-tight truncate`}>{value}</div>
-      {sub && <p className="text-[10px] md:text-xs text-android-muted mt-0.5 leading-tight truncate">{sub}</p>}
+      <div className={`text-[13px] md:text-xl font-bold ${colorMap[color]} leading-tight whitespace-nowrap overflow-hidden text-ellipsis`}>{value}</div>
+      {sub && (
+        <p className="text-[8px] md:text-xs text-android-muted mt-0.5 leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
+          {sub}
+        </p>
+      )}
       {bar !== undefined && (
-        <div className="mt-2 md:mt-3">
+        <div className="mt-1.5 md:mt-3">
           <div className="w-full h-1 md:h-1.5 bg-android-border rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${barColorMap[color]}`}
