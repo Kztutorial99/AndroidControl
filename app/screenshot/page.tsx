@@ -170,7 +170,7 @@ function ScreenshotContent() {
   const resetWatchdog = useCallback((devId: string, cmdStr: string) => {
     if (watchdogRef.current) clearTimeout(watchdogRef.current)
     watchdogRef.current = setTimeout(async () => {
-      if (!liveRef.current || !pushModeRef.current) return
+      if (!liveRef.current) return
       // Re-prime server loop
       await apiStreamMode(devId, 'start', cmdStr).catch(() => {})
       resetWatchdog(devId, cmdStr)
