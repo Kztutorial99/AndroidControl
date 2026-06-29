@@ -68,13 +68,18 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await _ready
+    const { searchParams } = new URL(req.url)
+    const deviceId = searchParams.get('deviceId')
     const devices = await getAllDevices()
-    return NextResponse.json({
-      devices: devices.map(d => ({ ...d, connected: isDeviceOnline(d) }))
-    })
+    const mapped = devices.map(d => ({ ...d, connected: isDeviceOnline(d) }))
+    if (deviceId) {
+      const found = mapped.find(d => d.deviceId === deviceId) ?? null
+      return NextResponse.json({ device: found })
+    }
+    return NextResponse.json({ devices: mapped })
   } catch (e) {
     console.error('heartbeat GET error:', e)
     return NextResponse.json({ devices: [] })

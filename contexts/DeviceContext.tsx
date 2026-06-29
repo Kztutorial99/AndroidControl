@@ -48,7 +48,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchDevices()
-    const t = setInterval(fetchDevices, 1000)
+    const t = setInterval(fetchDevices, 3000)
     return () => clearInterval(t)
   }, [fetchDevices])
 

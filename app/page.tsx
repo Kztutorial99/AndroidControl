@@ -90,21 +90,24 @@ export default function Dashboard() {
   const fetchDevice = useCallback(async () => {
     if (!selectedId) return
     try {
-      const res = await fetch('/api/device/heartbeat')
+      const res = await fetch(`/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}`)
       const data = await res.json()
-      const found = (data.devices ?? []).find((d: DeviceEntry) => d.deviceId === selectedId)
-      if (found) setDevice(found)
+      const found = data.device ?? null
+      if (found) {
+        setDevice(found)
+        setLoading(false)
+      }
     } catch {}
   }, [selectedId])
 
   useEffect(() => {
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    if (!selectedId) return
+    if (!selectedId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     fetchDevice()
-    const t = setInterval(fetchDevice, 1000)
+    const t = setInterval(fetchDevice, 3000)
     return () => clearInterval(t)
   }, [selectedId, fetchDevice])
 
