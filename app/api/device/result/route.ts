@@ -19,14 +19,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
-    // ── FAST PATH: screenshot ─────────────────────────────────────────────────
     if (
       typeof command === 'string' && command.startsWith('screenshot:') &&
       typeof result  === 'string' && result.length > 0 && !result.startsWith('ERROR')
     ) {
       if (isStreaming(deviceId)) {
         const delayMs = getStreamDelay(deviceId)
-        // PRE-PIPELINE: set pending BEFORE SSE broadcast.
         if (delayMs <= 0) {
           setStreamPending(deviceId)
           broadcastFrame(deviceId, result.trim())
@@ -35,26 +33,16 @@ export async function POST(req: NextRequest) {
           setTimeout(() => setStreamPending(deviceId), delayMs)
         }
       } else {
-        // NOT streaming: broadcast via SSE AND store in history
-        // so control/page.tsx polling (grabFrame) can retrieve the result.
         broadcastFrame(deviceId, result.trim())
-        await addResult(deviceId, {
-          id: commandId ?? uuidv4(),
-          command: command,
-          result: result.trim(),
-          timestamp: new Date().toISOString(),
-          exitCode: exitCode ?? 0,
-        })
       }
       return NextResponse.json({ ok: true })
     }
 
-    // ── NORMAL PATH: command lain ─────────────────────────────────────────────
     const device = await getDevice(deviceId)
     if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
 
     if (type === 'file_listing') {
-      await setFileListing(deviceId, data?.path ?? '/', data?.entries ?? [])
+      await setFileListing(deviceId, data?.path ?? '/\, data?.entries ?? [])
       return NextResponse.json({ ok: true })
     }
 
