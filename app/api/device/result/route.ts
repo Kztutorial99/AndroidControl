@@ -27,8 +27,6 @@ export async function POST(req: NextRequest) {
       if (isStreaming(deviceId)) {
         const delayMs = getStreamDelay(deviceId)
         // PRE-PIPELINE: set pending BEFORE SSE broadcast.
-        // Android already waiting on long-poll gets woken up immediately,
-        // and starts next capture while browser is still receiving this frame.
         if (delayMs <= 0) {
           setStreamPending(deviceId)
           broadcastFrame(deviceId, result.trim())
@@ -37,9 +35,17 @@ export async function POST(req: NextRequest) {
           setTimeout(() => setStreamPending(deviceId), delayMs)
         }
       } else {
+        // NOT streaming: broadcast via SSE AND store in history
+        // so control/page.tsx polling (grabFrame) can retrieve the result.
         broadcastFrame(deviceId, result.trim())
+        await addResult(deviceId, {
+          id: commandId ?? uuidv4(),
+          command: command,
+          result: result.trim(),
+          timestamp: new Date().toISOString(),
+          exitCode: exitCode ?? 0,
+        })
       }
-
       return NextResponse.json({ ok: true })
     }
 
