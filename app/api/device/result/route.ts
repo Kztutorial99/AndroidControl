@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addResult, getCommandHistory, setFileListing, getDevice } from '@/lib/store'
+import { addResult, getCommandHistory, setFileListing, getDevice, enqueueCommand } from '@/lib/store'
 import { initSchema } from '@/lib/db'
 import { notifyDeviceUpdate, broadcastFrame } from '@/lib/sse'
+import { isStreaming, getStreamCmd } from '@/lib/stream-registry'
 import { v4 as uuidv4 } from 'uuid'
 
 export const dynamic = 'force-dynamic'
@@ -18,13 +19,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
-    // ── FAST PATH: screenshot → broadcast langsung, ZERO DB ops ──────────────
-    // Ini eliminasi 150–600ms lag per frame (skip getDevice + addResult queries)
+    // ── FAST PATH: screenshot → broadcast langsung, ZERO DB read ops ─────────
     if (
       typeof command === 'string' && command.startsWith('screenshot:') &&
       typeof result === 'string' && result.length > 0 && !result.startsWith('ERROR')
     ) {
+      // 1. Broadcast frame ke semua SSE subscriber (in-memory, instant)
       broadcastFrame(deviceId, result.trim())
+
+      // 2. Push Streaming: server langsung re-enqueue command berikutnya
+      //    tanpa browser ikut kirim → hilangkan browser→server round-trip
+      const streamCmd = getStreamCmd(deviceId)
+      if (streamCmd && isStreaming(deviceId)) {
+        // Fire-and-forget: jangan await, return 200 sekarang
+        enqueueCommand(deviceId, streamCmd).catch(() => {})
+      }
+
       return NextResponse.json({ ok: true })
     }
 

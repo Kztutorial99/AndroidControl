@@ -6,7 +6,7 @@ import {
   Monitor, Play, Square, Download, RefreshCw, Circle,
   Zap, Clock, Camera, AlertTriangle, ChevronLeft, Home,
   LayoutGrid, ChevronUp, ChevronDown, MousePointer2, Hand,
-  Keyboard, Send, Delete, X,
+  Keyboard, Send, Delete, X, Radio,
 } from 'lucide-react'
 
 const QUALITY_OPTIONS = [
@@ -32,12 +32,22 @@ const QUICK_BTNS = [
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
+/** Kirim ke /api/device/stream-mode */
+async function apiStreamMode(deviceId: string, action: 'start' | 'stop', cmd?: string) {
+  await fetch('/api/device/stream-mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId, action, cmd }),
+  })
+}
+
 function ScreenshotContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
 
-  // ── UI state (kecil, aman di-render) ──
+  // ── UI state ──
   const [live,        setLive]        = useState(false)
-  const [hasFrame,    setHasFrame]    = useState(false)   // satu kali flip false→true
+  const [pushMode,    setPushMode]    = useState(false)   // push streaming aktif?
+  const [hasFrame,    setHasFrame]    = useState(false)
   const [frameCount,  setFrameCount]  = useState(0)
   const [lastTs,      setLastTs]      = useState<Date | null>(null)
   const [lastElapsed, setLastElapsed] = useState(0)
@@ -54,21 +64,23 @@ function ScreenshotContent() {
   const textRef = useRef<HTMLInputElement>(null)
 
   // ── Refs (tidak trigger re-render) ──
-  const liveRef      = useRef(false)
-  const sseRef       = useRef<EventSource | null>(null)
-  const fpsCountRef  = useRef(0)
-  const fpsTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null)
-  const imgRef       = useRef<HTMLImageElement | null>(null)
-  const frameRef     = useRef('')          // frame data untuk download — BUKAN state
-  const pendingRef   = useRef(false)
-  const dragRef      = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
-  const dragging     = useRef(false)
-  const frameRecvRef = useRef(0)           // timestamp frame terakhir diterima
+  const liveRef        = useRef(false)
+  const pushModeRef    = useRef(false)
+  const sseRef         = useRef<EventSource | null>(null)
+  const fpsCountRef    = useRef(0)
+  const fpsTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
+  const watchdogRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const imgRef         = useRef<HTMLImageElement | null>(null)
+  const frameRef       = useRef('')
+  const pendingRef     = useRef(false)
+  const dragRef        = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
+  const dragging       = useRef(false)
+  const frameRecvRef   = useRef(0)
 
   const q  = QUALITY_OPTIONS[qualityIdx]
   const iv = INTERVAL_OPTIONS[intervalIdx]
 
-  // ── Kirim screenshot command ──
+  // ── Kirim screenshot command (legacy mode) ──
   const sendCmd = useCallback(async (devId: string) => {
     await fetch('/api/device/command', {
       method: 'POST',
@@ -77,7 +89,7 @@ function ScreenshotContent() {
     })
   }, [q.maxW, q.quality])
 
-  // ── Kirim touch/key command (fire & forget) ──
+  // ── Kirim touch/key command ──
   const sendTouch = useCallback((cmd: string, label: string) => {
     if (!selectedId || !connected) return
     setLastAct(label)
@@ -92,26 +104,21 @@ function ScreenshotContent() {
   const getPct = (cx: number, cy: number) => {
     const el = imgRef.current; if (!el) return null
     const r = el.getBoundingClientRect()
-    const containerW = r.width
-    const containerH = r.height
+    const containerW = r.width; const containerH = r.height
     const naturalRatio = el.naturalWidth / el.naturalHeight
     const containerRatio = containerW / containerH
     let imgW: number, imgH: number, imgX: number, imgY: number
     if (naturalRatio > containerRatio) {
-      imgW = containerW; imgH = containerW / naturalRatio
-      imgX = 0; imgY = (containerH - imgH) / 2
+      imgW = containerW; imgH = containerW / naturalRatio; imgX = 0; imgY = (containerH - imgH) / 2
     } else {
-      imgH = containerH; imgW = containerH * naturalRatio
-      imgX = (containerW - imgW) / 2; imgY = 0
+      imgH = containerH; imgW = containerH * naturalRatio; imgX = (containerW - imgW) / 2; imgY = 0
     }
-    const relX = cx - r.left - imgX
-    const relY = cy - r.top - imgY
+    const relX = cx - r.left - imgX; const relY = cy - r.top - imgY
     if (relX < 0 || relY < 0 || relX > imgW || relY > imgH) return null
     return {
       x: Math.max(0, Math.min(1, relX / imgW)),
       y: Math.max(0, Math.min(1, relY / imgH)),
-      px: cx - r.left,
-      py: cy - r.top,
+      px: cx - r.left, py: cy - r.top,
     }
   }
 
@@ -119,12 +126,10 @@ function ScreenshotContent() {
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!touchMode || !hasFrame) return
     const p = getPct(e.clientX, e.clientY); if (!p) return
-    dragRef.current = p
-    dragging.current = false
+    dragRef.current = p; dragging.current = false
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     e.preventDefault()
   }
-
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) return
     const p = getPct(e.clientX, e.clientY); if (!p) return
@@ -132,7 +137,6 @@ function ScreenshotContent() {
       dragging.current = true
     e.preventDefault()
   }
-
   const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) return
     const p = getPct(e.clientX, e.clientY)
@@ -140,25 +144,16 @@ function ScreenshotContent() {
       if (dragging.current) {
         const { x: x1, y: y1 } = dragRef.current
         const dist = Math.hypot(p.x - x1, p.y - y1)
-        const dur  = Math.round(dist * 700 + 150)
-        sendTouch(
-          `input_swipe_pct:${x1.toFixed(4)}:${y1.toFixed(4)}:${p.x.toFixed(4)}:${p.y.toFixed(4)}:${dur}`,
-          `Swipe`
-        )
+        sendTouch(`input_swipe_pct:${x1.toFixed(4)}:${y1.toFixed(4)}:${p.x.toFixed(4)}:${p.y.toFixed(4)}:${Math.round(dist * 700 + 150)}`, 'Swipe')
       } else {
-        setRipple({ x: p.px, y: p.py })
-        setTimeout(() => setRipple(null), 600)
-        sendTouch(
-          `input_tap_pct:${p.x.toFixed(4)}:${p.y.toFixed(4)}`,
-          `Tap ${Math.round(p.x * 100)}%,${Math.round(p.y * 100)}%`
-        )
+        setRipple({ x: p.px, y: p.py }); setTimeout(() => setRipple(null), 600)
+        sendTouch(`input_tap_pct:${p.x.toFixed(4)}:${p.y.toFixed(4)}`, `Tap ${Math.round(p.x * 100)}%,${Math.round(p.y * 100)}%`)
       }
     }
-    dragRef.current = null
-    dragging.current = false
+    dragRef.current = null; dragging.current = false
   }
 
-  // ── Capture tunggal (Snap) ──
+  // ── Capture tunggal ──
   const captureSingle = useCallback(async () => {
     if (!selectedId || capturing) return
     setCapturing(true); setError('')
@@ -166,11 +161,9 @@ function ScreenshotContent() {
     const sentAt  = Date.now()
     try {
       await fetch('/api/device/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: cmdName }),
       })
-      // Snap pakai SSE — tunggu frame via ref
       await sleep(500)
       for (let i = 0; i < 30; i++) {
         if (i > 0) await sleep(300)
@@ -184,8 +177,7 @@ function ScreenshotContent() {
           const dataUrl = `data:image/jpeg;base64,${match.result.trim()}`
           frameRef.current = dataUrl
           if (imgRef.current) imgRef.current.src = dataUrl
-          setHasFrame(true)
-          setLastTs(new Date()); setLastElapsed(Date.now() - sentAt)
+          setHasFrame(true); setLastTs(new Date()); setLastElapsed(Date.now() - sentAt)
           setFrameCount(n => n + 1); setError(''); break
         } else if (match?.result?.startsWith('ERROR')) { setError(match.result); break }
       }
@@ -193,18 +185,20 @@ function ScreenshotContent() {
     finally { setCapturing(false) }
   }, [selectedId, capturing, q.maxW, q.quality])
 
-  // ── Live via SSE ──
-  const startLive = useCallback(() => {
-    if (!selectedId || liveRef.current) return
-    liveRef.current = true; pendingRef.current = false
-    setLive(true); setFrameCount(0); setFps(0); fpsCountRef.current = 0; setError('')
-    frameRecvRef.current = 0
+  // ── Watchdog: restart server loop jika push mode tapi frame berhenti >3s ──
+  const resetWatchdog = useCallback((devId: string, cmdStr: string) => {
+    if (watchdogRef.current) clearTimeout(watchdogRef.current)
+    watchdogRef.current = setTimeout(async () => {
+      if (!liveRef.current || !pushModeRef.current) return
+      // Re-prime server loop
+      await apiStreamMode(devId, 'start', cmdStr).catch(() => {})
+      resetWatchdog(devId, cmdStr)
+    }, 3000)
+  }, [])
 
-    fpsTimerRef.current = setInterval(() => {
-      setFps(fpsCountRef.current); fpsCountRef.current = 0
-    }, 1000)
-
-    const es = new EventSource(`/api/device/stream?deviceId=${selectedId}`)
+  // ── Buka SSE dan setup onmessage handler ──
+  const openSSE = useCallback((devId: string, isPush: boolean, cmdStr: string) => {
+    const es = new EventSource(`/api/device/stream?deviceId=${devId}`)
     sseRef.current = es
 
     es.onmessage = (evt) => {
@@ -215,24 +209,26 @@ function ScreenshotContent() {
           const elapsed = frameRecvRef.current > 0 ? now - frameRecvRef.current : 0
           frameRecvRef.current = now
 
-          // ── ZERO RE-RENDER: update DOM langsung, skip React state ──
           const dataUrl = `data:image/jpeg;base64,${msg.b64}`
           if (imgRef.current) imgRef.current.src = dataUrl
-          frameRef.current = dataUrl       // simpan untuk download
-          setHasFrame(true)                // hanya flip sekali false→true
+          frameRef.current = dataUrl
+          setHasFrame(true)
           setLastTs(new Date())
           if (elapsed > 0) setLastElapsed(elapsed)
           setFrameCount(n => n + 1)
           fpsCountRef.current++
           pendingRef.current = false
 
-          // Kirim command berikutnya (non-blocking, tidak pakai await di sini)
-          if (liveRef.current) {
+          if (pushModeRef.current) {
+            // Push mode: server sudah auto re-enqueue, reset watchdog saja
+            resetWatchdog(devId, cmdStr)
+          } else {
+            // Legacy mode: browser kirim command berikutnya
             const doNext = async () => {
               if (iv.ms > 0) await sleep(iv.ms)
-              if (liveRef.current && !pendingRef.current) {
+              if (liveRef.current && !pendingRef.current && !pushModeRef.current) {
                 pendingRef.current = true
-                sendCmd(selectedId)
+                sendCmd(devId)
               }
             }
             doNext()
@@ -242,21 +238,69 @@ function ScreenshotContent() {
     }
 
     es.onerror = () => { if (liveRef.current) setError('SSE terputus…') }
-    es.onopen  = () => { setError(''); pendingRef.current = true; sendCmd(selectedId) }
-  }, [selectedId, iv.ms, sendCmd])
 
+    if (isPush) {
+      es.onopen = () => {
+        setError('')
+        // Server sudah enqueue command pertama via apiStreamMode, jangan dobel
+      }
+    } else {
+      es.onopen = () => {
+        setError(''); pendingRef.current = true; sendCmd(devId)
+      }
+    }
+  }, [iv.ms, sendCmd, resetWatchdog])
+
+  // ── Start Push Streaming (mode baru, server loop) ──
+  const startPush = useCallback(async () => {
+    if (!selectedId || liveRef.current) return
+    liveRef.current = true; pushModeRef.current = true; pendingRef.current = false
+    setLive(true); setPushMode(true); setFrameCount(0); setFps(0)
+    fpsCountRef.current = 0; setError(''); frameRecvRef.current = 0
+
+    fpsTimerRef.current = setInterval(() => {
+      setFps(fpsCountRef.current); fpsCountRef.current = 0
+    }, 1000)
+
+    const cmdStr = `screenshot:${q.maxW}:${q.quality}`
+    // Daftarkan server loop + enqueue command pertama
+    await apiStreamMode(selectedId, 'start', cmdStr).catch(() => {})
+
+    openSSE(selectedId, true, cmdStr)
+    resetWatchdog(selectedId, cmdStr)
+  }, [selectedId, q.maxW, q.quality, openSSE, resetWatchdog])
+
+  // ── Start Legacy Live (browser kirim command tiap frame) ──
+  const startLive = useCallback(() => {
+    if (!selectedId || liveRef.current) return
+    liveRef.current = true; pushModeRef.current = false; pendingRef.current = false
+    setLive(true); setPushMode(false); setFrameCount(0); setFps(0)
+    fpsCountRef.current = 0; setError(''); frameRecvRef.current = 0
+
+    fpsTimerRef.current = setInterval(() => {
+      setFps(fpsCountRef.current); fpsCountRef.current = 0
+    }, 1000)
+
+    openSSE(selectedId, false, `screenshot:${q.maxW}:${q.quality}`)
+  }, [selectedId, q.maxW, q.quality, openSSE])
+
+  // ── Stop semua ──
   const stopLive = useCallback(() => {
-    liveRef.current = false; pendingRef.current = false; setLive(false)
+    const devId = selectedId
+    liveRef.current = false; pushModeRef.current = false; pendingRef.current = false
+    setLive(false); setPushMode(false)
     sseRef.current?.close(); sseRef.current = null
     if (fpsTimerRef.current) { clearInterval(fpsTimerRef.current); fpsTimerRef.current = null }
+    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null }
     setFps(0)
-  }, [])
+    // Bersihkan server loop
+    if (devId) apiStreamMode(devId, 'stop').catch(() => {})
+  }, [selectedId])
 
   useEffect(() => { stopLive() }, [selectedId])       // eslint-disable-line
   useEffect(() => () => { stopLive() }, [])            // eslint-disable-line
 
-  // Race condition fix: jika hasFrame flip true tapi imgRef belum siap saat frame pertama tiba,
-  // frameRef.current sudah menyimpan data → set src sekarang setelah img mount
+  // Race condition fix: set src dari frameRef jika imgRef null saat frame pertama
   useEffect(() => {
     if (hasFrame && imgRef.current && frameRef.current && !imgRef.current.src) {
       imgRef.current.src = frameRef.current
@@ -267,10 +311,8 @@ function ScreenshotContent() {
   const sendText = useCallback(() => {
     const t = text.trim()
     if (!t || !selectedId || !connected) return
-    const encoded = t.replace(/ /g, '%s')
-    sendTouch(`input_text:${encoded}`, `Type "${t.length > 20 ? t.slice(0, 20) + '…' : t}"`)
-    setText('')
-    textRef.current?.focus()
+    sendTouch(`input_text:${t.replace(/ /g, '%s')}`, `Type "${t.length > 20 ? t.slice(0, 20) + '…' : t}"`)
+    setText(''); textRef.current?.focus()
   }, [text, selectedId, connected, sendTouch])
 
   const downloadFrame = () => {
@@ -300,21 +342,13 @@ function ScreenshotContent() {
               <Monitor size={15} className="text-android-blue" />
               Live Screen
             </h2>
-
             <button
-              onClick={() => setTouchMode(v => !v)}
-              disabled={!hasFrame}
-              title={touchMode ? 'Touch aktif — klik untuk nonaktifkan' : 'Touch nonaktif — klik untuk aktifkan'}
-              className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded border transition-colors disabled:opacity-30 ${
-                touchMode
-                  ? 'bg-android-blue/20 border-android-blue/50 text-android-blue'
-                  : 'border-android-border text-android-muted'
-              }`}
+              onClick={() => setTouchMode(v => !v)} disabled={!hasFrame}
+              className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded border transition-colors disabled:opacity-30 ${touchMode ? 'bg-android-blue/20 border-android-blue/50 text-android-blue' : 'border-android-border text-android-muted'}`}
             >
               {touchMode ? <Hand size={11} /> : <MousePointer2 size={11} />}
               {touchMode ? 'Touch' : 'View'}
             </button>
-
             <div className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${connected ? 'text-android-green border-android-green/30 bg-android-green/10' : 'text-android-red border-android-red/30 bg-android-red/10'}`}>
               <Circle size={6} className={connected ? 'fill-android-green' : 'fill-android-red'} />
               {connected ? 'Online' : 'Offline'}
@@ -332,15 +366,18 @@ function ScreenshotContent() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-android-muted">IV:</span>
-              {INTERVAL_OPTIONS.map((opt, i) => (
-                <button key={i} onClick={() => setIntervalIdx(i)} disabled={live}
-                  className={`px-1.5 py-0.5 text-xs rounded border transition-colors disabled:opacity-40 ${intervalIdx === i ? 'bg-android-blue/20 border-android-blue/50 text-android-blue' : 'border-android-border text-android-muted'}`}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            {/* IV hanya untuk legacy mode */}
+            {!pushMode && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-android-muted">IV:</span>
+                {INTERVAL_OPTIONS.map((opt, i) => (
+                  <button key={i} onClick={() => setIntervalIdx(i)} disabled={live}
+                    className={`px-1.5 py-0.5 text-xs rounded border transition-colors disabled:opacity-40 ${intervalIdx === i ? 'bg-android-blue/20 border-android-blue/50 text-android-blue' : 'border-android-border text-android-muted'}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex-1" />
             <button onClick={downloadFrame} disabled={!hasFrame}
               className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-android-border text-android-muted hover:text-android-blue disabled:opacity-30 transition-colors">
@@ -351,11 +388,21 @@ function ScreenshotContent() {
               {capturing ? <RefreshCw size={11} className="animate-spin" /> : <Camera size={11} />}
               Snap
             </button>
+
+            {/* ── Tombol Push / Live / Stop ── */}
             {!live ? (
-              <button onClick={startLive} disabled={!connected}
-                className="flex items-center gap-1 px-3 py-0.5 text-xs rounded bg-android-blue text-white font-semibold hover:bg-android-blue/80 disabled:opacity-30 transition-colors">
-                <Play size={11} className="fill-white" /> Live
-              </button>
+              <>
+                {/* Push Streaming — server loop, tercepat */}
+                <button onClick={startPush} disabled={!connected}
+                  className="flex items-center gap-1 px-3 py-0.5 text-xs rounded bg-android-green text-black font-bold hover:opacity-90 disabled:opacity-30 transition-colors">
+                  <Radio size={11} /> Push
+                </button>
+                {/* Legacy Live — browser kirim command tiap frame */}
+                <button onClick={startLive} disabled={!connected}
+                  className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-android-blue/50 text-android-blue hover:bg-android-blue/10 disabled:opacity-30 transition-colors">
+                  <Play size={11} className="fill-current" /> Live
+                </button>
+              </>
             ) : (
               <button onClick={stopLive}
                 className="flex items-center gap-1 px-3 py-0.5 text-xs rounded bg-android-red text-white font-semibold hover:bg-android-red/80 transition-colors animate-pulse">
@@ -368,36 +415,22 @@ function ScreenshotContent() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
               {QUICK_BTNS.map(({ label, icon: Icon, cmd }) => (
-                <button
-                  key={cmd}
-                  onClick={() => sendTouch(cmd, label)}
-                  disabled={!connected}
-                  title={label}
-                  className="flex items-center justify-center w-7 h-6 text-xs rounded border border-android-border text-android-muted hover:text-white hover:border-android-blue/40 hover:bg-android-blue/10 disabled:opacity-30 transition-colors"
-                >
+                <button key={cmd} onClick={() => sendTouch(cmd, label)} disabled={!connected} title={label}
+                  className="flex items-center justify-center w-7 h-6 text-xs rounded border border-android-border text-android-muted hover:text-white hover:border-android-blue/40 hover:bg-android-blue/10 disabled:opacity-30 transition-colors">
                   <Icon size={12} />
                 </button>
               ))}
-              <button
-                onClick={() => sendTouch('input_key:KEYCODE_DEL', 'Backspace')}
-                disabled={!connected}
-                title="Backspace"
-                className="flex items-center justify-center w-7 h-6 text-xs rounded border border-android-border text-android-muted hover:text-android-red hover:border-android-red/40 hover:bg-android-red/10 disabled:opacity-30 transition-colors"
-              >
+              <button onClick={() => sendTouch('input_key:KEYCODE_DEL', 'Backspace')} disabled={!connected} title="Backspace"
+                className="flex items-center justify-center w-7 h-6 text-xs rounded border border-android-border text-android-muted hover:text-android-red hover:border-android-red/40 hover:bg-android-red/10 disabled:opacity-30 transition-colors">
                 <Delete size={12} />
               </button>
             </div>
 
             <div className="w-px h-4 bg-android-border" />
 
-            <button
-              onClick={() => { setShowKbd(v => !v); setTimeout(() => textRef.current?.focus(), 50) }}
+            <button onClick={() => { setShowKbd(v => !v); setTimeout(() => textRef.current?.focus(), 50) }}
               disabled={!connected}
-              title="Input teks ke device"
-              className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded border transition-colors disabled:opacity-30 ${
-                showKbd ? 'bg-android-blue/20 border-android-blue/50 text-android-blue' : 'border-android-border text-android-muted hover:border-android-blue/30'
-              }`}
-            >
+              className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded border transition-colors disabled:opacity-30 ${showKbd ? 'bg-android-blue/20 border-android-blue/50 text-android-blue' : 'border-android-border text-android-muted hover:border-android-blue/30'}`}>
               <Keyboard size={11} />
               <span className="hidden sm:inline">Ketik</span>
             </button>
@@ -406,9 +439,15 @@ function ScreenshotContent() {
 
             {/* Stats */}
             <div className="flex items-center gap-2 text-xs flex-1 min-w-0">
-              {live && (
+              {live && pushMode && (
                 <span className="flex items-center gap-1 text-android-green animate-pulse shrink-0">
-                  <Zap size={10} className="fill-android-green" />
+                  <Radio size={10} />
+                  PUSH{fps > 0 && <span className="font-mono ml-0.5">{fps}fps</span>}
+                </span>
+              )}
+              {live && !pushMode && (
+                <span className="flex items-center gap-1 text-android-blue shrink-0">
+                  <Zap size={10} className="fill-current" />
                   LIVE{fps > 0 && <span className="font-mono ml-0.5">{fps}fps</span>}
                 </span>
               )}
@@ -436,14 +475,11 @@ function ScreenshotContent() {
             </div>
           </div>
 
-          {/* Row 4: keyboard text input */}
+          {/* Row 4: keyboard input */}
           {showKbd && (
             <div className="flex items-center gap-1.5 pt-1 border-t border-android-border/60">
               <Keyboard size={12} className="text-android-blue shrink-0" />
-              <input
-                ref={textRef}
-                type="text"
-                value={text}
+              <input ref={textRef} type="text" value={text}
                 onChange={e => setText(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') { e.preventDefault(); sendText() }
@@ -454,19 +490,13 @@ function ScreenshotContent() {
                 className="flex-1 bg-android-bg border border-android-border rounded-lg px-2.5 py-1 text-xs text-white placeholder-android-muted/60 focus:outline-none focus:border-android-blue/60 focus:ring-1 focus:ring-android-blue/30 disabled:opacity-40 transition-colors"
               />
               {text && (
-                <button
-                  onClick={() => { setText(''); textRef.current?.focus() }}
-                  className="p-1 rounded text-android-muted hover:text-white transition-colors"
-                  title="Bersihkan"
-                >
+                <button onClick={() => { setText(''); textRef.current?.focus() }}
+                  className="p-1 rounded text-android-muted hover:text-white transition-colors">
                   <X size={12} />
                 </button>
               )}
-              <button
-                onClick={sendText}
-                disabled={!text.trim() || !connected}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-android-blue text-white font-semibold hover:bg-android-blue/80 disabled:opacity-30 transition-colors"
-              >
+              <button onClick={sendText} disabled={!text.trim() || !connected}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-android-blue text-white font-semibold hover:bg-android-blue/80 disabled:opacity-30 transition-colors">
                 <Send size={11} /> Kirim
               </button>
             </div>
@@ -476,10 +506,7 @@ function ScreenshotContent() {
         {/* ── Viewport ── */}
         <div
           className={`flex-1 bg-black relative overflow-hidden ${touchMode && hasFrame ? 'cursor-crosshair' : ''}`}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          onPointerCancel={onUp}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
         >
           {!connected ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
@@ -488,7 +515,7 @@ function ScreenshotContent() {
             </div>
           ) : (
             <>
-              {/* img SELALU ada di DOM saat connected agar imgRef valid sejak frame pertama */}
+              {/* img selalu di DOM saat connected — imgRef valid sejak frame pertama */}
               <img
                 ref={imgRef}
                 alt="Live Screen"
@@ -500,43 +527,44 @@ function ScreenshotContent() {
                 }}
               />
 
-              {/* Placeholder saat belum ada frame */}
+              {/* Placeholder */}
               {!hasFrame && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                   <Camera size={44} className="text-android-border" />
                   <p className="text-android-muted text-sm text-center px-4">
-                    Tekan <span className="text-white font-semibold">Live</span> untuk streaming realtime
+                    Tekan <span className="text-android-green font-bold">Push</span> untuk streaming tercepat
+                    <br />
+                    atau <span className="text-android-blue font-semibold">Live</span> untuk mode manual
                     <br />
                     atau <span className="text-android-green font-semibold">Snap</span> untuk satu frame
                   </p>
-                  <p className="text-android-muted text-xs opacity-60">Fast + Max = FPS tertinggi</p>
+                  <p className="text-android-muted text-xs opacity-60">Push mode = server loop, latency lebih rendah</p>
                 </div>
               )}
 
-              {/* Ripple tap effect */}
+              {/* Ripple */}
               {ripple && (
-                <div
-                  className="absolute pointer-events-none"
-                  style={{ left: ripple.x - 20, top: ripple.y - 20, width: 40, height: 40 }}
-                >
+                <div className="absolute pointer-events-none" style={{ left: ripple.x - 20, top: ripple.y - 20, width: 40, height: 40 }}>
                   <div className="w-full h-full rounded-full border-2 border-android-blue animate-ping opacity-75" />
                   <div className="absolute inset-0 m-auto w-3 h-3 rounded-full bg-android-blue/60" style={{ left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }} />
                 </div>
               )}
 
               {/* Touch hint */}
-              {touchMode && (
+              {touchMode && hasFrame && (
                 <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded-full px-2 py-0.5">
                   <Hand size={9} className="text-android-blue" />
                   <span className="text-[9px] text-android-blue font-medium">Touch</span>
                 </div>
               )}
 
-              {/* LIVE badge */}
+              {/* Live/Push badge */}
               {live && (
-                <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm rounded-full px-2.5 py-1">
-                  <span className="w-2 h-2 rounded-full bg-android-red animate-pulse" />
-                  <span className="text-white text-xs font-mono">LIVE</span>
+                <div className={`absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm rounded-full px-2.5 py-1`}>
+                  {pushMode
+                    ? <><Radio size={10} className="text-android-green animate-pulse" /><span className="text-android-green text-xs font-bold">PUSH</span></>
+                    : <><span className="w-2 h-2 rounded-full bg-android-red animate-pulse" /><span className="text-white text-xs font-mono">LIVE</span></>
+                  }
                   {fps > 0 && <span className="text-android-muted text-xs font-mono">{fps}fps</span>}
                 </div>
               )}
