@@ -24,3 +24,9 @@ id = "KU_YHJHO1WdkAmY_ZSot2"
 uri = "file://attached_assets/image_search/icon_4.png"
 type = "image"
 title = "4. System Gear Config"
+
+[[outputs]]
+id = "uPfHaRLIUBeaa1j81zj4i"
+uri = "file://attached_assets/image_search/icon_full_2.png"
+type = "image"
+title = "Icon System Services — terpasang di app"
