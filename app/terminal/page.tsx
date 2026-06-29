@@ -1,8 +1,8 @@
 'use client'
 import { Suspense } from 'react'
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import { Send, Trash2, Circle } from 'lucide-react'
 
 interface HistoryEntry {
@@ -11,12 +11,6 @@ interface HistoryEntry {
   result: string
   timestamp: string
   exitCode?: number
-}
-
-interface DeviceItem {
-  deviceId: string
-  deviceName: string
-  connected: boolean
 }
 
 const QUICK_CMDS = [
@@ -36,9 +30,7 @@ const KNOWN_PREFIXES = [
 ]
 
 function TerminalContent() {
-  const searchParams = useSearchParams()
-  const [devices, setDevices] = useState<DeviceItem[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -47,32 +39,20 @@ function TerminalContent() {
   const outputRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
-
-  const fetchAll = useCallback(async () => {
+  const fetchHistory = useCallback(async () => {
+    if (!selectedId) return
     try {
-      const devRes = await fetch('/api/devices')
-      const devData = await devRes.json()
-      const list: DeviceItem[] = devData.devices ?? []
-      setDevices(list)
-      if (!selectedId && list.length > 0) {
-        const online = list.find(d => d.connected) ?? list[0]
-        setSelectedId(online.deviceId)
-        return
-      }
-      if (selectedId) {
-        const histRes = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const histData = await histRes.json()
-        setHistory(histData.history ?? [])
-      }
+      const res = await fetch(`/api/device/result?deviceId=${selectedId}`)
+      const data = await res.json()
+      setHistory(data.history ?? [])
     } catch {}
   }, [selectedId])
 
   useEffect(() => {
-    fetchAll()
-    const iv = setInterval(fetchAll, 2500)
+    fetchHistory()
+    const iv = setInterval(fetchHistory, 2500)
     return () => clearInterval(iv)
-  }, [fetchAll])
+  }, [fetchHistory])
 
   useEffect(() => {
     if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight

@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import StatCard from '@/components/StatCard'
+import { useDevice } from '@/contexts/DeviceContext'
 import {
   Battery, BatteryCharging, HardDrive, Wifi,
   Clock, Smartphone, EyeOff, Eye, Bell, BellOff,
@@ -76,28 +77,13 @@ interface DeviceEntry {
 }
 
 export default function Dashboard() {
-  const [devices, setDevices] = useState<DeviceListItem[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const { devices, selectedId, setSelectedId } = useDevice()
   const [device, setDevice] = useState<DeviceEntry | null>(null)
   const [loading, setLoading] = useState(true)
   const [isHidden, setIsHidden] = useState(false)
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res = await fetch('/api/devices')
-      const data = await res.json()
-      const list: DeviceListItem[] = data.devices ?? []
-      setDevices(list)
-      if (!selectedId && list.length > 0) {
-        const online = list.find(d => d.connected) ?? list[0]
-        setSelectedId(online.deviceId)
-      }
-    } catch {}
-    setLoading(false)
-  }, [selectedId])
 
   const fetchDevice = useCallback(async () => {
     if (!selectedId) return
@@ -110,10 +96,8 @@ export default function Dashboard() {
   }, [selectedId])
 
   useEffect(() => {
-    fetchDevices()
-    const t = setInterval(fetchDevices, 1000)
-    return () => clearInterval(t)
-  }, [fetchDevices])
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
     if (!selectedId) return

@@ -1,14 +1,13 @@
 'use client'
 import { Suspense } from 'react'
-import { useEffect, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import {
   Image, RefreshCw, Circle, ArrowLeft, ChevronRight,
   HardDrive, X, Download, FolderOpen, Folder,
 } from 'lucide-react'
 
-interface DeviceItem { deviceId: string; deviceName: string; connected: boolean }
 interface FileEntry { name: string; type: 'file' | 'dir'; size: string; permissions: string; modified: string }
 interface FileListing { path: string; entries: FileEntry[] }
 
@@ -28,9 +27,7 @@ function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 interface PreviewItem { path: string; name: string; b64: string; mime: string }
 
 function GalleryContent() {
-  const searchParams = useSearchParams()
-  const [devices, setDevices] = useState<DeviceItem[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [path, setPath] = useState('/storage/emulated/0/DCIM/Camera')
   const [listing, setListing] = useState<FileListing | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
@@ -38,20 +35,6 @@ function GalleryContent() {
   const [loadingPreviews, setLoadingPreviews] = useState(false)
   const [fullscreen, setFullscreen] = useState<PreviewItem | null>(null)
   const [fsLoading, setFsLoading] = useState(false)
-
-  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
-
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res = await fetch('/api/devices')
-      const data = await res.json()
-      const list: DeviceItem[] = data.devices ?? []
-      setDevices(list)
-      if (!selectedId && list.length > 0) setSelectedId((list.find(d => d.connected) ?? list[0]).deviceId)
-    } catch {}
-  }, [selectedId])
-
-  useEffect(() => { fetchDevices(); const iv = setInterval(fetchDevices, 5000); return () => clearInterval(iv) }, [fetchDevices])
 
   const sendAndWait = useCallback(async (command: string): Promise<string> => {
     if (!selectedId) return ''

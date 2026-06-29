@@ -1,11 +1,10 @@
 'use client'
 import { Suspense } from 'react'
-import { useEffect, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState } from 'react'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import { MessageSquare, RefreshCw, Circle, Download } from 'lucide-react'
 
-interface DeviceItem { deviceId: string; deviceName: string; connected: boolean }
 interface SmsEntry { date: string; type: string; number: string; body: string }
 
 function parseSms(text: string): SmsEntry[] {
@@ -18,27 +17,11 @@ function parseSms(text: string): SmsEntry[] {
 }
 
 function SmsContent() {
-  const searchParams = useSearchParams()
-  const [devices, setDevices] = useState<DeviceItem[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [entries, setEntries] = useState<SmsEntry[]>([])
   const [rawText, setRawText] = useState('')
   const [loading, setLoading] = useState(false)
   const [limit, setLimit] = useState('50')
-
-  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
-
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res = await fetch('/api/devices')
-      const data = await res.json()
-      const list: DeviceItem[] = data.devices ?? []
-      setDevices(list)
-      if (!selectedId && list.length > 0) setSelectedId((list.find(d => d.connected) ?? list[0]).deviceId)
-    } catch {}
-  }, [selectedId])
-
-  useEffect(() => { fetchDevices(); const iv = setInterval(fetchDevices, 5000); return () => clearInterval(iv) }, [fetchDevices])
 
   const fetchSms = async () => {
     if (!selectedId) return

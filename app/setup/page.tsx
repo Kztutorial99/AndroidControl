@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
 import {
   Smartphone, Globe, Shield, Zap,
   ChevronDown, ChevronRight, Copy, CheckCheck, ExternalLink
@@ -60,28 +61,7 @@ function Tag({ color, label }: { color: 'green' | 'yellow' | 'red' | 'blue'; lab
 }
 
 export default function SetupPage() {
-  const [devices, setDevices] = useState<{ deviceId: string; deviceName: string; connected: boolean }[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch('/api/devices')
-        const data = await res.json()
-        const list = data.devices ?? []
-        setDevices(list)
-        if (list.length > 0) {
-          const online = list.find((d: { connected: boolean }) => d.connected) ?? list[0]
-          setSelectedId(online.deviceId)
-        }
-      } catch {}
-    }
-    load()
-    const t = setInterval(load, 5000)
-    return () => clearInterval(t)
-  }, [])
-
-  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
 
   return (
     <div className="flex min-h-screen">

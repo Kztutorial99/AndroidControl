@@ -1,8 +1,9 @@
 'use client'
 import { Suspense } from 'react'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import { useDevice } from '@/contexts/DeviceContext'
+
 import {
   Folder, File, ArrowLeft, RefreshCw, HardDrive, Circle,
   ChevronRight, X, Download, Edit3, Save, Trash2, Upload,
@@ -11,7 +12,6 @@ import {
 
 interface FileEntry { name: string; type: 'file' | 'dir'; size: string; permissions: string; modified: string }
 interface FileListing { path: string; entries: FileEntry[] }
-interface DeviceItem { deviceId: string; deviceName: string; connected: boolean }
 
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','bmp']
 const TEXT_EXTS  = ['txt','log','json','xml','yaml','yml','ini','cfg','conf','sh','py','js','ts','java','kt','md','csv','html','css','toml','properties']
@@ -45,9 +45,7 @@ interface FileModal {
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
 function FilesContent() {
-  const searchParams = useSearchParams()
-  const [devices, setDevices] = useState<DeviceItem[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('d'))
+  const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [listing, setListing] = useState<FileListing | null>(null)
   const [path, setPath] = useState('/storage/emulated/0')
   const [navLoading, setNavLoading] = useState(false)
@@ -58,20 +56,6 @@ function FilesContent() {
   const [uploadStatus, setUploadStatus] = useState('')
   const uploadRef = useRef<HTMLInputElement>(null)
 
-  const connected = devices.find(d => d.deviceId === selectedId)?.connected ?? false
-
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res = await fetch('/api/devices')
-      const data = await res.json()
-      const list: DeviceItem[] = data.devices ?? []
-      setDevices(list)
-      if (!selectedId && list.length > 0) {
-        setSelectedId((list.find(d => d.connected) ?? list[0]).deviceId)
-      }
-    } catch {}
-  }, [selectedId])
-
   const fetchListing = useCallback(async () => {
     if (!selectedId) return
     try {
@@ -81,7 +65,6 @@ function FilesContent() {
     } catch {}
   }, [selectedId])
 
-  useEffect(() => { fetchDevices(); const iv = setInterval(fetchDevices, 4000); return () => clearInterval(iv) }, [fetchDevices])
   useEffect(() => { fetchListing(); const iv = setInterval(fetchListing, 3000); return () => clearInterval(iv) }, [fetchListing])
 
   const navigate = async (targetPath: string) => {
