@@ -48,6 +48,8 @@ function ScreenshotContent() {
   const [qualityIdx,  setQualityIdx]  = useState(0)
   const [fps,         setFps]         = useState(0)
   const [targetFps,   setTargetFps]   = useState(15)
+  // Sync ke ref supaya accessible di SSE callback tanpa re-create closure
+  useEffect(() => { targetFpsRef.current = targetFps }, [targetFps])
   const [touchMode,   setTouchMode]   = useState(true)
   const [lastAct,     setLastAct]     = useState('')
   const [ripple,      setRipple]      = useState<{ x: number; y: number } | null>(null)
@@ -67,6 +69,7 @@ function ScreenshotContent() {
   const dragRef        = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
   const dragging       = useRef(false)
   const frameRecvRef   = useRef(0)
+  const targetFpsRef   = useRef(15)
 
   const q  = QUALITY_OPTIONS[qualityIdx]
 
@@ -177,8 +180,16 @@ function ScreenshotContent() {
     }, 3000)
   }, [])
 
-  // ── Buka SSE dan setup onmessage handler ──
+  // ── Buka SSE dengan auto-reconnect ──
+  const sseReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const openSSE = useCallback((devId: string, cmdStr: string) => {
+    // Tutup koneksi lama jika ada
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
+    if (sseReconnectRef.current) { clearTimeout(sseReconnectRef.current); sseReconnectRef.current = null }
+
+    if (!liveRef.current) return
+
     const es = new EventSource(`/api/device/stream?deviceId=${devId}`)
     sseRef.current = es
 
@@ -200,14 +211,27 @@ function ScreenshotContent() {
           fpsCountRef.current++
           pendingRef.current = false
 
-          // Push mode: server auto re-enqueue, reset watchdog saja
           resetWatchdog(devId, cmdStr)
         }
       } catch {}
     }
 
-    es.onerror = () => { if (liveRef.current) setError('SSE terputus…') }
-    es.onopen  = () => { setError('') }
+    es.onerror = () => {
+      if (!liveRef.current) return
+      es.close()
+      sseRef.current = null
+      setError('SSE terputus, reconnect…')
+      // Auto-reconnect setelah 1.5s
+      sseReconnectRef.current = setTimeout(() => {
+        if (!liveRef.current) return
+        setError('')
+        openSSE(devId, cmdStr)
+        // Re-prime server loop supaya command tidak macet
+        apiStreamMode(devId, 'start', cmdStr, targetFpsRef.current).catch(() => {})
+      }, 1500)
+    }
+
+    es.onopen = () => { setError('') }
   }, [resetWatchdog])
 
   // ── Start Push Streaming ──
@@ -234,8 +258,9 @@ function ScreenshotContent() {
     liveRef.current = false; pendingRef.current = false
     setLive(false)
     sseRef.current?.close(); sseRef.current = null
-    if (fpsTimerRef.current) { clearInterval(fpsTimerRef.current); fpsTimerRef.current = null }
-    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null }
+    if (fpsTimerRef.current)    { clearInterval(fpsTimerRef.current);    fpsTimerRef.current    = null }
+    if (watchdogRef.current)    { clearTimeout(watchdogRef.current);     watchdogRef.current    = null }
+    if (sseReconnectRef.current){ clearTimeout(sseReconnectRef.current); sseReconnectRef.current= null }
     setFps(0)
     if (devId) apiStreamMode(devId, 'stop').catch(() => {})
   }, [selectedId])
