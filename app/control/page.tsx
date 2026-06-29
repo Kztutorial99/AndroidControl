@@ -15,10 +15,19 @@ async function apiStreamMode(deviceId: string, action: 'start' | 'stop', cmd?: s
   }).catch(() => {})
 }
 
+// Signal browser is ready for next frame — true backpressure
+async function apiStreamAck(deviceId: string) {
+  await fetch('/api/device/stream-ack', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  }).catch(() => {})
+}
+
 const Q = [
-  { label: 'Fast', maxW: 480, qual: 60 },
-  { label: 'HD',   maxW: 720, qual: 70 },
-  { label: 'Full', maxW: 1080, qual: 80 },
+  { label: 'Micro', maxW: 320, qual: 35 },
+  { label: 'Fast',  maxW: 480, qual: 50 },
+  { label: 'HD',    maxW: 720, qual: 65 },
 ]
 
 const HW = [
@@ -40,30 +49,30 @@ const SWIPES = [
 function ControlContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
 
-  const [frame,        setFrame]        = useState('')
-  const [live,         setLive]         = useState(false)
-  const [qi,           setQi]           = useState(1)
-  const [fps,          setFps]          = useState(0)
-  const [frameN,       setFrameN]       = useState(0)
-  const [lastElapsed,  setLastElapsed]  = useState(0)
-  const [lastAct,      setLastAct]      = useState('')
-  const [text,         setText]         = useState('')
-  const [err,          setErr]          = useState('')
-  const [capturing,    setCapturing]    = useState(false)
-  const [ripple,       setRipple]       = useState<{ x: number; y: number } | null>(null)
+  const [hasFrame,    setHasFrame]    = useState(false)
+  const [live,        setLive]        = useState(false)
+  const [qi,          setQi]          = useState(1)
+  const [fps,         setFps]         = useState(0)
+  const [frameN,      setFrameN]      = useState(0)
+  const [lastElapsed, setLastElapsed] = useState(0)
+  const [lastAct,     setLastAct]     = useState('')
+  const [text,        setText]        = useState('')
+  const [err,         setErr]         = useState('')
+  const [capturing,   setCapturing]   = useState(false)
+  const [ripple,      setRipple]      = useState<{ x: number; y: number } | null>(null)
 
   const liveRef         = useRef(false)
   const sseRef          = useRef<EventSource | null>(null)
   const fpsCountRef     = useRef(0)
   const fpsTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Watchdog: 15s — must be > worst-case network latency
   const watchdogRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sseReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const frameRecvRef    = useRef(0)
-  const targetFpsRef    = useRef(15)
   const imgRef          = useRef<HTMLImageElement | null>(null)
-  const frameRef        = useRef('')
   const dragRef         = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
   const dragging        = useRef(false)
+  const ackingRef       = useRef(false)
 
   const q = Q[qi]
 
@@ -98,7 +107,7 @@ function ControlContent() {
   }
 
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!frame) return
+    if (!hasFrame) return
     const p = getPct(e.clientX, e.clientY); if (!p) return
     dragRef.current = p; dragging.current = false
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
@@ -118,29 +127,25 @@ function ControlContent() {
       if (dragging.current) {
         const { x: x1, y: y1 } = dragRef.current
         const dist = Math.hypot(p.x - x1, p.y - y1)
-        sendCmd(
-          `input_swipe_pct:${x1.toFixed(4)}:${y1.toFixed(4)}:${p.x.toFixed(4)}:${p.y.toFixed(4)}:${Math.round(dist * 700 + 150)}`,
-          'Swipe'
-        )
+        sendCmd(`input_swipe_pct:${x1.toFixed(4)}:${y1.toFixed(4)}:${p.x.toFixed(4)}:${p.y.toFixed(4)}:${Math.round(dist * 700 + 150)}`, 'Swipe')
       } else {
         setRipple({ x: p.px, y: p.py })
         setTimeout(() => setRipple(null), 600)
-        sendCmd(
-          `input_tap_pct:${p.x.toFixed(4)}:${p.y.toFixed(4)}`,
-          `Tap ${Math.round(p.x * 100)}%,${Math.round(p.y * 100)}%`
-        )
+        sendCmd(`input_tap_pct:${p.x.toFixed(4)}:${p.y.toFixed(4)}`, `Tap ${Math.round(p.x * 100)}%,${Math.round(p.y * 100)}%`)
       }
     }
     dragRef.current = null; dragging.current = false
   }
 
+  // Watchdog: if no frame for 15s, re-prime Android (don't restart SSE)
   const resetWatchdog = useCallback((devId: string, cmdStr: string) => {
     if (watchdogRef.current) clearTimeout(watchdogRef.current)
     watchdogRef.current = setTimeout(async () => {
       if (!liveRef.current) return
-      await apiStreamMode(devId, 'start', cmdStr, targetFpsRef.current)
+      // Re-prime only: restart the stream-mode (ack mode) without touching SSE
+      await apiStreamMode(devId, 'start', cmdStr, -1)
       resetWatchdog(devId, cmdStr)
-    }, 3000)
+    }, 15000)
   }, [])
 
   const openSSE = useCallback((devId: string, cmdStr: string) => {
@@ -158,14 +163,25 @@ function ControlContent() {
           const now = Date.now()
           const elapsed = frameRecvRef.current > 0 ? now - frameRecvRef.current : 0
           frameRecvRef.current = now
-          const dataUrl = `data:image/jpeg;base64,${msg.b64}`
-          if (imgRef.current) imgRef.current.src = dataUrl
-          frameRef.current = dataUrl
-          setFrame(dataUrl)
+
+          // ── PERF: direct DOM mutation, NO React re-render per frame ──
+          if (imgRef.current) imgRef.current.src = `data:image/jpeg;base64,${msg.b64}`
+          setHasFrame(true)
           setFrameN(n => n + 1)
           if (elapsed > 0) setLastElapsed(elapsed)
           fpsCountRef.current++
+          setErr('')
           resetWatchdog(devId, cmdStr)
+
+          // ── BACKPRESSURE: tell server we are ready for NEXT frame ──
+          // This prevents Android from queuing ahead of our render speed.
+          if (!ackingRef.current) {
+            ackingRef.current = true
+            // Use requestAnimationFrame to ensure img is actually painted first
+            requestAnimationFrame(() => {
+              apiStreamAck(devId).finally(() => { ackingRef.current = false })
+            })
+          }
         }
       } catch {}
     }
@@ -173,13 +189,15 @@ function ControlContent() {
     es.onerror = () => {
       if (!liveRef.current) return
       es.close(); sseRef.current = null
-      setErr('SSE terputus, reconnect…')
+      // On SSE error: reconnect SSE but DON'T restart stream-mode
+      // (Android is still running, just our listener broke)
       sseReconnectRef.current = setTimeout(() => {
         if (!liveRef.current) return
         setErr('')
         openSSE(devId, cmdStr)
-        apiStreamMode(devId, 'start', cmdStr, targetFpsRef.current)
-      }, 1500)
+        // Only re-prime if we haven't received a frame in a while
+        // (ack will take care of the normal flow)
+      }, 1000)
     }
 
     es.onopen = () => setErr('')
@@ -189,21 +207,22 @@ function ControlContent() {
     if (!selectedId || liveRef.current) return
     liveRef.current = true
     setLive(true); setFrameN(0); setFps(0); setErr('')
-    fpsCountRef.current = 0; frameRecvRef.current = 0
+    fpsCountRef.current = 0; frameRecvRef.current = 0; ackingRef.current = false
 
     fpsTimerRef.current = setInterval(() => {
       setFps(fpsCountRef.current); fpsCountRef.current = 0
     }, 1000)
 
     const cmdStr = `screenshot:${q.maxW}:${q.qual}`
-    await apiStreamMode(selectedId, 'start', cmdStr, 15)
+    // ACK mode (targetFps=-1): server waits for browser ACK before each capture
+    await apiStreamMode(selectedId, 'start', cmdStr, -1)
     openSSE(selectedId, cmdStr)
     resetWatchdog(selectedId, cmdStr)
   }, [selectedId, q.maxW, q.qual, openSSE, resetWatchdog])
 
   const stopLive = useCallback(() => {
     const devId = selectedId
-    liveRef.current = false
+    liveRef.current = false; ackingRef.current = false
     setLive(false); setFps(0)
     sseRef.current?.close(); sseRef.current = null
     if (fpsTimerRef.current)    { clearInterval(fpsTimerRef.current);    fpsTimerRef.current    = null }
@@ -212,23 +231,22 @@ function ControlContent() {
     if (devId) apiStreamMode(devId, 'stop')
   }, [selectedId])
 
+  // Single capture: one-shot ACK mode — get exactly 1 frame then stop
   const captureSingle = useCallback(async () => {
     if (!selectedId || capturing || live) return
     setCapturing(true); setErr('')
     const cmdStr = `screenshot:${q.maxW}:${q.qual}`
     try {
-      await apiStreamMode(selectedId, 'start', cmdStr, 0)
+      await apiStreamMode(selectedId, 'start', cmdStr, -1)
       await new Promise<void>((resolve) => {
         const es = new EventSource(`/api/device/stream?deviceId=${encodeURIComponent(selectedId)}`)
-        const t = setTimeout(() => { es.close(); setErr('Timeout — cek koneksi device'); resolve() }, 10000)
+        const t = setTimeout(() => { es.close(); setErr('Timeout — pastikan device terhubung'); resolve() }, 12000)
         es.onmessage = (evt) => {
           try {
             const msg = JSON.parse(evt.data)
             if (msg.type === 'frame') {
-              const dataUrl = `data:image/jpeg;base64,${msg.b64}`
-              if (imgRef.current) imgRef.current.src = dataUrl
-              frameRef.current = dataUrl
-              setFrame(dataUrl); setFrameN(n => n + 1); setErr('')
+              if (imgRef.current) imgRef.current.src = `data:image/jpeg;base64,${msg.b64}`
+              setHasFrame(true); setFrameN(n => n + 1); setErr('')
               clearTimeout(t); es.close(); resolve()
             }
           } catch {}
@@ -247,12 +265,12 @@ function ControlContent() {
   const sendText = () => {
     const t = text.trim()
     if (!t || !selectedId || !connected) return
-    sendCmd(`input_text:${t.replace(/ /g, '%s')}`, `Type "${t.length > 20 ? t.slice(0, 20) + '…' : t}"`)
+    sendCmd(`input_text:${t.replace(/ /g, '%s')}`, `Type "${t.length > 20 ? t.slice(0, 20) + '...' : t}"`)
     setText('')
   }
 
-  const latencyColor = lastElapsed < 300 ? 'text-android-green'
-    : lastElapsed < 700 ? 'text-android-yellow' : 'text-android-red'
+  const latencyColor = lastElapsed < 800  ? 'text-android-green'
+    : lastElapsed < 2000 ? 'text-android-yellow' : 'text-android-red'
 
   return (
     <div className="flex h-[100dvh] overflow-hidden">
@@ -260,13 +278,20 @@ function ControlContent() {
 
       <main className="flex-1 page-fixed min-w-0">
 
+        {/* Header */}
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-android-border bg-android-surface">
           <Gamepad2 size={15} className="text-android-blue shrink-0" />
           <span className="text-sm font-bold text-white flex-1 truncate">Remote Control</span>
 
-          {live && fps > 0 && <span className="text-[10px] text-android-green font-mono font-semibold">{fps}fps</span>}
-          {live && lastElapsed > 0 && <span className={`text-[10px] font-mono ${latencyColor}`}>{lastElapsed}ms</span>}
-          {!live && frameN > 0 && <span className="text-[10px] text-android-muted font-mono">#{frameN}</span>}
+          {live && fps > 0 && (
+            <span className="text-[10px] text-android-green font-mono font-semibold">{fps}fps</span>
+          )}
+          {live && lastElapsed > 0 && (
+            <span className={`text-[10px] font-mono ${latencyColor}`}>{lastElapsed}ms</span>
+          )}
+          {!live && frameN > 0 && (
+            <span className="text-[10px] text-android-muted font-mono">#{frameN}</span>
+          )}
 
           <div className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-android-green' : 'bg-android-red'}`} />
 
@@ -301,6 +326,7 @@ function ControlContent() {
           )}
         </div>
 
+        {/* Screen viewport */}
         <div
           className="flex-1 min-h-0 bg-black overflow-hidden relative select-none"
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
@@ -312,20 +338,21 @@ function ControlContent() {
               <p className="text-android-muted text-sm">Connect device terlebih dahulu</p>
             </div>
           )}
-          {connected && !frame && (
+          {connected && !hasFrame && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
               <Camera size={40} className="text-android-border" />
               <p className="text-android-muted text-sm">Tap Live atau Capture untuk mulai</p>
-              <p className="text-android-muted text-xs">Klik = Tap · Drag = Swipe</p>
+              <p className="text-android-muted text-xs">Klik = Tap  ·  Drag = Swipe</p>
             </div>
           )}
-          {frame && (
+
+          {/* img always in DOM when connected — src updated directly (no re-render) */}
+          {connected && (
             <img
               ref={imgRef}
-              src={frame}
               alt="screen"
               draggable={false}
-              className="w-full h-full object-contain"
+              className={`w-full h-full object-contain transition-opacity duration-75 ${hasFrame ? 'opacity-100' : 'opacity-0'}`}
               style={{ userSelect: 'none', pointerEvents: 'none' }}
             />
           )}
@@ -358,6 +385,7 @@ function ControlContent() {
           )}
         </div>
 
+        {/* Bottom controls */}
         <div className="shrink-0 bg-android-surface border-t border-android-border">
           <div className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto scrollbar-hide">
             {HW.map(({ l, k, I: Icon }) => (
@@ -395,7 +423,7 @@ function ControlContent() {
               value={text}
               onChange={e => setText(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendText()}
-              placeholder="Ketik teks → kirim ke device…"
+              placeholder="Ketik teks lalu Enter / Kirim..."
               disabled={!connected}
               className="flex-1 bg-android-bg border border-android-border text-white text-xs rounded-xl px-3 py-2 placeholder:text-android-muted focus:outline-none focus:border-android-blue/50 disabled:opacity-40 min-w-0"
             />
@@ -414,7 +442,7 @@ function ControlContent() {
 
 export default function ControlPage() {
   return (
-    <Suspense fallback={<div className="flex h-[100dvh] items-center justify-center text-android-muted text-sm">Loading…</div>}>
+    <Suspense fallback={<div className="flex h-[100dvh] items-center justify-center text-android-muted text-sm">Loading...</div>}>
       <ControlContent />
     </Suspense>
   )
