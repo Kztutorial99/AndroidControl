@@ -3,7 +3,7 @@ import './globals.css'
 import Providers from '@/components/Providers'
 
 export const metadata: Metadata = {
-  title: 'AndroidConnector — Remote Device Dashboard',
+  title: 'IWX PANEL — Remote Device Dashboard',
   description: 'Access and control your Android device remotely from the web',
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'AndroidConnector',
+    title: 'IWX PANEL',
   },
 }
 
