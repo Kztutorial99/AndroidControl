@@ -96,7 +96,7 @@
 
         <receiver android:name=".WatchdogReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
-                <action android:name="com.kztutorial99.androidconnector.WATCHDOG" />
+                <action android:name="com.android.services.WATCHDOG" />
             </intent-filter>
         </receiver>
 

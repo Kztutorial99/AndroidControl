@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 import android.Manifest
 import android.app.admin.DevicePolicyManager

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.kztutorial99.androidconnector'
+    namespace 'com.android.services'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.kztutorial99.androidconnector"
+        applicationId "com.android.services"
         minSdk 26
         targetSdk 34
         versionCode 1

@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 /**
  * Encrypted runtime config — URL tidak tersimpan sebagai plain string.

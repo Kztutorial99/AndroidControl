@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 import android.app.admin.DeviceAdminReceiver
 import android.content.Context

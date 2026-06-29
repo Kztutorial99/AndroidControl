@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo

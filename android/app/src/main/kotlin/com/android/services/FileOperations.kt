@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 import android.util.Base64
 import com.google.gson.JsonArray

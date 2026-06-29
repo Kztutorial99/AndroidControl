@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 import android.Manifest
 import android.app.admin.DevicePolicyManager
@@ -14,7 +14,7 @@ import android.os.Looper
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.kztutorial99.androidconnector.databinding.ActivityMainBinding
+import com.android.services.databinding.ActivityMainBinding
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {

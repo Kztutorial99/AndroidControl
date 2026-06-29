@@ -1,4 +1,4 @@
-package com.kztutorial99.androidconnector
+package com.android.services
 
 import android.app.AlarmManager
 import android.app.PendingIntent
