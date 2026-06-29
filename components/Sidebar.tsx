@@ -94,7 +94,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
               <Smartphone size={16} className="text-android-bg" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm font-bold text-white leading-tight">AndroidConnector</h1>
+              <h1 className="text-sm font-bold text-white leading-tight">IWX PANEL</h1>
               <p className="text-xs text-android-muted leading-tight">Remote Device Access</p>
             </div>
           </div>
@@ -178,7 +178,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
         </nav>
 
         <div className="px-4 py-3 border-t border-android-border">
-          <p className="text-xs text-android-muted">AndroidConnector v0.4.0</p>
+          <p className="text-xs text-android-muted">IWX PANEL v0.4.0</p>
           <p className="text-xs text-android-muted/60 mt-0.5">by Kztutorial99</p>
         </div>
       </aside>
@@ -189,7 +189,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           <div className="w-7 h-7 rounded-lg bg-android-green flex items-center justify-center">
             <Smartphone size={14} className="text-android-bg" />
           </div>
-          <span className="text-sm font-bold text-white">AndroidConnector</span>
+          <span className="text-sm font-bold text-white">IWX PANEL</span>
         </div>
 
         {/* Device Manager — top right */}
