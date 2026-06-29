@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOrCreateDevice, popCommand } from '@/lib/store'
 import { initSchema } from '@/lib/db'
-import { isStreaming, popStreamCommand } from '@/lib/stream-registry'
+import { isStreaming, waitForStreamCommand } from '@/lib/stream-registry'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,18 +15,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 })
     }
 
-    // ── FAST PATH: streaming mode → zero DB, in-memory only ──────────────────
+    // ── FAST PATH: streaming → LONG-POLL (zero DB) ───────────────────────────
+    // Server holds connection until command ready (max 12s).
+    // Eliminates Android sleep(500ms)+retry cycle when command not yet available.
+    // Android OkHttp timeout = 25s, server timeout = 12s → safe margin.
     if (isStreaming(deviceId)) {
-      const cmd = popStreamCommand(deviceId)
+      const cmd = await waitForStreamCommand(deviceId, 12000)
       return NextResponse.json({
         command:    cmd,
-        commandId:  cmd ? `stream-${Date.now()}` : null,
+        commandId:  cmd ? `s-${Date.now()}` : null,
         extra:      null,
         serverTime: new Date().toISOString(),
       })
     }
 
-    // ── NORMAL PATH: regular commands from DB ─────────────────────────────────
+    // ── NORMAL PATH: regular DB commands ─────────────────────────────────────
     await getOrCreateDevice(deviceId)
     const pending = await popCommand(deviceId)
     return NextResponse.json({
