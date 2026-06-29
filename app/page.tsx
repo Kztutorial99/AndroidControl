@@ -111,12 +111,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDevices()
-    const interval = setInterval(fetchDevices, 3000)
-    return () => clearInterval(interval)
+    const t = setInterval(fetchDevices, 5000)
+    return () => clearInterval(t)
   }, [fetchDevices])
 
   useEffect(() => {
-    if (selectedId) fetchDevice()
+    if (!selectedId) return
+    fetchDevice()
+    const t = setInterval(fetchDevice, 5000)
+    return () => clearInterval(t)
   }, [selectedId, fetchDevice])
 
   const sendControl = async (command: string) => {
@@ -197,7 +200,7 @@ export default function Dashboard() {
           )}
 
           {/* Stat cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3 mb-4">
+          <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4">
             <StatCard
               label="Battery"
               value={hasData ? `${stats?.battery ?? '--'}%` : '--'}

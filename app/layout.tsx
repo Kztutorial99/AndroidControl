@@ -5,7 +5,11 @@ export const metadata: Metadata = {
   title: 'AndroidConnector — Remote Device Dashboard',
   description: 'Access and control your Android device remotely from the web',
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📱</text></svg>",
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/icon.svg',
+    shortcut: '/icon.svg',
   },
   manifest: '/manifest.json',
   appleWebApp: {
