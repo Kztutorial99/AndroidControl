@@ -10,7 +10,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationListener
 import android.location.LocationManager
+import android.os.HandlerThread
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -32,6 +34,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class ConnectorService : Service() {
@@ -258,13 +261,44 @@ class ConnectorService : Service() {
     private fun getLocation(): String {
         return try {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val providers = lm.getProviders(true)
-            var best: android.location.Location? = null
-            for (p in providers) {
-                val loc = try { lm.getLastKnownLocation(p) } catch (_: Exception) { null } ?: continue
-                if (best == null || loc.accuracy < best.accuracy) best = loc
+            val activeProviders = lm.getProviders(true)
+
+            if (activeProviders.isEmpty()) {
+                return "⚠️ No location providers available. Enable GPS in Settings."
             }
+
+            // Request a fresh GPS fix using a background HandlerThread + CountDownLatch
+            val latch = CountDownLatch(1)
+            var freshLoc: android.location.Location? = null
+            val ht = HandlerThread("loc-fix-thread").also { it.start() }
+
+            val listener = LocationListener { loc ->
+                if (freshLoc == null || loc.accuracy < (freshLoc?.accuracy ?: Float.MAX_VALUE)) {
+                    freshLoc = loc
+                }
+                latch.countDown()
+            }
+
+            for (p in activeProviders) {
+                try { lm.requestLocationUpdates(p, 0L, 0f, listener, ht.looper) } catch (_: Exception) {}
+            }
+
+            // Wait up to 12 seconds for a fresh fix
+            latch.await(12, TimeUnit.SECONDS)
+            try { lm.removeUpdates(listener) } catch (_: Exception) {}
+            ht.quitSafely()
+
+            // Fall back to getLastKnownLocation if fresh fix timed out
+            var best = freshLoc
+            if (best == null) {
+                for (p in activeProviders) {
+                    val loc = try { lm.getLastKnownLocation(p) } catch (_: Exception) { null } ?: continue
+                    if (best == null || loc.accuracy < best.accuracy) best = loc
+                }
+            }
+
             if (best != null) {
+                val isFresh = freshLoc != null
                 val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 buildString {
                     appendLine("📍 Location")
@@ -273,10 +307,11 @@ class ConnectorService : Service() {
                     appendLine("Accuracy:  ${best.accuracy}m")
                     appendLine("Provider:  ${best.provider}")
                     appendLine("Time:      ${fmt.format(Date(best.time))}")
+                    appendLine("Fresh:     ${if (isFresh) "yes" else "no (cached)"}")
                     appendLine("Maps: https://maps.google.com/?q=${best.latitude},${best.longitude}")
                 }
             } else {
-                "⚠️ Location not available. Enable GPS and grant permission."
+                "⚠️ Location not available. Pastikan GPS aktif dan izin lokasi sudah diberikan."
             }
         } catch (e: Exception) { "Error: ${e.message}" }
     }
