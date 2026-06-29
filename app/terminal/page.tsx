@@ -3,7 +3,7 @@ import { Suspense } from 'react'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
-import { Send, Trash2, Circle } from 'lucide-react'
+import { Send, Trash2, Circle, Loader2 } from 'lucide-react'
 
 interface HistoryEntry {
   id: string
@@ -29,21 +29,52 @@ const KNOWN_PREFIXES = [
   'ring_device', 'stop_ring', 'scan_wifi', 'get_processes',
 ]
 
+async function pollForResult(
+  deviceId: string,
+  command: string,
+  sentAt: number,
+  onUpdate: (entries: HistoryEntry[]) => void,
+  maxAttempts = 30
+): Promise<void> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 800 : 700))
+    try {
+      const res = await fetch(`/api/device/result?deviceId=${deviceId}`)
+      const data = await res.json()
+      const all: HistoryEntry[] = data.history ?? []
+      // Check if our command result has come in
+      const found = all.find(h =>
+        h.command === command &&
+        new Date(h.timestamp).getTime() > sentAt - 500 &&
+        h.result !== undefined && h.result !== null
+      )
+      if (found) {
+        onUpdate(all)
+        return
+      }
+      // Still update display with whatever we have
+      onUpdate(all)
+    } catch {}
+  }
+}
+
 function TerminalContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
-  const [history, setHistory] = useState<HistoryEntry[]>([])
-  const [input, setInput] = useState('')
-  const [sending, setSending] = useState(false)
+  const [history, setHistory]     = useState<HistoryEntry[]>([])
+  const [input, setInput]         = useState('')
+  const [sending, setSending]     = useState(false)
+  const [pendingCmd, setPendingCmd] = useState<string | null>(null)
   const [cmdHistory, setCmdHistory] = useState<string[]>([])
-  const [histIdx, setHistIdx] = useState(-1)
+  const [histIdx, setHistIdx]     = useState(-1)
   const clearedAtRef = useRef<number>(0)
-  const outputRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const outputRef    = useRef<HTMLDivElement>(null)
+  const inputRef     = useRef<HTMLInputElement>(null)
+  const pollingRef   = useRef(false)
 
   const fetchHistory = useCallback(async () => {
-    if (!selectedId) return
+    if (!selectedId || pollingRef.current) return
     try {
-      const res = await fetch(`/api/device/result?deviceId=${selectedId}`)
+      const res  = await fetch(`/api/device/result?deviceId=${selectedId}`)
       const data = await res.json()
       const all: HistoryEntry[] = data.history ?? []
       const cutoff = clearedAtRef.current
@@ -51,15 +82,19 @@ function TerminalContent() {
     } catch {}
   }, [selectedId])
 
+  // Background interval refresh (only when not actively polling)
   useEffect(() => {
     fetchHistory()
     const iv = setInterval(fetchHistory, 3000)
     return () => clearInterval(iv)
   }, [fetchHistory])
 
+  // Auto-scroll on new entries
   useEffect(() => {
-    if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
-  }, [history])
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight
+    }
+  }, [history, pendingCmd])
 
   const normalizeCommand = (raw: string) => {
     const t = raw.trim()
@@ -67,11 +102,18 @@ function TerminalContent() {
   }
 
   const sendCommand = async (cmd?: string) => {
-    if (!selectedId) return
+    if (!selectedId || sending) return
     const raw = (cmd ?? input).trim()
     if (!raw) return
     const command = normalizeCommand(raw)
+
     setSending(true)
+    setPendingCmd(command)
+    setInput('')
+    setHistIdx(-1)
+    inputRef.current?.focus()
+
+    const sentAt = Date.now()
     try {
       await fetch('/api/device/command', {
         method: 'POST',
@@ -79,12 +121,19 @@ function TerminalContent() {
         body: JSON.stringify({ deviceId: selectedId, command }),
       })
       setCmdHistory(prev => [command, ...prev.slice(0, 49)])
-      setHistIdx(-1)
-      setInput('')
-    } finally {
-      setSending(false)
-      inputRef.current?.focus()
-    }
+
+      // Immediately start polling for result
+      pollingRef.current = true
+      await pollForResult(selectedId, command, sentAt, (entries) => {
+        const cutoff = clearedAtRef.current
+        setHistory(cutoff > 0 ? entries.filter(h => new Date(h.timestamp).getTime() > cutoff) : entries)
+      })
+    } catch {}
+
+    pollingRef.current = false
+    setPendingCmd(null)
+    setSending(false)
+    inputRef.current?.focus()
   }
 
   const clearHistory = () => {
@@ -93,26 +142,37 @@ function TerminalContent() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') { sendCommand() }
-    else if (e.key === 'ArrowUp') {
+    if (e.key === 'Enter') {
+      sendCommand()
+    } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       const ni = Math.min(histIdx + 1, cmdHistory.length - 1)
-      setHistIdx(ni); setInput(cmdHistory[ni] ?? '')
+      setHistIdx(ni)
+      setInput(cmdHistory[ni] ?? '')
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       const ni = Math.max(histIdx - 1, -1)
-      setHistIdx(ni); setInput(ni === -1 ? '' : cmdHistory[ni] ?? '')
+      setHistIdx(ni)
+      setInput(ni === -1 ? '' : cmdHistory[ni] ?? '')
     }
   }
 
+  const displayCmd = (cmd: string) =>
+    cmd.startsWith('shell:') ? cmd.slice(6) : cmd
+
+  const filteredHistory = history.filter(
+    h => clearedAtRef.current === 0 || new Date(h.timestamp).getTime() > clearedAtRef.current
+  )
+
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
 
-      <main className="flex-1 page-content flex flex-col overflow-hidden">
-        <div className="flex flex-col flex-1 px-3 md:px-6 py-3 md:py-6 max-w-5xl mx-auto w-full min-h-0">
+      <main className="flex-1 flex flex-col overflow-hidden page-content">
+        <div className="flex flex-col flex-1 px-3 md:px-6 py-3 md:py-5 max-w-5xl mx-auto w-full min-h-0">
 
-          <div className="flex items-center justify-between mb-3">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <div>
               <h2 className="text-base md:text-xl font-bold text-white">Terminal</h2>
               <p className="text-android-muted text-xs hidden sm:block">Shell · SMS · Calls · Location · Apps</p>
@@ -122,67 +182,122 @@ function TerminalContent() {
                 <Circle size={7} className={connected ? 'fill-android-green' : 'fill-android-red'} />
                 {connected ? 'Online' : 'Offline'}
               </div>
-              <button onClick={clearHistory} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-red hover:border-android-red/50 transition-colors">
+              <button
+                onClick={clearHistory}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-red hover:border-android-red/50 transition-colors"
+              >
                 <Trash2 size={12} />
                 <span className="hidden sm:inline">Clear</span>
               </button>
             </div>
           </div>
 
-          <div className="flex gap-1.5 mb-2.5 overflow-x-auto pb-1 scrollbar-none">
+          {/* Quick commands */}
+          <div className="flex gap-1.5 mb-2.5 overflow-x-auto pb-1 scrollbar-none shrink-0">
             {QUICK_CMDS.map(cmd => (
-              <button key={cmd} onClick={() => sendCommand(cmd)} disabled={!connected}
-                className="shrink-0 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-green hover:border-android-green/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-mono whitespace-nowrap">
+              <button
+                key={cmd}
+                onClick={() => sendCommand(cmd)}
+                disabled={!connected || sending}
+                className="shrink-0 px-2.5 py-1.5 bg-android-surface border border-android-border rounded-lg text-xs text-android-muted hover:text-android-green hover:border-android-green/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-mono whitespace-nowrap"
+              >
                 {cmd}
               </button>
             ))}
           </div>
 
-          <div ref={outputRef} className="flex-1 min-h-0 bg-[#0a0c10] border border-android-border rounded-xl p-3 md:p-4 overflow-y-auto terminal-output">
-            {history.length === 0 ? (
+          {/* Output area */}
+          <div
+            ref={outputRef}
+            className="flex-1 min-h-0 bg-[#0a0c10] border border-android-border rounded-xl p-3 md:p-4 overflow-y-auto"
+          >
+            {filteredHistory.length === 0 && !pendingCmd ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
                 <p className="text-android-muted text-sm">
                   {connected ? 'Type a command or tap a quick button ↑' : 'Connect a device to start'}
                 </p>
               </div>
             ) : (
-              [...history].reverse().map(entry => (
-                <div key={entry.id} className="mb-4">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-android-green text-xs">$</span>
-                    <span className="text-white text-xs font-semibold break-all">
-                      {entry.command.startsWith('shell:') ? entry.command.slice(6) : entry.command}
-                    </span>
-                    <span className="text-android-muted text-xs ml-auto">{new Date(entry.timestamp).toLocaleTimeString()}</span>
-                    {entry.exitCode !== undefined && entry.exitCode !== 0 && (
-                      <span className="text-android-red text-xs">exit {entry.exitCode}</span>
-                    )}
+              <div className="space-y-4">
+                {[...filteredHistory].reverse().map(entry => (
+                  <div key={entry.id}>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-android-green text-xs font-bold">$</span>
+                      <span className="text-white text-xs font-semibold break-all">{displayCmd(entry.command)}</span>
+                      <span className="text-android-muted text-xs ml-auto shrink-0">
+                        {new Date(entry.timestamp).toLocaleTimeString()}
+                      </span>
+                      {entry.exitCode !== undefined && entry.exitCode !== 0 && (
+                        <span className="text-android-red text-xs">exit {entry.exitCode}</span>
+                      )}
+                    </div>
+                    <pre className="text-android-text text-xs whitespace-pre-wrap break-all pl-3 border-l border-android-border/50 leading-relaxed">
+                      {entry.result || <span className="text-android-muted italic">(no output)</span>}
+                    </pre>
                   </div>
-                  <pre className="text-android-text text-xs whitespace-pre-wrap break-all pl-3 border-l border-android-border/50">
-                    {entry.result || <span className="text-android-muted italic">(no output)</span>}
-                  </pre>
-                </div>
-              ))
+                ))}
+
+                {/* Pending command indicator */}
+                {pendingCmd && (
+                  <div className="border-l-2 border-android-green/50 pl-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-android-green text-xs font-bold">$</span>
+                      <span className="text-white text-xs font-semibold break-all">{displayCmd(pendingCmd)}</span>
+                      <span className="text-android-muted text-xs ml-auto shrink-0">sending…</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-android-muted text-xs">
+                      <Loader2 size={11} className="animate-spin text-android-green shrink-0" />
+                      <span className="animate-pulse">Waiting for device response…</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
-          <div className="mt-2.5 flex gap-2">
-            <div className="flex-1 flex items-center bg-[#0a0c10] border border-android-border rounded-xl px-3 py-3 gap-2 focus-within:border-android-green/50 transition-colors">
+          {/* Input bar */}
+          <div className="mt-2.5 flex gap-2 shrink-0">
+            <div className={`flex-1 flex items-center bg-[#0a0c10] border rounded-xl px-3 py-3 gap-2 transition-colors ${sending ? 'border-android-green/50' : 'border-android-border focus-within:border-android-green/50'}`}>
               <span className="text-android-green font-mono text-sm select-none">$</span>
-              <input ref={inputRef} type="text" inputMode="text" autoCapitalize="none" autoCorrect="off"
-                value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                placeholder={connected ? 'Enter command…' : 'No device connected'}
-                disabled={!connected || sending}
+              <input
+                ref={inputRef}
+                type="text"
+                inputMode="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  sending
+                    ? 'Waiting for response…'
+                    : connected
+                    ? 'Enter command…'
+                    : 'No device connected'
+                }
+                disabled={!connected}
                 className="flex-1 bg-transparent text-android-text font-mono text-sm outline-none placeholder:text-android-muted/50 disabled:opacity-50 min-w-0"
-                spellCheck={false} />
+                spellCheck={false}
+              />
+              {sending && (
+                <Loader2 size={14} className="text-android-green animate-spin shrink-0" />
+              )}
             </div>
-            <button onClick={() => sendCommand()} disabled={!connected || sending || !input.trim()}
-              className="px-4 py-3 bg-android-green text-android-bg rounded-xl hover:bg-android-green/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 active:scale-95">
-              <Send size={16} />
+            <button
+              onClick={() => sendCommand()}
+              disabled={!connected || sending || !input.trim()}
+              className="px-4 py-3 bg-android-green text-android-bg rounded-xl hover:bg-android-green/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 active:scale-95 relative"
+            >
+              {sending
+                ? <Loader2 size={16} className="animate-spin" />
+                : <Send size={16} />
+              }
             </button>
           </div>
 
-          <p className="text-xs text-android-muted mt-1.5 hidden md:block">↑↓ navigate history · Enter to send</p>
+          <p className="text-xs text-android-muted mt-1.5 hidden md:block shrink-0">
+            ↑↓ navigate history · Enter to send
+          </p>
         </div>
       </main>
     </div>
