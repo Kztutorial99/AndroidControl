@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateDeviceHeartbeat, getAllDevices, isDeviceOnline, getOrCreateDevice } from '@/lib/store'
 import { initSchema } from '@/lib/db'
+import { notifyDeviceUpdate } from '@/app/api/device/stream/route'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
     } else {
       await getOrCreateDevice(deviceId, name)
     }
+
+    notifyDeviceUpdate(deviceId)
 
     return NextResponse.json({ ok: true, serverTime: new Date().toISOString() })
   } catch (e) {

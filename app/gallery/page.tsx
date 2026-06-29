@@ -1,6 +1,6 @@
 'use client'
 import { Suspense } from 'react'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
@@ -31,6 +31,50 @@ function getMime(name: string) {
   return ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
 }
 
+async function smartPoll(
+  deviceId: string,
+  command: string,
+  sentAt: number,
+  maxAttempts = 20,
+  firstDelay = 900,
+  intervalMs = 700
+): Promise<string> {
+  await sleep(firstDelay)
+  for (let i = 0; i < maxAttempts; i++) {
+    if (i > 0) await sleep(intervalMs)
+    try {
+      const r = await fetch(`/api/device/result?deviceId=${deviceId}`)
+      const d = await r.json()
+      const match = (d.history ?? [])
+        .filter((h: { command: string; result: string; timestamp: string }) =>
+          h.command === command && new Date(h.timestamp).getTime() > sentAt - 500)
+        .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+      if (match?.result) return match.result as string
+    } catch {}
+  }
+  return ''
+}
+
+async function smartPollListing(
+  deviceId: string,
+  targetPath: string,
+  maxAttempts = 12,
+  firstDelay = 800,
+  intervalMs = 700
+): Promise<FileListing | null> {
+  await sleep(firstDelay)
+  for (let i = 0; i < maxAttempts; i++) {
+    if (i > 0) await sleep(intervalMs)
+    try {
+      const res = await fetch(`/api/device/files?deviceId=${deviceId}`)
+      const data = await res.json()
+      if (data.listing && data.listing.path === targetPath) return data.listing as FileListing
+    } catch {}
+  }
+  return null
+}
+
 function GalleryContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [path, setPath]           = useState('/storage/emulated/0/DCIM/Camera')
@@ -50,19 +94,7 @@ function GalleryContent() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId: selectedId, command }),
     })
-    await sleep(1200)
-    for (let i = 0; i < 25; i++) {
-      const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
-      const d = await r.json()
-      const match = (d.history ?? [])
-        .filter((h: { command: string; result: string; timestamp: string }) =>
-          h.command === command && new Date(h.timestamp).getTime() > sentAt - 500)
-        .sort((a: { timestamp: string }, b: { timestamp: string }) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
-      if (match?.result) return match.result
-      await sleep(800)
-    }
-    return ''
+    return smartPoll(selectedId, command, sentAt)
   }, [selectedId])
 
   const loadThumbnails = useCallback(async (entries: FileEntry[], currentPath: string, previewsSnap: Record<string, string>) => {
@@ -107,16 +139,10 @@ function GalleryContent() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, path: targetPath }),
       })
-      await sleep(2500)
-      for (let i = 0; i < 10; i++) {
-        const res = await fetch(`/api/device/files?deviceId=${selectedId}`)
-        const data = await res.json()
-        if (data.listing && data.listing.path === targetPath) {
-          setListing(data.listing)
-          loadThumbnails(data.listing.entries, targetPath, {})
-          break
-        }
-        await sleep(1000)
+      const result = await smartPollListing(selectedId, targetPath)
+      if (result) {
+        setListing(result)
+        loadThumbnails(result.entries, targetPath, {})
       }
     } finally { setBrowseLoading(false) }
   }, [selectedId, loadThumbnails])

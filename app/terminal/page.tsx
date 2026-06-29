@@ -53,7 +53,7 @@ function TerminalContent() {
 
   useEffect(() => {
     fetchHistory()
-    const iv = setInterval(fetchHistory, 2500)
+    const iv = setInterval(fetchHistory, 3000)
     return () => clearInterval(iv)
   }, [fetchHistory])
 

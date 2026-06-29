@@ -15,6 +15,27 @@ function parseApps(text: string): AppEntry[] {
   }).filter(e => e.name && e.pkg)
 }
 
+async function smartPoll(
+  deviceId: string,
+  cmdPrefix: string,
+  sentAt: number,
+  maxAttempts = 20,
+  intervalMs = 800
+): Promise<string | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 1500 : intervalMs))
+    const r = await fetch(`/api/device/result?deviceId=${deviceId}`)
+    const d = await r.json()
+    const match = (d.history ?? [])
+      .filter((h: { command: string; result: string; timestamp: string }) =>
+        h.command.startsWith(cmdPrefix) && new Date(h.timestamp).getTime() > sentAt - 500)
+      .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+    if (match?.result) return match.result as string
+  }
+  return null
+}
+
 function AppsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [apps, setApps]         = useState<AppEntry[]>([])
@@ -36,18 +57,8 @@ function AppsContent() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: 'get_apps' }),
       })
-      await new Promise(r => setTimeout(r, 4000))
-      for (let i = 0; i < 15; i++) {
-        const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const d = await r.json()
-        const match = (d.history ?? [])
-          .filter((h: { command: string; result: string; timestamp: string }) =>
-            h.command === 'get_apps' && new Date(h.timestamp).getTime() > sentAt - 1000)
-          .sort((a: { timestamp: string }, b: { timestamp: string }) =>
-            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
-        if (match?.result) { const list = parseApps(match.result); setApps(list); setFiltered(list); break }
-        await new Promise(r2 => setTimeout(r2, 2000))
-      }
+      const result = await smartPoll(selectedId, 'get_apps', sentAt)
+      if (result) { const list = parseApps(result); setApps(list); setFiltered(list) }
     } finally { setLoading(false) }
   }
 
@@ -94,7 +105,7 @@ function AppsContent() {
           {connected && apps.length === 0 && !loading && (
             <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
               <Package size={32} className="mx-auto mb-3 text-android-border" />
-              <p>Click "Fetch Apps" to list installed apps</p>
+              <p>Click &quot;Fetch Apps&quot; to list installed apps</p>
             </div>
           )}
 

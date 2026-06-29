@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import useSWR from 'swr'
 import Sidebar from '@/components/Sidebar'
 import StatCard from '@/components/StatCard'
 import { useDevice } from '@/contexts/DeviceContext'
@@ -87,29 +88,31 @@ export default function Dashboard() {
   const [hideMsg, setHideMsg]           = useState('')
   const [hideBusy, setHideBusy]         = useState(false)
 
-  const fetchDevice = useCallback(async () => {
-    if (!selectedId) return
-    try {
-      const res = await fetch(`/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}`)
-      const data = await res.json()
-      const found = data.device ?? null
-      if (found) {
-        setDevice(found)
-        setLoading(false)
+  const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
+  const { data: deviceData, isLoading: swrLoading } = useSWR(
+    swrKey,
+    (url: string) => fetch(url).then(r => r.json()),
+    {
+      refreshInterval: 3000,
+      keepPreviousData: true,
+      revalidateOnFocus: true,
+      dedupingInterval: 1500,
+      onSuccess: (data) => {
+        if (data?.device) {
+          setDevice(data.device)
+          setLoading(false)
+        }
       }
-    } catch {}
-  }, [selectedId])
+    }
+  )
+
+  const fetchDevice = useCallback(() => {}, [])
 
   useEffect(() => {
-    if (!selectedId) {
-      setLoading(false)
-      return
-    }
+    if (!selectedId) { setLoading(false); return }
     setLoading(true)
-    fetchDevice()
-    const t = setInterval(fetchDevice, 3000)
-    return () => clearInterval(t)
-  }, [selectedId, fetchDevice])
+    if (deviceData?.device) { setDevice(deviceData.device); setLoading(false) }
+  }, [selectedId, deviceData])
 
   const sendControl = async (command: string) => {
     if (!selectedId || ctrlBusy) return

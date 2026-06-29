@@ -62,7 +62,7 @@ function FilesContent() {
 
   useEffect(() => {
     fetchListing()
-    const iv = setInterval(fetchListing, 2000)
+    const iv = setInterval(fetchListing, 3000)
     return () => clearInterval(iv)
   }, [fetchListing])
 

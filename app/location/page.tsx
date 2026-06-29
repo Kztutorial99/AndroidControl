@@ -35,6 +35,29 @@ function parseLocation(text: string): LocationData | null {
   }
 }
 
+async function smartPollLocation(
+  deviceId: string,
+  sentAt: number,
+  onStatus: (s: string) => void
+): Promise<string | null> {
+  const maxAttempts = 20
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 1500 : 1000))
+    try {
+      const r    = await fetch(`/api/device/result?deviceId=${deviceId}`)
+      const data = await r.json()
+      const match = (data.history ?? [])
+        .filter((h: { command: string; result: string; timestamp: string }) =>
+          h.command === 'get_location' && new Date(h.timestamp).getTime() > sentAt - 1000)
+        .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+      if (match?.result) return match.result as string
+    } catch {}
+    onStatus(`Polling… (${i + 1}/${maxAttempts}) — GPS sedang mencari sinyal`)
+  }
+  return null
+}
+
 function LocationContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [location, setLocation]   = useState<LocationData | null>(null)
@@ -58,38 +81,15 @@ function LocationContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: 'get_location' }),
       })
-
-      setStatus('Menunggu GPS fix dari device… (bisa 10-15 detik)')
-      await new Promise(r => setTimeout(r, 5000))
-
-      let found = false
-      for (let i = 0; i < 25; i++) {
-        const r    = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const data = await r.json()
-        const match = (data.history ?? [])
-          .filter((h: { command: string; result: string; timestamp: string }) =>
-            h.command === 'get_location' && new Date(h.timestamp).getTime() > sentAt - 1000
-          )
-          .sort((a: { timestamp: string }, b: { timestamp: string }) =>
-            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          )[0]
-
-        if (match?.result) {
-          const raw    = match.result as string
-          const parsed = parseLocation(raw)
-          setRawText(raw)
-          setLocation(parsed)
-          setStatus('')
-          if (!parsed) setErrorMsg('Tidak bisa parse data lokasi — lihat raw di bawah')
-          found = true
-          break
-        }
-
-        setStatus(`Polling… (${i + 1}/25) — GPS sedang mencari sinyal`)
-        await new Promise(r2 => setTimeout(r2, 2000))
-      }
-
-      if (!found) {
+      setStatus('Menunggu GPS fix dari device…')
+      const raw = await smartPollLocation(selectedId, sentAt, setStatus)
+      if (raw) {
+        const parsed = parseLocation(raw)
+        setRawText(raw)
+        setLocation(parsed)
+        setStatus('')
+        if (!parsed) setErrorMsg('Tidak bisa parse data lokasi — lihat raw di bawah')
+      } else {
         setStatus('')
         setErrorMsg('Device tidak merespons. Pastikan GPS aktif, izin lokasi diberikan, dan device terhubung.')
       }
@@ -135,7 +135,7 @@ function LocationContent() {
 
           {!loading && !location && !errorMsg && connected && (
             <div className="mb-4 p-3 bg-android-surface border border-android-border rounded-xl text-xs text-android-muted">
-              Proses GPS fresh fix membutuhkan <strong className="text-android-text">10–15 detik</strong>. Pastikan GPS aktif di HP target.
+              Proses GPS fresh fix membutuhkan <strong className="text-android-text">5–20 detik</strong>. Pastikan GPS aktif di HP target.
             </div>
           )}
 

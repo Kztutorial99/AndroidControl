@@ -19,6 +19,27 @@ function parseCalls(text: string): CallEntry[] {
   }).filter(e => e.date)
 }
 
+async function smartPoll(
+  deviceId: string,
+  cmdPrefix: string,
+  sentAt: number,
+  maxAttempts = 15,
+  intervalMs = 800
+): Promise<string | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 1200 : intervalMs))
+    const r = await fetch(`/api/device/result?deviceId=${deviceId}`)
+    const d = await r.json()
+    const match = (d.history ?? [])
+      .filter((h: { command: string; result: string; timestamp: string }) =>
+        h.command.startsWith(cmdPrefix) && new Date(h.timestamp).getTime() > sentAt - 500)
+      .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+    if (match?.result) return match.result as string
+  }
+  return null
+}
+
 function CallsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [entries, setEntries] = useState<CallEntry[]>([])
@@ -29,18 +50,13 @@ function CallsContent() {
     if (!selectedId) return
     setLoading(true)
     try {
+      const sentAt = Date.now()
       await fetch('/api/device/command', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: `get_calls:${limit}` }),
       })
-      await new Promise(r => setTimeout(r, 3000))
-      for (let i = 0; i < 10; i++) {
-        const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const d = await r.json()
-        const match = (d.history ?? []).find((h: {command:string;result:string}) => h.command.startsWith('get_calls'))
-        if (match?.result) { setEntries(parseCalls(match.result)); break }
-        await new Promise(r2 => setTimeout(r2, 2000))
-      }
+      const result = await smartPoll(selectedId, 'get_calls', sentAt)
+      if (result) setEntries(parseCalls(result))
     } finally { setLoading(false) }
   }
 
@@ -86,7 +102,7 @@ function CallsContent() {
 
           {connected && entries.length === 0 && !loading && (
             <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
-              <Phone size={32} className="mx-auto mb-3 text-android-border" /><p>Click "Fetch Calls" to load call log</p>
+              <Phone size={32} className="mx-auto mb-3 text-android-border" /><p>Click &quot;Fetch Calls&quot; to load call log</p>
             </div>
           )}
 

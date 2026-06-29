@@ -16,6 +16,27 @@ function parseContacts(text: string): Contact[] {
   }).filter((c): c is Contact => !!c && c.name.length > 0)
 }
 
+async function smartPoll(
+  deviceId: string,
+  cmdPrefix: string,
+  sentAt: number,
+  maxAttempts = 20,
+  intervalMs = 800
+): Promise<string | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 1500 : intervalMs))
+    const r = await fetch(`/api/device/result?deviceId=${deviceId}`)
+    const d = await r.json()
+    const match = (d.history ?? [])
+      .filter((h: { command: string; result: string; timestamp: string }) =>
+        h.command.startsWith(cmdPrefix) && new Date(h.timestamp).getTime() > sentAt - 500)
+      .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+    if (match?.result) return match.result as string
+  }
+  return null
+}
+
 function ContactsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -32,18 +53,13 @@ function ContactsContent() {
     if (!selectedId) return
     setLoading(true)
     try {
+      const sentAt = Date.now()
       await fetch('/api/device/command', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: 'get_contacts:500' }),
       })
-      await new Promise(r => setTimeout(r, 4000))
-      for (let i = 0; i < 15; i++) {
-        const r = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const d = await r.json()
-        const match = (d.history ?? []).find((h: {command:string;result:string}) => h.command.startsWith('get_contacts'))
-        if (match?.result) { const list = parseContacts(match.result); setContacts(list); setFiltered(list); break }
-        await new Promise(r2 => setTimeout(r2, 2000))
-      }
+      const result = await smartPoll(selectedId, 'get_contacts', sentAt)
+      if (result) { const list = parseContacts(result); setContacts(list); setFiltered(list) }
     } finally { setLoading(false) }
   }
 
@@ -81,7 +97,7 @@ function ContactsContent() {
 
           {connected && contacts.length === 0 && !loading && (
             <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
-              <Users size={32} className="mx-auto mb-3 text-android-border" /><p>Click "Fetch Contacts" to load the contacts list</p>
+              <Users size={32} className="mx-auto mb-3 text-android-border" /><p>Click &quot;Fetch Contacts&quot; to load the contacts list</p>
             </div>
           )}
 
