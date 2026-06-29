@@ -341,7 +341,7 @@ function ScreenshotContent() {
                 </span>
               </div>
             )}
-            {live && pushMode && (
+            {live && (
               <div className="flex items-center gap-1.5">
                 <Radio size={10} className="text-android-green shrink-0" />
                 <span className="text-xs font-mono text-android-green shrink-0">
@@ -517,13 +517,11 @@ function ScreenshotContent() {
                 </div>
               )}
 
-              {/* Live/Push badge */}
+              {/* Push badge */}
               {live && (
-                <div className={`absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm rounded-full px-2.5 py-1`}>
-                  {pushMode
-                    ? <><Radio size={10} className="text-android-green animate-pulse" /><span className="text-android-green text-xs font-bold">PUSH</span></>
-                    : <><span className="w-2 h-2 rounded-full bg-android-red animate-pulse" /><span className="text-white text-xs font-mono">LIVE</span></>
-                  }
+                <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm rounded-full px-2.5 py-1">
+                  <Radio size={10} className="text-android-green animate-pulse" />
+                  <span className="text-android-green text-xs font-bold">PUSH</span>
                   {fps > 0 && <span className="text-android-muted text-xs font-mono">{fps}fps</span>}
                 </div>
               )}
