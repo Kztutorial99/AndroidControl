@@ -1,5 +1,5 @@
 # AndroidConnector
-
+ 
 > Remote Android device management — control files, run shell commands, read SMS/calls/contacts, track location, and monitor live stats from any browser.
 
 [![Build Android APK](https://github.com/Kztutorial99/AndroidControl/actions/workflows/build-apk.yml/badge.svg)](https://github.com/Kztutorial99/AndroidControl/actions/workflows/build-apk.yml)
