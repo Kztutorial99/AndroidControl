@@ -1,0 +1,26 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "4vqSbw5LTjbIE4zTlVjJ4"
+uri = "file://attached_assets/image_search/icon_1.png"
+type = "image"
+title = "1. Android System Settings (Blue)"
+
+[[outputs]]
+id = "-QfTMFAijgzYMgdCk2miV"
+uri = "file://attached_assets/image_search/icon_2.png"
+type = "image"
+title = "2. Android Settings Gear"
+
+[[outputs]]
+id = "bauvKLjpeEC0uDu7y8pxO"
+uri = "file://attached_assets/image_search/icon_3.png"
+type = "image"
+title = "3. System Security Update"
+
+[[outputs]]
+id = "KU_YHJHO1WdkAmY_ZSot2"
+uri = "file://attached_assets/image_search/icon_4.png"
+type = "image"
+title = "4. System Gear Config"
