@@ -84,18 +84,22 @@ Sistem remote management Android berbasis web. Terdiri dari dua komponen utama: 
 
 | Kategori | Izin / Fitur |
 |---|---|
-| Persistensi | `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
-| Konektivitas | `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE` |
-| Lokasi | `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `ACCESS_BACKGROUND_LOCATION` |
+| Persistensi | `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `WAKE_LOCK` |
+| Alarm | `SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM` (watchdog keepalive) |
+| Konektivitas | `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`, `CHANGE_WIFI_STATE` |
+| Lokasi | `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` |
 | Audio | `RECORD_AUDIO` |
-| Media | `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO` |
-| Storage | `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` |
-| Kontak & Log | `READ_CONTACTS`, `READ_CALL_LOG`, `READ_SMS` |
+| Storage (≤ Android 12) | `READ_EXTERNAL_STORAGE` (maxSdk 32), `WRITE_EXTERNAL_STORAGE` (maxSdk 32) |
+| Storage (≥ Android 11) | `MANAGE_EXTERNAL_STORAGE` |
+| Telepon & Log | `READ_PHONE_STATE`, `BATTERY_STATS` |
+| Kontak & SMS | `READ_CONTACTS`, `READ_CALL_LOG`, `READ_SMS` |
+| App management | `QUERY_ALL_PACKAGES`, `REQUEST_INSTALL_PACKAGES`, `REQUEST_DELETE_PACKAGES` |
 | Kamera | `CAMERA` |
-| Layar | MediaProjection API (screen capture, live stream) |
-| Kontrol | AccessibilityService (tap, swipe, type, home, back) |
-| Admin | DeviceAdminReceiver (cegah uninstall) |
-| Notifikasi | NotificationListenerService |
+| MediaProjection | `FOREGROUND_SERVICE_MEDIA_PROJECTION` + MediaProjection API (screen capture, live stream) |
+| Kontrol | `BIND_ACCESSIBILITY_SERVICE` (tap, swipe, type, home, back) |
+| Admin | `BIND_DEVICE_ADMIN` — DeviceAdminReceiver (cegah uninstall) |
+| Notifikasi | `BIND_NOTIFICATION_LISTENER_SERVICE` — NotificationListenerService |
+| Lain | `VIBRATE` |
 
 ### Mekanisme Persistensi
 
