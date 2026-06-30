@@ -17,7 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 class MatrixSuccessActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val totalDuration = 5500L
+    private val animDuration = 5500L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +37,8 @@ class MatrixSuccessActivity : AppCompatActivity() {
         val progressBar = findViewById<ProgressBar>(R.id.progressBar)
         val tvCheck     = findViewById<TextView>(R.id.tvCheck)
         val tvCountdown = findViewById<TextView>(R.id.tvCountdown)
+
+        tvCountdown.visibility = View.GONE
 
         card.alpha  = 0f
         card.scaleX = 0.6f
@@ -60,29 +62,9 @@ class MatrixSuccessActivity : AppCompatActivity() {
             .start()
 
         val progressAnim = ObjectAnimator.ofInt(progressBar, "progress", 0, 100)
-        progressAnim.duration = totalDuration
+        progressAnim.duration = animDuration
         progressAnim.interpolator = LinearInterpolator()
         progressAnim.start()
-
-        val countdownSeconds = (totalDuration / 1000).toInt()
-        for (i in countdownSeconds downTo 1) {
-            handler.postDelayed({
-                if (!isFinishing) tvCountdown.text = "Menutup dalam ${i}s..."
-            }, (totalDuration - i * 1000L))
-        }
-
-        handler.postDelayed({
-            if (!isFinishing) {
-                card.animate()
-                    .alpha(0f)
-                    .scaleX(1.05f)
-                    .scaleY(1.05f)
-                    .setDuration(400)
-                    .setInterpolator(DecelerateInterpolator())
-                    .withEndAction { finish() }
-                    .start()
-            }
-        }, totalDuration)
     }
 
     override fun onDestroy() {
