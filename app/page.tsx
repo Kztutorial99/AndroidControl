@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import useSWR from 'swr'
 import Sidebar from '@/components/Sidebar'
 import StatCard from '@/components/StatCard'
@@ -105,8 +105,6 @@ export default function Dashboard() {
       }
     }
   )
-
-  const fetchDevice = useCallback(() => {}, [])
 
   useEffect(() => {
     if (!selectedId) { setLoading(false); return }
