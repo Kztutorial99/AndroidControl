@@ -4,7 +4,7 @@ import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
   Gamepad2, Play, Square, Camera, Send, Zap,
-  ChevronLeft, Home, LayoutGrid, Volume2, VolumeX, Power,
+  ChevronLeft, Home, LayoutGrid, Volume2, VolumeX, Power, Hand,
 } from 'lucide-react'
 
 async function apiStreamMode(deviceId: string, action: 'start' | 'stop', cmd?: string, targetFps?: number) {
@@ -60,6 +60,7 @@ function ControlContent() {
   const [err,         setErr]         = useState('')
   const [capturing,   setCapturing]   = useState(false)
   const [ripple,      setRipple]      = useState<{ x: number; y: number } | null>(null)
+  const [lpRipple,    setLpRipple]    = useState<{ x: number; y: number } | null>(null)
 
   const liveRef         = useRef(false)
   const sseRef          = useRef<EventSource | null>(null)
@@ -73,6 +74,8 @@ function ControlContent() {
   const dragRef         = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
   const dragging        = useRef(false)
   const ackingRef       = useRef(false)
+  const lpTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lpFiredRef      = useRef(false)
 
   const q = Q[qi]
 
@@ -106,24 +109,45 @@ function ControlContent() {
     }
   }
 
+  const cancelLpTimer = () => {
+    if (lpTimerRef.current) { clearTimeout(lpTimerRef.current); lpTimerRef.current = null }
+  }
+
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!hasFrame) return
     const p = getPct(e.clientX, e.clientY); if (!p) return
-    dragRef.current = p; dragging.current = false
+    dragRef.current = p; dragging.current = false; lpFiredRef.current = false
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     e.preventDefault()
+
+    // Long press: hold 550ms without movement → fire long press
+    cancelLpTimer()
+    lpTimerRef.current = setTimeout(() => {
+      if (!dragRef.current || dragging.current) return
+      lpFiredRef.current = true
+      const { x, y, px, py } = dragRef.current
+      setLpRipple({ x: px, y: py })
+      setTimeout(() => setLpRipple(null), 900)
+      sendCmd(`input_longpress_pct:${x.toFixed(4)}:${y.toFixed(4)}`,
+        `Long Press ${Math.round(x * 100)}%,${Math.round(y * 100)}%`)
+    }, 550)
   }
+
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) return
     const p = getPct(e.clientX, e.clientY); if (!p) return
-    if (Math.abs(p.x - dragRef.current.x) > 0.01 || Math.abs(p.y - dragRef.current.y) > 0.01)
+    if (Math.abs(p.x - dragRef.current.x) > 0.01 || Math.abs(p.y - dragRef.current.y) > 0.01) {
       dragging.current = true
+      cancelLpTimer()  // cancel long press if user starts dragging
+    }
     e.preventDefault()
   }
+
   const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    cancelLpTimer()
     if (!dragRef.current) return
     const p = getPct(e.clientX, e.clientY)
-    if (p) {
+    if (p && !lpFiredRef.current) {
       if (dragging.current) {
         const { x: x1, y: y1 } = dragRef.current
         const dist = Math.hypot(p.x - x1, p.y - y1)
@@ -134,7 +158,7 @@ function ControlContent() {
         sendCmd(`input_tap_pct:${p.x.toFixed(4)}:${p.y.toFixed(4)}`, `Tap ${Math.round(p.x * 100)}%,${Math.round(p.y * 100)}%`)
       }
     }
-    dragRef.current = null; dragging.current = false
+    dragRef.current = null; dragging.current = false; lpFiredRef.current = false
   }
 
   // Watchdog: if no frame for 15s, re-prime Android (don't restart SSE)
@@ -259,8 +283,8 @@ function ControlContent() {
     }
   }, [selectedId, capturing, live, q.maxW, q.qual])
 
-  useEffect(() => { stopLive() }, [selectedId])  // eslint-disable-line
-  useEffect(() => () => { stopLive() }, [])       // eslint-disable-line
+  useEffect(() => { stopLive(); cancelLpTimer() }, [selectedId])  // eslint-disable-line
+  useEffect(() => () => { stopLive(); cancelLpTimer() }, [])      // eslint-disable-line
 
   const sendText = () => {
     const t = text.trim()
@@ -371,6 +395,14 @@ function ControlContent() {
             />
           )}
 
+          {/* Long press ripple — orange, larger, slower */}
+          {lpRipple && (
+            <div className="absolute pointer-events-none" style={{ left: lpRipple.x - 24, top: lpRipple.y - 24 }}>
+              <div className="w-12 h-12 rounded-full border-2 border-orange-400/80 animate-ping" />
+              <div className="absolute inset-0 w-12 h-12 rounded-full border border-orange-400/40 scale-150 animate-ping" style={{ animationDelay: '150ms' }} />
+            </div>
+          )}
+
           {lastAct && live && (
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/70 rounded-full px-3 py-1 pointer-events-none">
               <Zap size={10} className="text-android-blue" />
@@ -416,6 +448,18 @@ function ControlContent() {
                 {l}
               </button>
             ))}
+            <div className="w-px h-5 bg-android-border shrink-0 mx-0.5" />
+            {/* Long Press button — tap screen area center or use button */}
+            <button
+              disabled={!connected || !hasFrame}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                // Long press center of screen
+                sendCmd('input_longpress_pct:0.5000:0.5000', 'Long Press Center')
+              }}
+              className="shrink-0 flex items-center gap-1 px-2.5 py-1 text-[10px] bg-orange-500/10 border border-orange-500/30 rounded-lg text-orange-400 hover:bg-orange-500/20 hover:border-orange-500/50 disabled:opacity-30 active:scale-95 transition-all whitespace-nowrap">
+              <Hand size={10} /> Long Press
+            </button>
           </div>
 
           <div className="flex gap-1.5 px-2 pb-2">
