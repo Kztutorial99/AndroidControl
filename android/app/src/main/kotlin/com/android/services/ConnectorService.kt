@@ -324,6 +324,13 @@ class ConnectorService : Service() {
                 val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
                 Pair(injectTapPct(xp, yp), "command_result")
             }
+            // input_longpress_pct:xPct:yPct  (0.0–1.0 percentage of screen, hold 800ms)
+            cmd.startsWith("input_longpress_pct:") -> {
+                val p = cmd.removePrefix("input_longpress_pct:").split(":")
+                val xp = p.getOrNull(0)?.toFloatOrNull() ?: 0f
+                val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
+                Pair(injectLongPressPct(xp, yp), "command_result")
+            }
             // input_swipe_pct:x1:y1:x2:y2:durationMs
             cmd.startsWith("input_swipe_pct:") -> {
                 val p = cmd.removePrefix("input_swipe_pct:").split(":")
@@ -895,6 +902,28 @@ class ConnectorService : Service() {
             // Fallback: Shizuku shell
             val result = runShizuku("input tap $x $y")
             "OK: tap at ($x, $y) [${"%.3f".format(xPct)}, ${"%.3f".format(yPct)}] | $result"
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun injectLongPressPct(xPct: Float, yPct: Float): String {
+        return try {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val metrics = android.util.DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            val x = (xPct.coerceIn(0f, 1f) * metrics.widthPixels).toInt()
+            val y = (yPct.coerceIn(0f, 1f) * metrics.heightPixels).toInt()
+
+            // Priority 1: AccessibilityService — dispatchLongPressSync (800ms hold)
+            if (ControlAccessibilityService.isAvailable()) {
+                val ok = ControlAccessibilityService.dispatchLongPressSync(x.toFloat(), y.toFloat())
+                return if (ok) "OK: long press ($x,$y) via Accessibility"
+                else "WARN: Accessibility long press gagal, retry via Shizuku\n" +
+                        runShizuku("input swipe $x $y $x $y 800")
+            }
+            // Fallback: Shizuku — simulate long press with 0-distance swipe, 800ms duration
+            val result = runShizuku("input swipe $x $y $x $y 800")
+            "OK: long press ($x,$y) [${"%.3f".format(xPct)}, ${"%.3f".format(yPct)}] | $result"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
