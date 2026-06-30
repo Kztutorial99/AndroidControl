@@ -22,7 +22,6 @@ import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import androidx.core.app.NotificationCompat
-import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import okhttp3.MediaType.Companion.toMediaType
@@ -33,7 +32,6 @@ import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -92,13 +90,13 @@ class ConnectorService : Service() {
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
         acquireWakeLock()
-        // Android 10+ (Q): gunakan startForeground dengan explicit type flags
-        // dataSync untuk polling, mediaProjection untuk screen capture tanpa Shizuku
+        // Android 10+ (Q): gunakan startForeground dengan explicit type flag
+        // Hanya dataSync — MediaProjection TIDAK boleh diset sini karena butuh
+        // active MediaProjection token. Tanpa token → SecurityException → forceclose.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIF_ID, buildNotification("Connecting…", false),
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
         } else {
             startForeground(NOTIF_ID, buildNotification("Connecting…", false))
