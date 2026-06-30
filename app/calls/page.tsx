@@ -1,8 +1,9 @@
 'use client'
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
+import { useBadge } from '@/contexts/BadgeContext'
 import { Phone, RefreshCw, Circle, Download } from 'lucide-react'
 
 interface CallEntry { date: string; type: string; number: string; name: string; duration: string }
@@ -42,9 +43,12 @@ async function smartPoll(
 
 function CallsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
+  const { notifyCallsCount, clearCallsBadge } = useBadge()
   const [entries, setEntries] = useState<CallEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [limit, setLimit] = useState('50')
+
+  useEffect(() => { clearCallsBadge() }, [clearCallsBadge])
 
   const fetchCalls = async () => {
     if (!selectedId) return
@@ -56,7 +60,12 @@ function CallsContent() {
         body: JSON.stringify({ deviceId: selectedId, command: `get_calls:${limit}` }),
       })
       const result = await smartPoll(selectedId, 'get_calls', sentAt)
-      if (result) setEntries(parseCalls(result))
+      if (result) {
+        const parsed = parseCalls(result)
+        setEntries(parsed)
+        notifyCallsCount(parsed.length)
+        clearCallsBadge()
+      }
     } finally { setLoading(false) }
   }
 

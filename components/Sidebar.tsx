@@ -8,6 +8,7 @@ import {
   MoreHorizontal, X, Trash2, CheckSquare, Square,
 } from 'lucide-react'
 import { useState } from 'react'
+import { useBadge } from '@/contexts/BadgeContext'
 
 interface DeviceItem {
   deviceId: string
@@ -47,6 +48,8 @@ const mobileNavPinned = [
 
 export default function Sidebar({ connected, devices = [], selectedId, onSelect }: SidebarProps) {
   const pathname = usePathname()
+  const { smsBadge, callsBadge } = useBadge()
+  const badgeMap: Record<string, number> = { '/sms': smsBadge, '/calls': callsBadge }
   const [showPicker, setShowPicker]   = useState(false)
   const [showDrawer, setShowDrawer]   = useState(false)
   const [toDelete, setToDelete]       = useState<Set<string>>(new Set())
@@ -162,6 +165,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href
+            const badge = badgeMap[href] ?? 0
             return (
               <Link key={href} href={href} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 active:scale-95 active:opacity-70 select-none ${
                 active
@@ -169,7 +173,12 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
                   : 'text-android-muted hover:text-android-text hover:bg-white/5'
               }`}>
                 <Icon size={15} />
-                {label}
+                <span className="flex-1">{label}</span>
+                {badge > 0 && (
+                  <span className="ml-auto min-w-[18px] h-[18px] px-1 bg-android-red text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none animate-pulse">
+                    {badge > 99 ? '99+' : badge}
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -326,18 +335,26 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
             <div className="grid grid-cols-3 gap-2 p-4">
               {navItems.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href
+                const badge = badgeMap[href] ?? 0
                 return (
                   <Link
                     key={href}
                     href={href}
                     onClick={() => setShowDrawer(false)}
-                    className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border transition-all duration-150 active:scale-90 active:opacity-60 select-none ${
+                    className={`relative flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border transition-all duration-150 active:scale-90 active:opacity-60 select-none ${
                       active
                         ? 'bg-android-green/10 border-android-green/30 text-android-green'
                         : 'bg-white/3 border-android-border text-android-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <Icon size={20} />
+                    <div className="relative">
+                      <Icon size={20} />
+                      {badge > 0 && (
+                        <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-0.5 bg-android-red text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none animate-pulse">
+                          {badge > 99 ? '99+' : badge}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] font-medium leading-none text-center">{label}</span>
                   </Link>
                 )

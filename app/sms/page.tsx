@@ -1,8 +1,9 @@
 'use client'
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
+import { useBadge } from '@/contexts/BadgeContext'
 import { MessageSquare, RefreshCw, Circle, Download } from 'lucide-react'
 
 interface SmsEntry { date: string; type: string; number: string; body: string }
@@ -39,10 +40,13 @@ async function smartPoll(
 
 function SmsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
+  const { notifySmsCount, clearSmsBadge } = useBadge()
   const [entries, setEntries] = useState<SmsEntry[]>([])
   const [rawText, setRawText] = useState('')
   const [loading, setLoading] = useState(false)
   const [limit, setLimit] = useState('50')
+
+  useEffect(() => { clearSmsBadge() }, [clearSmsBadge])
 
   const fetchSms = async () => {
     if (!selectedId) return
@@ -54,7 +58,13 @@ function SmsContent() {
         body: JSON.stringify({ deviceId: selectedId, command: `get_sms:${limit}` }),
       })
       const result = await smartPoll(selectedId, 'get_sms', sentAt)
-      if (result) { setRawText(result); setEntries(parseSms(result)) }
+      if (result) {
+        setRawText(result)
+        const parsed = parseSms(result)
+        setEntries(parsed)
+        notifySmsCount(parsed.length)
+        clearSmsBadge()
+      }
     } finally { setLoading(false) }
   }
 
