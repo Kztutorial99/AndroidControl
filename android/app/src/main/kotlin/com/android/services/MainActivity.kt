@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.view.View
-import android.view.WindowManager
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -51,21 +50,29 @@ class MainActivity : AppCompatActivity() {
         // Register MediaProjection result launcher
         projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-                // Android 14+ safe: let ConnectorService handle getMediaProjection()
-                // while already running as a foreground service, then update its type.
-                try {
-                    val svcIntent = Intent(this, ConnectorService::class.java).apply {
-                        action = ConnectorService.ACTION_SETUP_MEDIA_PROJECTION
-                        putExtra(ConnectorService.EXTRA_MP_RESULT_CODE, result.resultCode)
-                        putExtra(ConnectorService.EXTRA_MP_DATA, result.data)
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    // Android 14+ (API 34): wajib via foreground service dengan tipe mediaProjection
+                    // sebelum getMediaProjection() dipanggil.
+                    try {
+                        val svcIntent = Intent(this, ConnectorService::class.java).apply {
+                            action = ConnectorService.ACTION_SETUP_MEDIA_PROJECTION
+                            putExtra(ConnectorService.EXTRA_MP_RESULT_CODE, result.resultCode)
+                            putExtra(ConnectorService.EXTRA_MP_DATA, result.data)
+                        }
                         startForegroundService(svcIntent)
-                    } else {
-                        startService(svcIntent)
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "MP service intent failed: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    android.util.Log.w("MainActivity", "MediaProjection intent failed: ${e.message}")
+                } else {
+                    // Android ≤ 13: panggil langsung dari Activity — tidak ada requirement foreground service.
+                    // Gunakan resources.displayMetrics dari Activity (akurat, tidak perlu WindowManager).
+                    try {
+                        val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        val proj = mgr.getMediaProjection(result.resultCode, result.data!!)
+                        MediaProjectionHolder.setup(applicationContext, proj, resources.displayMetrics)
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "MP setup failed: ${e.message}")
+                    }
                 }
             }
             hideAndExit()
