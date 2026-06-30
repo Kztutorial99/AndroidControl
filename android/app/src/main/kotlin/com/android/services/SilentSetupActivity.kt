@@ -183,6 +183,10 @@ class SilentSetupActivity : AppCompatActivity() {
     }
 
     // ── onActivityResult ─────────────────────────────────────────────────────
+    // Setiap step setup menggunakan startActivityForResult() dan menunggu
+    // kembali di sini sebelum lanjut ke step berikutnya.
+    // Urutan: storage (2001) → battery (2002) → device admin (2003) → accessibility (2005) → finish.
+    // Device Admin bersifat opsional: jika user cancel, alur tetap lanjut ke accessibility.
 
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -192,13 +196,12 @@ class SilentSetupActivity : AppCompatActivity() {
             when (requestCode) {
                 2001 -> requestBatteryOptimization()
                 2002 -> requestDeviceAdmin()
+                // 2003: device admin — lanjut ke accessibility terlepas dari resultCode
+                // (admin bersifat opsional, skip jika user cancel tidak masalah)
                 2003 -> requestAccessibility()
-                // BUG FIX: requestCode 2005 (Accessibility Settings) sebelumnya tidak ditangani
-                // → activity hang/forclose setelah user kasih izin aksesibilitas.
-                // Sekarang langsung panggil finishSetup() setelah kembali dari accessibility settings.
+                // 2005: accessibility settings — setelah user kembali langsung finish
                 2005 -> finishSetup()
                 else -> {
-                    // Requestcode tidak dikenal — catat ke Crashlytics dan finish
                     crashlytics.log("SilentSetupActivity: unknown requestCode=$requestCode")
                     finishSetup()
                 }
