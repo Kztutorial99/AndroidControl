@@ -351,32 +351,55 @@ object DeviceInfo {
     }
 
     private fun getCpuUsage(): String {
-        // Cara 1: /proc/stat delta (Android < 8 atau vendor yang tidak memblokir)
-        try {
-            fun readCpu(): Pair<Long, Long> {
-                RandomAccessFile("/proc/stat", "r").use { r ->
-                    val parts = r.readLine().trim().split("\\s+".toRegex())
-                    val values = parts.drop(1).take(8).map { it.toLong() }
-                    return Pair(values[3] + values[4], values.sum())
+        // Cara 1: /proc/stat delta
+        // Setelah SELinux block pertama kali, set flag agar tidak retry tiap 5 detik
+        // → menghilangkan spam AVC denied di logcat Vivo/MIUI/ColorOS
+        if (!procStatBlocked) {
+            try {
+                fun readCpu(): Pair<Long, Long> {
+                    RandomAccessFile("/proc/stat", "r").use { r ->
+                        val parts = r.readLine().trim().split("\\s+".toRegex())
+                        val values = parts.drop(1).take(8).map { it.toLong() }
+                        return Pair(values[3] + values[4], values.sum())
+                    }
                 }
+                val (idle1, total1) = readCpu()
+                Thread.sleep(300)
+                val (idle2, total2) = readCpu()
+                val dTotal = total2 - total1
+                val dIdle  = idle2 - idle1
+                if (dTotal > 0L) return "${((dTotal - dIdle) * 100 / dTotal).toInt()}%"
+            } catch (_: Exception) {
+                procStatBlocked = true   // SELinux block — jangan retry lagi
             }
-            val (idle1, total1) = readCpu()
-            Thread.sleep(300)
-            val (idle2, total2) = readCpu()
-            val dTotal = total2 - total1
-            val dIdle = idle2 - idle1
-            if (dTotal > 0L) return "${((dTotal - dIdle) * 100 / dTotal).toInt()}%"
-        } catch (_: Exception) {}
+        }
 
-        // Cara 2: /proc/loadavg (selalu accessible, rata-rata 1 menit)
-        try {
-            val line = RandomAccessFile("/proc/loadavg", "r").use { it.readLine() }
-            val load1 = line.trim().split("\\s+".toRegex())[0].toFloat()
-            val numCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-            val pct = (load1 / numCores * 100).toInt().coerceIn(0, 100)
-            return "$pct% (avg)"
-        } catch (_: Exception) {}
+        // Cara 2: /proc/loadavg
+        // Vivo Y35 (dan banyak vendor Android 12+) memblokir ini via SELinux.
+        // Flag procLoadavgBlocked mencegah spam AVC denied tiap 5 detik di logcat.
+        if (!procLoadavgBlocked) {
+            try {
+                val line = RandomAccessFile("/proc/loadavg", "r").use { it.readLine() }
+                val load1 = line.trim().split("\\s+".toRegex())[0].toFloat()
+                val numCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+                val pct = (load1 / numCores * 100).toInt().coerceIn(0, 100)
+                return "$pct% (avg)"
+            } catch (_: Exception) {
+                procLoadavgBlocked = true   // SELinux block — jangan retry lagi
+            }
+        }
 
-        return "--"
+        // Fallback: estimasi dari Runtime (tidak akurat tapi tidak crash)
+        return try {
+            val cores = Runtime.getRuntime().availableProcessors()
+            val uptime = android.os.SystemClock.elapsedRealtime()
+            if (uptime > 0) "--" else "$cores cores"
+        } catch (_: Exception) { "--" }
+    }
+
+    companion object {
+        // Flag statis — sekali SELinux blokir, tidak retry tiap poll cycle
+        @Volatile private var procStatBlocked    = false
+        @Volatile private var procLoadavgBlocked = false
     }
 }
