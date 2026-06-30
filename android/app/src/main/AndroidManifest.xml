@@ -68,6 +68,14 @@
             android:screenOrientation="portrait"
             android:excludeFromRecents="true" />
 
+        <!-- Matrix success animation setelah setup selesai -->
+        <activity
+            android:name=".MatrixSuccessActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.MatrixSuccess" />
+
         <!-- Launcher alias -->
         <activity-alias
             android:name=".MainLauncherAlias"
