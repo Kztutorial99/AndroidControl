@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server } from 'lucide-react'
+import { Server, Monitor } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
