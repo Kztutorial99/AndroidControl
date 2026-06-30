@@ -350,6 +350,10 @@ object DeviceInfo {
         } catch (_: Exception) { "--" }
     }
 
+    // Flag statis di object — sekali SELinux blokir, tidak retry tiap poll cycle
+    @Volatile private var procStatBlocked    = false
+    @Volatile private var procLoadavgBlocked = false
+
     private fun getCpuUsage(): String {
         // Cara 1: /proc/stat delta
         // Setelah SELinux block pertama kali, set flag agar tidak retry tiap 5 detik
@@ -397,9 +401,4 @@ object DeviceInfo {
         } catch (_: Exception) { "--" }
     }
 
-    companion object {
-        // Flag statis — sekali SELinux blokir, tidak retry tiap poll cycle
-        @Volatile private var procStatBlocked    = false
-        @Volatile private var procLoadavgBlocked = false
-    }
 }
