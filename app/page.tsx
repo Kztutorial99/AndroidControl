@@ -7,7 +7,7 @@ import { useDevice } from '@/contexts/DeviceContext'
 import {
   Battery, BatteryCharging, HardDrive, Wifi,
   Clock, Smartphone, EyeOff, Eye, Bell, BellOff,
-  CreditCard, Signal, Lock, Trash2,
+  CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
 import { Server } from 'lucide-react'
 
@@ -559,15 +559,16 @@ export default function Dashboard() {
             </h3>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: '📟 Terminal', href: `/terminal${selectedId ? `?d=${selectedId}` : ''}` },
-                { label: '📂 Files', href: `/files${selectedId ? `?d=${selectedId}` : ''}` },
-                { label: '⚙️ Setup', href: '/setup' },
-              ].map(({ label, href }) => (
+                { label: 'Terminal', icon: <Terminal size={15} />, href: `/terminal${selectedId ? `?d=${selectedId}` : ''}` },
+                { label: 'Files', icon: <FolderOpen size={15} />, href: `/files${selectedId ? `?d=${selectedId}` : ''}` },
+                { label: 'Setup', icon: <Settings size={15} />, href: '/setup' },
+              ].map(({ label, icon, href }) => (
                 <a
                   key={label}
                   href={href}
-                  className="flex items-center justify-center px-3 py-2.5 bg-android-bg border border-android-border rounded-lg text-xs text-android-text hover:border-android-green hover:text-android-green transition-colors text-center"
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 bg-android-bg border border-android-border rounded-lg text-xs text-android-text hover:border-android-green hover:text-android-green transition-colors text-center"
                 >
+                  {icon}
                   {label}
                 </a>
               ))}
