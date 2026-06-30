@@ -164,7 +164,7 @@ class HackerOverlayView(
         canvas.drawText(td, w/2f-pTitle.measureText(td)/2f, ct+46f, pTitle)
         canvas.drawLine(cl+14f,ct+60f,cr-14f,ct+60f,pBdr)
         val by=ct+ch/2f+12f
-        val bd=bodyDisplay+(if(!bodyDone&&cursor)"█" else "")
+        val bd=bodyDisplay+(if(!bodyDone&&cursor)'█'.toString() else "")
         val bx=w/2f-pText.measureText(bd)/2f
         if(glitchAlpha>0){ pGlitch.alpha=glitchAlpha; canvas.drawText(bd,bx+glitchX,by,pGlitch) }
         canvas.drawText(bd,bx,by,pText)
@@ -188,7 +188,7 @@ class HackerOverlayView(
             canvas.drawText(ln,sx,sy+(i+1)*lh+4f,p)
         }
         val ci=termLines.size
-        canvas.drawText("> ${bodyDisplay}${if(cursor)"█"else" "}",sx,sy+(ci+1)*lh+4f,pTitle)
+        canvas.drawText("> ${bodyDisplay}${if(cursor)'█'else' '}",sx,sy+(ci+1)*lh+4f,pTitle)
         val wm="[ IWX TEAM ]"
         canvas.drawText(wm,w/2f-pSub.measureText(wm)/2f,sy+bh-8f,pTitle)
     }
