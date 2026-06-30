@@ -125,9 +125,8 @@ class ControlAccessibilityService : AccessibilityService() {
                 }
                 root.recycle()
 
-                // 3. Fallback: paste via global action (Android 9+)
-                svc.performGlobalAction(GLOBAL_ACTION_PASTE)
-                true
+                // No fallback — GLOBAL_ACTION_PASTE does not exist in AccessibilityService
+                false
             } catch (_: Exception) { false }
         }
 
