@@ -19,56 +19,41 @@ class HackerOverlayView(
 ) : View(context) {
 
     private val charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%^&*<>[]{}|"
-    private val charsetJP = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%^&*"
-    private val fSize = 22f
+    private val fSize   = 21f
+
     private var cols = 0
     private lateinit var drops: IntArray
     private lateinit var spds:  IntArray
 
-    private fun mk(flags: Int = Paint.ANTI_ALIAS_FLAG, b: Paint.() -> Unit) = Paint(flags).apply(b)
+    private fun mk(f: Int = Paint.ANTI_ALIAS_FLAG, b: Paint.() -> Unit) = Paint(f).apply(b)
 
     private val pHead  = mk { color=Color.rgb(210,255,210); textSize=fSize; typeface=Typeface.MONOSPACE; setShadowLayer(8f,0f,0f,Color.rgb(0,255,65)) }
     private val pBrt   = mk { color=Color.rgb(0,210,80);   textSize=fSize; typeface=Typeface.MONOSPACE }
     private val pMid   = mk { color=Color.rgb(0,140,50);   textSize=fSize; typeface=Typeface.MONOSPACE }
     private val pDim   = mk { color=Color.rgb(0,70,20);    textSize=fSize; typeface=Typeface.MONOSPACE }
     private val pBg    = mk(0) { color=Color.argb(55,0,0,0) }
-    private val pDark  = mk(0) { color=Color.argb(150,0,0,0) }
-    private val pCard  = mk(0) { color=Color.argb(235,0,6,0) }
+    private val pDark  = mk(0) { color=Color.argb(160,0,0,0) }
+    private val pCard  = mk(0) { color=Color.argb(238,0,5,0) }
     private val pBdr   = mk { color=Color.rgb(0,255,65); style=Paint.Style.STROKE; strokeWidth=2f; setShadowLayer(14f,0f,0f,Color.rgb(0,255,65)) }
     private val pCorn  = mk { color=Color.rgb(0,255,65); style=Paint.Style.STROKE; strokeWidth=3f; setShadowLayer(8f,0f,0f,Color.rgb(0,255,65)) }
-    private val pTitle = mk { color=Color.rgb(0,255,65); textSize=19f; typeface=Typeface.MONOSPACE; setShadowLayer(16f,0f,0f,Color.rgb(0,255,65)) }
-    private val pText  = mk { color=Color.WHITE; textSize=22f; typeface=Typeface.MONOSPACE; setShadowLayer(10f,0f,0f,Color.rgb(0,200,60)) }
-    private val pSub   = mk { color=Color.rgb(0,180,55); textSize=14f; typeface=Typeface.MONOSPACE }
+    private val pTitle = mk { color=Color.rgb(0,255,65); textSize=20f; typeface=Typeface.MONOSPACE; setShadowLayer(18f,0f,0f,Color.rgb(0,255,65)) }
+    private val pText  = mk { color=Color.WHITE;          textSize=27f; typeface=Typeface.MONOSPACE; setShadowLayer(12f,0f,0f,Color.rgb(0,210,70)) }
+    private val pSub   = mk { color=Color.rgb(0,185,60);  textSize=14f; typeface=Typeface.MONOSPACE }
     private val pBar   = mk(0) { color=Color.rgb(0,255,65) }
-    private val pBarBg = mk(0) { color=Color.argb(60,0,255,65) }
+    private val pBarBg = mk(0) { color=Color.argb(55,0,255,65) }
     private val pScan  = mk(0) { color=Color.argb(35,0,255,100) }
-    private val pTermOk= mk { color=Color.rgb(0,255,65); textSize=14f; typeface=Typeface.MONOSPACE; setShadowLayer(6f,0f,0f,Color.rgb(0,255,65)) }
-    private val pTermTx= mk { color=Color.rgb(180,255,180); textSize=14f; typeface=Typeface.MONOSPACE }
 
-    private val handler     = Handler(Looper.getMainLooper())
-    private var scanY       = 0f
-    private var progress    = 0f
-    private var titleDisplay= ""
-    private var bodyDisplay = ""
-    private var titleDone   = false
-    private var bodyDone    = false
-    private var cursor      = true
-    private var frame       = 0
+    private val handler      = Handler(Looper.getMainLooper())
+    private var scanY        = 0f
+    private var progress     = 0f
+    private var titleDisplay = ""
+    private var bodyDisplay  = ""
+    private var titleDone    = false
+    private var bodyDone     = false
+    private var cursor       = true
+    private var frame        = 0
 
     private val TITLE = "[ SYSTEM BREACHED ]"
-    private val termLines = mutableListOf<String>()
-    private val fakeCmds  = listOf(
-        "Initializing exploit framework...",
-        "Scanning target ports [1-65535]...",
-        "PORT 22/SSH    > OPEN",
-        "PORT 443/HTTPS > OPEN",
-        "Bypassing firewall...  [OK]",
-        "Injecting shellcode...",
-        "Elevating privileges...",
-        "ACCESS GRANTED",
-        "> " + customText.replace("\n", " ")
-    )
-    private var termIdx = 0
 
     private val loopRun = object : Runnable {
         override fun run() {
@@ -76,47 +61,40 @@ class HackerOverlayView(
             if (::drops.isInitialized) {
                 for (i in drops.indices) {
                     drops[i] += spds[i]
-                    if (drops[i]*fSize > height+fSize*8 && Random.nextFloat()>0.97f) {
-                        drops[i]=Random.nextInt(-30,-5); spds[i]=Random.nextInt(1,3)
+                    if (drops[i] * fSize > height + fSize * 8 && Random.nextFloat() > 0.97f) {
+                        drops[i] = Random.nextInt(-30, -5)
+                        spds[i]  = Random.nextInt(1, 3)
                     }
                 }
             }
-            scanY += 3.5f; if (scanY > height) scanY = 0f
-            if (progress < 100f) progress += 0.4f
+            scanY += 3f; if (scanY > height) scanY = 0f
+            if (progress < 100f) progress += 0.35f
             if (frame % 14 == 0) cursor = !cursor
             invalidate()
-            handler.postDelayed(this, 48L)
+            handler.postDelayed(this, 50L)
         }
     }
 
     init {
         setLayerType(LAYER_TYPE_SOFTWARE, null)
-        handler.postDelayed({ typeTitle(0) }, 400)
-        if (style == "terminal") handler.postDelayed({ addTermLine() }, 700)
+        handler.postDelayed({ typeTitle(0) }, 350)
     }
 
     private fun typeTitle(i: Int) {
         if (i <= TITLE.length) {
             titleDisplay = TITLE.substring(0, i)
-            handler.postDelayed({ typeTitle(i + 1) }, 55)
+            handler.postDelayed({ typeTitle(i + 1) }, 50)
         } else {
             titleDone = true
-            handler.postDelayed({ typeBody(0) }, 250)
+            handler.postDelayed({ typeBody(0) }, 200)
         }
     }
 
     private fun typeBody(i: Int) {
         if (i <= customText.length) {
             bodyDisplay = customText.substring(0, i)
-            handler.postDelayed({ typeBody(i + 1) }, 55)
+            handler.postDelayed({ typeBody(i + 1) }, 45)
         } else { bodyDone = true }
-    }
-
-    private fun addTermLine() {
-        if (termIdx < fakeCmds.size) {
-            termLines.add(fakeCmds[termIdx++])
-            handler.postDelayed({ addTermLine() }, 540)
-        }
     }
 
     private fun wrapText(text: String, maxW: Float, paint: Paint): List<String> {
@@ -157,118 +135,69 @@ class HackerOverlayView(
                 if (d > 6) canvas.drawText(rCh(), x, y - fSize*6f, pDim)
             }
         }
-        canvas.drawRect(0f, scanY, w, scanY + 4f, pScan)
-        when (style) {
-            "terminal" -> drawTerminal(canvas, w, h)
-            else       -> drawCard(canvas, w, h)
-        }
+        canvas.drawRect(0f, scanY, w, scanY + 3f, pScan)
+        drawCard(canvas, w, h)
     }
 
     private fun drawCard(canvas: Canvas, w: Float, h: Float) {
-        val padH = 32f
-        val cw = w - padH * 2f
-        val ch = h * 0.60f
-        val cl = padH; val ct = (h - ch) / 2f
-        val cr = cl + cw; val cb = ct + ch
+        val padH = 28f
+        val cw   = w - padH * 2f
+        val ch   = h * 0.62f
+        val cl   = padH
+        val ct   = (h - ch) / 2f
+        val cr   = cl + cw
+        val cb   = ct + ch
 
-        canvas.drawRoundRect(RectF(cl, ct, cr, cb), 14f, 14f, pCard)
-        canvas.drawRoundRect(RectF(cl, ct, cr, cb), 14f, 14f, pBdr)
+        canvas.drawRoundRect(RectF(cl, ct, cr, cb), 16f, 16f, pCard)
+        canvas.drawRoundRect(RectF(cl, ct, cr, cb), 16f, 16f, pBdr)
 
-        val cs = 20f
+        val cs = 22f
         canvas.drawLines(floatArrayOf(
             cl, ct+cs, cl, ct, cl+cs, ct,
             cr-cs, ct, cr, ct, cr, ct+cs,
             cr, cb-cs, cr, cb, cr-cs, cb,
-            cl+cs, cb, cl, cb, cl, cb-cs), pCorn)
+            cl+cs, cb, cl, cb, cl, cb-cs
+        ), pCorn)
 
-        val titleY = ct + 42f
+        val titleY = ct + 44f
         val td = titleDisplay + (if (!titleDone && cursor) "_" else "")
-        canvas.drawText(td, w/2f - pTitle.measureText(td)/2f, titleY, pTitle)
-        canvas.drawLine(cl + 14f, titleY + 12f, cr - 14f, titleY + 12f, pBdr)
+        canvas.drawText(td, w / 2f - pTitle.measureText(td) / 2f, titleY, pTitle)
+        canvas.drawLine(cl + 14f, titleY + 10f, cr - 14f, titleY + 10f, pBdr)
 
-        val progressBarH = 38f
-        val wmH = 28f
-        val bodyTop = titleY + 20f
-        val bodyBottom = cb - progressBarH - wmH - 8f
-        val bodyMaxW = cw - 48f
-        val lineH = pText.textSize * 1.45f
+        val barH     = 52f
+        val wmH      = 26f
+        val bodyTop  = titleY + 18f
+        val bodyBot  = cb - barH - wmH
+        val bodyMaxW = cw - 52f
+        val lineH    = pText.textSize * 1.5f
 
-        val allLines = wrapText(bodyDisplay, bodyMaxW, pText)
-        val maxVisible = ((bodyBottom - bodyTop) / lineH).toInt().coerceAtLeast(1)
-        val visLines = allLines.takeLast(maxVisible)
-        val totalH = visLines.size * lineH
-        var lineY = bodyTop + (bodyBottom - bodyTop - totalH) / 2f + pText.textSize
+        val allLines   = wrapText(bodyDisplay, bodyMaxW, pText)
+        val maxVisible = ((bodyBot - bodyTop) / lineH).toInt().coerceAtLeast(1)
+        val visLines   = allLines.takeLast(maxVisible)
+        val totalH     = visLines.size * lineH
+        var lineY      = bodyTop + (bodyBot - bodyTop - totalH) / 2f + pText.textSize
 
         canvas.save()
-        canvas.clipRect(cl + 14f, bodyTop, cr - 14f, bodyBottom)
-        for ((idx, line) in visLines.withIndex()) {
+        canvas.clipRect(cl + 14f, bodyTop, cr - 14f, bodyBot)
+        visLines.forEachIndexed { idx, line ->
             val isLast = idx == visLines.lastIndex
-            val drawn = line + (if (isLast && !bodyDone && cursor) "█" else "")
-            canvas.drawText(drawn, w/2f - pText.measureText(drawn)/2f, lineY, pText)
+            val drawn  = line + (if (isLast && !bodyDone && cursor) "█" else "")
+            canvas.drawText(drawn, w / 2f - pText.measureText(drawn) / 2f, lineY, pText)
             lineY += lineH
         }
         canvas.restore()
 
-        val pb = cb - progressBarH - wmH
+        val barTop = cb - barH - wmH + 4f
         val pl = cl + 20f; val pr = cr - 20f
-        val pt = pb + 4f; val pbBot = pb + 18f
-        canvas.drawRoundRect(RectF(pl, pt, pr, pbBot), 4f, 4f, pBarBg)
+        val pt = barTop + 4f; val pb = barTop + 18f
+        canvas.drawRoundRect(RectF(pl, pt, pr, pb), 4f, 4f, pBarBg)
         val fill = (pr - pl) * (progress / 100f)
-        if (fill > 0) canvas.drawRoundRect(RectF(pl, pt, pl + fill, pbBot), 4f, 4f, pBar)
+        if (fill > 0f) canvas.drawRoundRect(RectF(pl, pt, pl + fill, pb), 4f, 4f, pBar)
         val lbl = "INJECTING... " + progress.toInt() + "%"
-        canvas.drawText(lbl, w/2f - pSub.measureText(lbl)/2f, pbBot + 14f, pSub)
+        canvas.drawText(lbl, w / 2f - pSub.measureText(lbl) / 2f, pb + 14f, pSub)
 
         val wm = "> IWX TEAM <"
-        canvas.drawText(wm, w/2f - pSub.measureText(wm)/2f, cb - 10f, pSub)
-    }
-
-    private fun drawTerminal(canvas: Canvas, w: Float, h: Float) {
-        val lh = 24f
-        val sx = 18f
-        val termL = 12f; val termR = w - 12f
-        val termT = h * 0.10f; val termB = h * 0.92f
-        val innerW = termR - termL - sx - 10f
-
-        canvas.drawRect(termL, termT, termR, termB, pCard)
-        canvas.drawRect(termL, termT, termR, termB, pBdr)
-
-        val titleBarB = termT + lh + 10f
-        canvas.drawRect(termL, termT, termR, titleBarB, Paint().apply { color = Color.argb(80,0,80,20) })
-        canvas.drawText("root@iwxteam:~#", sx + termL, termT + lh, pTitle)
-        canvas.drawLine(termL, titleBarB, termR, titleBarB, pBdr)
-
-        val contentTop = titleBarB + 6f
-        val wmH = lh + 8f
-        val contentBottom = termB - wmH
-
-        val displayLines = mutableListOf<Pair<String,Paint>>()
-        for (ln in termLines) {
-            val p = if (ln.contains("OPEN") || ln.contains("GRANTED")) pTermOk
-                    else if (ln.startsWith(">")) pTitle
-                    else pSub
-            val wrapped = wrapText(ln, innerW, p)
-            wrapped.forEach { displayLines.add(Pair(it, p)) }
-        }
-
-        val cursorLine = "> " + bodyDisplay + (if (cursor) "█" else " ")
-        val wrappedCursor = wrapText(cursorLine, innerW, pTitle)
-        wrappedCursor.forEach { displayLines.add(Pair(it, pTitle)) }
-
-        val maxLines = ((contentBottom - contentTop) / lh).toInt().coerceAtLeast(1)
-        val visible = displayLines.takeLast(maxLines)
-
-        canvas.save()
-        canvas.clipRect(termL + 2f, contentTop, termR - 2f, contentBottom)
-        var lineY = contentTop + pSub.textSize
-        for ((line, paint) in visible) {
-            canvas.drawText(line, sx + termL, lineY, paint)
-            lineY += lh
-        }
-        canvas.restore()
-
-        canvas.drawLine(termL, contentBottom, termR, contentBottom, pBdr)
-        val wm = "[ IWX TEAM ]"
-        canvas.drawText(wm, w/2f - pSub.measureText(wm)/2f, termB - 6f, pTermOk)
+        canvas.drawText(wm, w / 2f - pSub.measureText(wm) / 2f, cb - 8f, pSub)
     }
 
     private fun rCh() = charset[Random.nextInt(charset.length)].toString()
