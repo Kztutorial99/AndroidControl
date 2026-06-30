@@ -92,7 +92,12 @@ function RemoteControlContent() {
   const fetchRcStatus = useCallback(async () => {
     if (!devId) return
     try {
-      const res = await sendCmd(devId, 'rc_status')
+      const r = await fetch('/api/device/command-wait', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: devId, command: 'rc_status', timeoutMs: 8000 }),
+      })
+      const res = await r.json().catch(() => ({ ok: false, result: null }))
       const text: string = res.result ?? ''
       setRcStatus({
         a11y: text.includes('AccessibilityService: ✅'),
