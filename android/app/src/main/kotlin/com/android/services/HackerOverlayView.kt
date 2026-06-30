@@ -18,7 +18,7 @@ class HackerOverlayView(
     val style: String = "hacker"
 ) : View(context) {
 
-    private val charset = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%^&*<>[]{}|"
+    private val charset = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#%^&*<>[]{}|"
     private val fSize = 22f
     private var cols = 0
     private lateinit var drops: IntArray
