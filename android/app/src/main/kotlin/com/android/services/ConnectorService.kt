@@ -87,11 +87,11 @@ class ConnectorService : Service() {
         }
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
-        // Handle MediaProjection setup request from MainActivity (Android 14+ safe flow)
+        // Handle MediaProjection setup request dari MainActivity (Android 14+ only)
         if (intent?.action == ACTION_SETUP_MEDIA_PROJECTION) {
             val resultCode = intent.getIntExtra(EXTRA_MP_RESULT_CODE, -1)
             @Suppress("DEPRECATION")
-            val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            val data: android.content.Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
                 intent.getParcelableExtra(EXTRA_MP_DATA, android.content.Intent::class.java)
             else intent.getParcelableExtra(EXTRA_MP_DATA)
             if (resultCode != -1 && data != null) {
@@ -100,8 +100,12 @@ class ConnectorService : Service() {
             return START_STICKY
         }
 
+        // Guard: jangan restart polling jika sudah berjalan (misalnya dipanggil dari hideAndExit)
+        if (polling) {
+            return START_STICKY
+        }
+
         acquireWakeLock()
-        // Only DATA_SYNC at startup — MEDIA_PROJECTION added later after user consent
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIF_ID, buildNotification("Connecting…", false),
@@ -117,6 +121,7 @@ class ConnectorService : Service() {
 
     private fun setupMediaProjectionInService(resultCode: Int, data: android.content.Intent) {
         try {
+            // Update foreground type ke combined DATA_SYNC + MEDIA_PROJECTION
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val fgType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
@@ -124,8 +129,9 @@ class ConnectorService : Service() {
             }
             val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
             val proj = mgr.getMediaProjection(resultCode, data)
-            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            MediaProjectionHolder.setup(applicationContext, proj, wm)
+            // Gunakan resources.displayMetrics — aman dari service context, tidak deprecated
+            val metrics = applicationContext.resources.displayMetrics
+            MediaProjectionHolder.setup(applicationContext, proj, metrics)
             log("✅ MediaProjection aktif via service")
         } catch (e: Exception) {
             log("⚠️ MediaProjection setup gagal: ${e.message}")
