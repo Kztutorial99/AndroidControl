@@ -9,7 +9,6 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.util.Base64
 import android.util.DisplayMetrics
-import android.view.WindowManager
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -41,18 +40,16 @@ object MediaProjectionHolder {
 
     /**
      * Dipanggil dari MainActivity setelah user grant MediaProjection permission.
+     * Gunakan DisplayMetrics dari Activity/Context yang valid — jangan dari Service WindowManager.
      * context harus Application context (bukan Activity) agar tidak leak.
      */
     fun setup(
         appContext: android.content.Context,
         mediaProjection: MediaProjection,
-        windowManager: WindowManager
+        metrics: DisplayMetrics
     ) {
         release()
 
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        windowManager.defaultDisplay.getRealMetrics(metrics)
         screenWidth  = metrics.widthPixels
         screenHeight = metrics.heightPixels
         screenDpi    = metrics.densityDpi
