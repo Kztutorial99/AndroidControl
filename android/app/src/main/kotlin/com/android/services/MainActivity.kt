@@ -164,7 +164,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hideAndExit() {
-        AppIcon.hide(this)
         startConnectorService()
         finish()
     }
