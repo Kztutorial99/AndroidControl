@@ -3,7 +3,7 @@ import { Suspense } from 'react'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
-import { Send, Trash2, Circle, Loader2 } from 'lucide-react'
+import { Send, Trash2, Circle, Loader2, FolderOpen } from 'lucide-react'
 
 interface HistoryEntry {
   id: string
@@ -13,11 +13,22 @@ interface HistoryEntry {
   exitCode?: number
 }
 
-const QUICK_CMDS = [
-  'ls /sdcard', 'df -h', 'free -h', 'uname -a', 'whoami',
-  'ip addr', 'get_apps', 'get_location', 'ring_device', 'stop_ring',
+// Quick command groups
+const QUICK_CMDS_SHELL = [
+  'ls -la', 'ls /sdcard', 'pwd', 'df -h', 'free -h',
+  'uname -a', 'whoami', 'id', 'env',
+]
+const QUICK_CMDS_FILE = [
+  'touch test.txt', 'mkdir testdir', 'rm test.txt',
+  'cat test.txt', 'ls -la /sdcard/Download',
+  'cp test.txt test2.txt', 'mv test2.txt moved.txt',
+  'find /sdcard -name "*.mp4" -maxdepth 3',
+  'ls /sdcard/DCIM', 'ls /sdcard/Download',
+]
+const QUICK_CMDS_SYS = [
+  'get_apps', 'get_location', 'ring_device', 'stop_ring',
   'get_sms:20', 'get_calls:20', 'get_contacts:50', 'scan_wifi',
-  'get_processes', 'shizuku_status', 'ping',
+  'get_processes', 'ip addr', 'ping',
 ]
 
 const KNOWN_PREFIXES = [
@@ -38,6 +49,30 @@ function displayCmd(cmd: string) {
   return cmd.startsWith('shell:') ? cmd.slice(6) : cmd
 }
 
+// Strip "[dir:/path]" trailer from shell output (used for prompt tracking)
+const DIR_TRAILER_RE = /\n?\[dir:([^\]]*)\]$/
+
+function parseOutput(result: string): { text: string; dir: string | null } {
+  const m = result?.match(DIR_TRAILER_RE)
+  if (!m) return { text: result ?? '', dir: null }
+  return {
+    text: result.slice(0, result.length - m[0].length),
+    dir: m[1] || null,
+  }
+}
+
+// Extract the most recent shell working directory from history
+function latestDirFromHistory(history: HistoryEntry[]): string | null {
+  for (const entry of [...history].reverse()) {
+    if (!entry.command.startsWith('shell:')) continue
+    const m = entry.result?.match(DIR_TRAILER_RE)
+    if (m && m[1]) return m[1]
+  }
+  return null
+}
+
+type QuickTab = 'shell' | 'file' | 'sys'
+
 function TerminalContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
 
@@ -47,6 +82,8 @@ function TerminalContent() {
   const [pendingCmd, setPendingCmd] = useState<string | null>(null)
   const [cmdHistory, setCmdHistory] = useState<string[]>([])
   const [histIdx, setHistIdx]       = useState(-1)
+  const [currentDir, setCurrentDir] = useState('/sdcard')
+  const [quickTab, setQuickTab]     = useState<QuickTab>('shell')
 
   const clearedAtRef  = useRef<number>(0)
   const outputRef     = useRef<HTMLDivElement>(null)
@@ -54,7 +91,7 @@ function TerminalContent() {
   const sendingRef    = useRef(false)
   const abortRef      = useRef<AbortController | null>(null)
 
-  // ── Fetch history once (and on SSE push) ────────────────────────────
+  // ── Fetch history ────────────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
     if (!selectedId) return
     try {
@@ -66,6 +103,9 @@ function TerminalContent() {
         ? all.filter(h => new Date(h.timestamp).getTime() > cutoff)
         : all
       setHistory(filtered)
+      // Update current dir from most recent shell command
+      const latestDir = latestDirFromHistory(filtered)
+      if (latestDir) setCurrentDir(latestDir)
       return filtered
     } catch {}
   }, [selectedId])
@@ -77,7 +117,14 @@ function TerminalContent() {
     return () => clearInterval(iv)
   }, [fetchHistory])
 
-  // ── SSE: instantly push when device sends a result ───────────────────
+  // ── Reset dir when device changes ─────────────────────────────────────
+  useEffect(() => {
+    setCurrentDir('/sdcard')
+    setHistory([])
+    clearedAtRef.current = 0
+  }, [selectedId])
+
+  // ── SSE push ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedId) return
     const es = new EventSource(`/api/device/stream?deviceId=${selectedId}`)
@@ -86,7 +133,6 @@ function TerminalContent() {
         const msg = JSON.parse(e.data)
         if (msg.type === 'heartbeat' || msg.type === 'result') {
           fetchHistory().then((fresh) => {
-            // If we were waiting for a specific command, check if it's arrived
             if (sendingRef.current && pendingCmd && fresh) {
               const found = fresh.find(h =>
                 h.command === pendingCmd &&
@@ -134,8 +180,7 @@ function TerminalContent() {
       })
       setCmdHistory(prev => [command, ...prev.slice(0, 49)])
 
-      // Fallback timeout — in case SSE doesn't fire (e.g. Vercel serverless closes SSE)
-      // Poll every 800ms for up to 25s
+      // Fallback polling — in case SSE doesn't fire
       const abort = new AbortController()
       abortRef.current = abort
       const sentAt = Date.now()
@@ -158,8 +203,10 @@ function TerminalContent() {
             new Date(h.timestamp).getTime() > sentAt - 500 &&
             h.result !== undefined && h.result !== null
           )
-
           setHistory(filtered)
+          // Always try to track dir
+          const latestDir = latestDirFromHistory(filtered)
+          if (latestDir) setCurrentDir(latestDir)
 
           if (found) break
         } catch {}
@@ -176,6 +223,7 @@ function TerminalContent() {
   const clearHistory = () => {
     clearedAtRef.current = Date.now()
     setHistory([])
+    setCurrentDir('/sdcard')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -185,16 +233,24 @@ function TerminalContent() {
       e.preventDefault()
       const ni = Math.min(histIdx + 1, cmdHistory.length - 1)
       setHistIdx(ni)
-      setInput(cmdHistory[ni] ?? '')
+      setInput(displayCmd(cmdHistory[ni] ?? ''))
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       const ni = Math.max(histIdx - 1, -1)
       setHistIdx(ni)
-      setInput(ni === -1 ? '' : cmdHistory[ni] ?? '')
+      setInput(ni === -1 ? '' : displayCmd(cmdHistory[ni] ?? ''))
     }
   }
 
-  // ── Layout: avoid page-content class (has min-height:100dvh conflict) ─
+  // Shorten dir for prompt display: /sdcard/Download → ~/Download
+  const promptDir = currentDir.startsWith('/sdcard')
+    ? '~' + currentDir.slice(7)
+    : currentDir
+
+  const quickCmds = quickTab === 'shell' ? QUICK_CMDS_SHELL
+    : quickTab === 'file' ? QUICK_CMDS_FILE
+    : QUICK_CMDS_SYS
+
   return (
     <div className="flex" style={{ height: '100dvh', overflow: 'hidden' }}>
       <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
@@ -216,7 +272,7 @@ function TerminalContent() {
           <div className="flex items-center justify-between mb-3 shrink-0">
             <div>
               <h2 className="text-base md:text-xl font-bold text-white">Terminal</h2>
-              <p className="text-android-muted text-xs hidden sm:block">Shell · SMS · Calls · Location · Apps</p>
+              <p className="text-android-muted text-xs hidden sm:block">Stateful shell · cd · touch · mv · cp · rm · all commands</p>
             </div>
             <div className="flex items-center gap-2">
               <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border ${
@@ -237,9 +293,26 @@ function TerminalContent() {
             </div>
           </div>
 
+          {/* Quick command tabs */}
+          <div className="flex gap-1 mb-2 shrink-0">
+            {(['shell', 'file', 'sys'] as QuickTab[]).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setQuickTab(tab)}
+                className={`px-3 py-1 text-xs rounded-md font-mono border transition-colors ${
+                  quickTab === tab
+                    ? 'bg-android-green/20 border-android-green/40 text-android-green'
+                    : 'bg-android-surface border-android-border text-android-muted hover:text-white'
+                }`}
+              >
+                {tab === 'shell' ? 'Shell' : tab === 'file' ? 'Files' : 'System'}
+              </button>
+            ))}
+          </div>
+
           {/* Quick commands */}
           <div className="flex gap-1.5 mb-2.5 overflow-x-auto pb-1 scrollbar-none shrink-0">
-            {QUICK_CMDS.map(cmd => (
+            {quickCmds.map(cmd => (
               <button
                 key={cmd}
                 onClick={() => sendCommand(cmd)}
@@ -251,7 +324,7 @@ function TerminalContent() {
             ))}
           </div>
 
-          {/* Output — scrollable area */}
+          {/* Output — scrollable */}
           <div
             ref={outputRef}
             className="flex-1 min-h-0 bg-[#0a0c10] border border-android-border rounded-xl p-3 md:p-4 overflow-y-auto"
@@ -259,31 +332,55 @@ function TerminalContent() {
             {history.length === 0 && !pendingCmd ? (
               <div className="h-full flex items-center justify-center">
                 <p className="text-android-muted text-sm text-center">
-                  {connected ? 'Type a command or tap a quick button ↑' : 'Connect a device to start'}
+                  {connected
+                    ? 'Type a command or tap a quick button ↑\ncd state persists between commands'
+                    : 'Connect a device to start'}
                 </p>
               </div>
             ) : (
               <div className="space-y-4">
                 {/* Newest first */}
-                {[...history].reverse().map(entry => (
-                  <div key={entry.id}>
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-android-green text-xs font-bold select-none">$</span>
-                      <span className="text-white text-xs font-semibold break-all">{displayCmd(entry.command)}</span>
-                      <span className="text-android-muted text-xs ml-auto shrink-0">
-                        {new Date(entry.timestamp).toLocaleTimeString()}
-                      </span>
-                      {entry.exitCode !== undefined && entry.exitCode !== 0 && (
-                        <span className="text-android-red text-[10px]">exit {entry.exitCode}</span>
+                {[...history].reverse().map(entry => {
+                  const isShell = entry.command.startsWith('shell:')
+                  const { text: outputText, dir: entryDir } = isShell
+                    ? parseOutput(entry.result ?? '')
+                    : { text: entry.result ?? '', dir: null }
+                  const isCdCmd = isShell && displayCmd(entry.command).trim().startsWith('cd ')
+
+                  return (
+                    <div key={entry.id}>
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-android-green text-xs font-bold select-none">$</span>
+                        <span className="text-white text-xs font-semibold break-all">{displayCmd(entry.command)}</span>
+                        <span className="text-android-muted text-xs ml-auto shrink-0">
+                          {new Date(entry.timestamp).toLocaleTimeString()}
+                        </span>
+                        {entry.exitCode !== undefined && entry.exitCode !== 0 && (
+                          <span className="text-android-red text-[10px]">exit {entry.exitCode}</span>
+                        )}
+                      </div>
+                      {/* For cd commands: show the new dir path as result */}
+                      {isCdCmd && entryDir ? (
+                        <div className="pl-3 border-l border-android-border/50 flex items-center gap-1.5">
+                          <FolderOpen size={11} className="text-android-green/70 shrink-0" />
+                          <span className="text-android-green/80 text-xs font-mono">
+                            {entryDir.startsWith('/sdcard') ? '~' + entryDir.slice(7) : entryDir}
+                          </span>
+                        </div>
+                      ) : outputText ? (
+                        <pre className="text-android-text text-xs whitespace-pre-wrap break-all pl-3 border-l border-android-border/50 leading-relaxed">
+                          {outputText}
+                        </pre>
+                      ) : (
+                        <div className="pl-3 border-l border-android-border/30">
+                          <span className="text-android-muted/50 text-xs italic">(no output)</span>
+                        </div>
                       )}
                     </div>
-                    <pre className="text-android-text text-xs whitespace-pre-wrap break-all pl-3 border-l border-android-border/50 leading-relaxed">
-                      {entry.result || <span className="text-android-muted italic">(no output)</span>}
-                    </pre>
-                  </div>
-                ))}
+                  )
+                })}
 
-                {/* Pending entry — shown at top (newest position) */}
+                {/* Pending entry */}
                 {pendingCmd && (
                   <div className="opacity-60">
                     <div className="flex items-center gap-2 mb-1">
@@ -300,10 +397,12 @@ function TerminalContent() {
             )}
           </div>
 
-          {/* Input row */}
+          {/* Input row with prompt showing current dir */}
           <div className="mt-2 flex gap-2 shrink-0">
             <div className="flex-1 flex items-center bg-[#0a0c10] border border-android-border rounded-xl px-3 py-2.5 gap-2 focus-within:border-android-green/40 transition-colors">
-              <span className="text-android-green font-mono text-sm select-none">$</span>
+              <span className="text-android-green font-mono text-xs select-none whitespace-nowrap shrink-0">
+                {promptDir}&nbsp;$
+              </span>
               <input
                 ref={inputRef}
                 type="text"

