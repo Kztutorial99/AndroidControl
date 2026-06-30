@@ -58,7 +58,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!selectedId) return
-    const es = new EventSource(`/api/device/stream?deviceId=${encodeURIComponent(selectedId)}`)
+    const es = new EventSource(`/api/device/stream?deviceId=${encodeURIComponent(selectedId)}&heartbeatOnly=true`)
     es.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)

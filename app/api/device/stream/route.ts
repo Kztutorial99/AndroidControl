@@ -16,6 +16,10 @@ export async function GET(req: NextRequest) {
     return new Response('deviceId required', { status: 400 })
   }
 
+  // heartbeatOnly=true → skip frame subscription (used by DeviceContext)
+  // to avoid sending frames to clients that don't render them
+  const heartbeatOnly = searchParams.get('heartbeatOnly') === 'true'
+
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
@@ -48,9 +52,12 @@ export async function GET(req: NextRequest) {
       const unsubscribeDevice = subscribeDevice(deviceId, () => pushStatus())
 
       // Push frame langsung ke browser tanpa polling
-      const unsubscribeFrame = subscribeFrame(deviceId, (b64: string) => {
-        send({ type: 'frame', b64 })
-      })
+      // Skip jika heartbeatOnly (e.g. DeviceContext background connection)
+      const unsubscribeFrame = heartbeatOnly
+        ? () => {}
+        : subscribeFrame(deviceId, (b64: string) => {
+            send({ type: 'frame', b64 })
+          })
 
       const keepalive = setInterval(() => {
         if (closed) { clearInterval(keepalive); return }

@@ -113,7 +113,9 @@ function ControlContent() {
   const q = Q[qi]
 
   const sendCmd = useCallback((cmd: string, label: string) => {
-    if (!selectedId || !connected) return
+    // Allow commands when live (streaming = device is clearly alive even if heartbeat lagged)
+    if (!selectedId) return
+    if (!connected && !liveRef.current) return
     setLastAct(label)
     fetch('/api/device/command', {
       method: 'POST',

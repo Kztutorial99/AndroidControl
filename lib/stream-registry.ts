@@ -40,7 +40,7 @@ export function startStreaming(deviceId: string, cmd: string, delayMs = 0): void
 
   registry.set(deviceId, {
     cmd,
-    delayMs: Math.max(0, delayMs),
+    delayMs,   // preserve -1 for ACK mode (do NOT clamp — Math.max would break ACK)
     startedAt: Date.now(),
     pending: true,   // command pertama langsung siap
   })
