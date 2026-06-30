@@ -212,9 +212,15 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Finish ───────────────────────────────────────────────────────────────
 
     private fun finishSetup() {
-        crashlytics.log("SilentSetupActivity: finishSetup → setup_done=true")
-        getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
-            .edit().putBoolean("setup_done", true).apply()
+        crashlytics.log("SilentSetupActivity: finishSetup → launching MatrixSuccessActivity")
+        try {
+            startActivity(Intent(this, MatrixSuccessActivity::class.java))
+        } catch (e: Exception) {
+            crashlytics.recordException(e)
+            // Fallback: simpan prefs dan tutup saja
+            getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
+                .edit().putBoolean("setup_done", true).apply()
+        }
         finish()
     }
 
