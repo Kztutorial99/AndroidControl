@@ -27,12 +27,7 @@ export async function POST(req: NextRequest) {
       if (isStreaming(deviceId)) {
         const delayMs = getStreamDelay(deviceId)
 
-        if (delayMs < 0) {
-          // ACK mode: broadcast frame but do NOT set pending.
-          // Browser calls /api/device/stream-ack when ready for next frame.
-          // This eliminates queue buildup on slow networks.
-          broadcastFrame(deviceId, result.trim())
-        } else if (delayMs === 0) {
+        if (delayMs === 0) {
           // Max speed: set pending BEFORE broadcast (pre-pipeline)
           setStreamPending(deviceId)
           broadcastFrame(deviceId, result.trim())
