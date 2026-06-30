@@ -163,7 +163,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href
             return (
-              <Link key={href} href={href} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              <Link key={href} href={href} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 active:scale-95 active:opacity-70 select-none ${
                 active
                   ? 'bg-android-green/10 text-android-green border border-android-green/20'
                   : 'text-android-muted hover:text-android-text hover:bg-white/5'
@@ -283,7 +283,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
             <Link
               key={href}
               href={href}
-              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${active ? 'text-android-green' : 'text-android-muted'}`}
+              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all duration-150 active:scale-90 active:opacity-60 select-none ${active ? 'text-android-green' : 'text-android-muted'}`}
             >
               <Icon size={18} />
               <span className="text-[9px] font-medium leading-none">{label}</span>
@@ -293,7 +293,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
 
         <button
           onClick={() => setShowDrawer(true)}
-          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${showDrawer ? 'text-android-green' : 'text-android-muted'}`}
+          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all duration-150 active:scale-90 active:opacity-60 select-none ${showDrawer ? 'text-android-green' : 'text-android-muted'}`}
         >
           <MoreHorizontal size={18} />
           <span className="text-[9px] font-medium leading-none">More</span>
@@ -331,7 +331,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
                     key={href}
                     href={href}
                     onClick={() => setShowDrawer(false)}
-                    className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border transition-colors ${
+                    className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border transition-all duration-150 active:scale-90 active:opacity-60 select-none ${
                       active
                         ? 'bg-android-green/10 border-android-green/30 text-android-green'
                         : 'bg-white/3 border-android-border text-android-muted hover:text-white hover:bg-white/5'
