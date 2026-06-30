@@ -46,6 +46,38 @@ const SWIPES = [
   { l: 'Swipe Right', c: 'input_swipe_pct:0.2:0.5:0.8:0.5:200' },
 ]
 
+/** Input koordinat custom untuk long press: "x,y" dalam persen (misal: 30,70) */
+function LpCoordInput({ onSend, disabled }: { onSend: (cmd: string, label: string) => void; disabled: boolean }) {
+  const [val, setVal] = useState('')
+  const send = () => {
+    const parts = val.trim().split(/[,\s]+/)
+    const x = parseFloat(parts[0])
+    const y = parseFloat(parts[1])
+    if (isNaN(x) || isNaN(y)) return
+    const xp = (Math.max(0, Math.min(100, x)) / 100).toFixed(4)
+    const yp = (Math.max(0, Math.min(100, y)) / 100).toFixed(4)
+    onSend(`input_longpress_pct:${xp}:${yp}`, `LP @${Math.round(x)}%,${Math.round(y)}%`)
+  }
+  return (
+    <div className="shrink-0 flex items-center gap-1">
+      <input
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && send()}
+        placeholder="x,y %"
+        disabled={disabled}
+        className="w-[60px] bg-android-bg border border-orange-500/30 text-orange-300 text-[10px] rounded-lg px-1.5 py-1 placeholder:text-orange-500/40 focus:outline-none focus:border-orange-400/60 disabled:opacity-30"
+      />
+      <button
+        onClick={send}
+        disabled={disabled || !val.trim()}
+        className="shrink-0 px-2 py-1 text-[10px] bg-orange-500/10 border border-orange-500/30 rounded-lg text-orange-400 hover:bg-orange-500/20 disabled:opacity-30 active:scale-95 transition-all">
+        ↵
+      </button>
+    </div>
+  )
+}
+
 function ControlContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
 
@@ -76,6 +108,7 @@ function ControlContent() {
   const ackingRef       = useRef(false)
   const lpTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFiredRef      = useRef(false)
+  const lastLpPosRef    = useRef<{ x: number; y: number } | null>(null)
 
   const q = Q[qi]
 
@@ -126,6 +159,7 @@ function ControlContent() {
       if (!dragRef.current || dragging.current) return
       lpFiredRef.current = true
       const { x, y, px, py } = dragRef.current
+      lastLpPosRef.current = { x, y }
       setLpRipple({ x: px, y: py })
       setTimeout(() => setLpRipple(null), 900)
       sendCmd(`input_longpress_pct:${x.toFixed(4)}:${y.toFixed(4)}`,
@@ -153,6 +187,7 @@ function ControlContent() {
         const dist = Math.hypot(p.x - x1, p.y - y1)
         sendCmd(`input_swipe_pct:${x1.toFixed(4)}:${y1.toFixed(4)}:${p.x.toFixed(4)}:${p.y.toFixed(4)}:${Math.round(dist * 700 + 150)}`, 'Swipe')
       } else {
+        lastLpPosRef.current = { x: p.x, y: p.y }
         setRipple({ x: p.px, y: p.py })
         setTimeout(() => setRipple(null), 600)
         sendCmd(`input_tap_pct:${p.x.toFixed(4)}:${p.y.toFixed(4)}`, `Tap ${Math.round(p.x * 100)}%,${Math.round(p.y * 100)}%`)
@@ -449,17 +484,23 @@ function ControlContent() {
               </button>
             ))}
             <div className="w-px h-5 bg-android-border shrink-0 mx-0.5" />
-            {/* Long Press button — tap screen area center or use button */}
+            {/* Long Press at last tapped position or screen center */}
             <button
               disabled={!connected || !hasFrame}
-              onPointerDown={(e) => {
-                e.stopPropagation()
-                // Long press center of screen
-                sendCmd('input_longpress_pct:0.5000:0.5000', 'Long Press Center')
+              onClick={() => {
+                const pos = lastLpPosRef.current
+                const x = pos ? pos.x.toFixed(4) : '0.5000'
+                const y = pos ? pos.y.toFixed(4) : '0.5000'
+                const label = pos
+                  ? `Long Press ${Math.round(Number(x)*100)}%,${Math.round(Number(y)*100)}%`
+                  : 'Long Press Center'
+                sendCmd(`input_longpress_pct:${x}:${y}`, label)
               }}
               className="shrink-0 flex items-center gap-1 px-2.5 py-1 text-[10px] bg-orange-500/10 border border-orange-500/30 rounded-lg text-orange-400 hover:bg-orange-500/20 hover:border-orange-500/50 disabled:opacity-30 active:scale-95 transition-all whitespace-nowrap">
               <Hand size={10} /> Long Press
             </button>
+            {/* Custom X,Y coordinate long press */}
+            <LpCoordInput onSend={sendCmd} disabled={!connected} />
           </div>
 
           <div className="flex gap-1.5 px-2 pb-2">
