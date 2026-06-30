@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <com.android.services.MatrixRainView
+        android:id="@+id/matrixRainView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/cardContainer"
+        android:layout_width="300dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="36dp"
+        android:background="@drawable/matrix_card_bg">
+
+        <TextView
+            android:id="@+id/tvCheck"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✓"
+            android:textSize="64sp"
+            android:textColor="#3FB950"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SYSTEM CONFIGURATION"
+            android:textColor="#8B949E"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.25"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SUCCESS"
+            android:textColor="#3FB950"
+            android:textSize="34sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="20dp" />
+
+        <View
+            android:layout_width="140dp"
+            android:layout_height="1dp"
+            android:background="#2A3F2A"
+            android:layout_marginBottom="18dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BY IWX TEAM"
+            android:textColor="#3FB950"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.3" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="IWX PANEL v2.0"
+            android:textColor="#556B55"
+            android:textSize="10sp"
+            android:letterSpacing="0.1"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="18dp" />
+
+        <TextView
+            android:id="@+id/tvCountdown"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Menutup dalam 5s..."
+            android:textColor="#556B55"
+            android:textSize="11sp"
+            android:letterSpacing="0.05" />
+
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:layout_gravity="bottom"
+        android:max="100"
+        android:progress="0"
+        android:progressTint="#3FB950"
+        android:progressBackgroundTint="#0D2010"
+        android:indeterminate="false" />
+
+</FrameLayout>
