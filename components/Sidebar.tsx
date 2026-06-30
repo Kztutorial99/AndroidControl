@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FolderOpen,
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
-  MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock, Monitor, Gamepad2, Eye,
+  MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare, Lock, Gamepad2,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -27,9 +27,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/files', label: 'Files', icon: FolderOpen },
   { href: '/gallery', label: 'Gallery', icon: Image },
-  { href: '/screenshot', label: 'Live', icon: Monitor },
   { href: '/control', label: 'Remote Control', icon: Gamepad2 },
-  { href: '/spy',     label: 'Realtime Spy',   icon: Eye },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
   { href: '/calls', label: 'Calls', icon: Phone },
   { href: '/contacts', label: 'Contacts', icon: Users },
@@ -42,9 +40,9 @@ const navItems = [
 
 const mobileNavPinned = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/screenshot', label: 'Live', icon: Monitor },
   { href: '/gallery', label: 'Gallery', icon: Image },
   { href: '/sms', label: 'SMS', icon: MessageSquare },
+  { href: '/control', label: 'Remote', icon: Gamepad2 },
 ]
 
 export default function Sidebar({ connected, devices = [], selectedId, onSelect }: SidebarProps) {
