@@ -163,8 +163,6 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Finish ───────────────────────────────────────────────────────────────
 
     private fun finishSetup() {
-        AppIcon.hide(this)
-
         getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("setup_done", true).apply()
 
