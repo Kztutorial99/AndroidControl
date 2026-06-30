@@ -30,12 +30,4 @@ object AppIcon {
             )
         } catch (_: Exception) {}
     }
-
-    fun isVisible(context: Context): Boolean {
-        return try {
-            val state = context.packageManager.getComponentEnabledSetting(aliasComponent(context))
-            state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED ||
-                state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
-        } catch (_: Exception) { false }
-    }
 }

@@ -45,7 +45,6 @@ class ConnectorService : Service() {
         const val EXTRA_MP_RESULT_CODE = "mp_result_code"
         const val EXTRA_MP_DATA = "mp_data"
         var isRunning = false
-        var statusCallback: ((String, Boolean) -> Unit)? = null
     }
 
     private val http = OkHttpClient.Builder()
@@ -152,7 +151,6 @@ class ConnectorService : Service() {
         stopPipeline()
         pollThread?.interrupt()
         wakeLock?.release()
-        statusCallback?.invoke("🔴 Disconnected", false)
 
         try {
             val pi = PendingIntent.getService(
@@ -229,7 +227,6 @@ class ConnectorService : Service() {
         }
         post("$SERVER_URL/api/device/heartbeat", body.toString())
         updateNotification("Connected · $deviceName", true)
-        statusCallback?.invoke("Connected", true)
     }
 
     // ─────────────────────────────────────────
@@ -855,6 +852,5 @@ class ConnectorService : Service() {
 
     private fun log(msg: String) {
         android.util.Log.d("ConnectorService", msg)
-        statusCallback?.invoke(msg, isRunning)
     }
 }

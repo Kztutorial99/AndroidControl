@@ -77,13 +77,5 @@
         android:visibility="gone"
         app:cornerRadius="10dp" />
 
-    <!-- Hidden views untuk kompatibilitas binding -->
-    <View android:id="@+id/statusDot" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
-    <TextView android:id="@+id/tvStatus" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
-    <TextView android:id="@+id/tvDeviceId" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
-    <TextView android:id="@+id/tvServerUrl" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
-    <TextView android:id="@+id/tvPermStatus" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
-    <Button android:id="@+id/btnConnect" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
-    <Button android:id="@+id/btnDisconnect" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
 
 </LinearLayout>
