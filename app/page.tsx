@@ -6,7 +6,7 @@ import StatCard from '@/components/StatCard'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
   Battery, BatteryCharging, HardDrive, Wifi,
-  Clock, Smartphone, EyeOff, Bell, BellOff,
+  Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
 import { Server } from 'lucide-react'
@@ -362,10 +362,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Device Control — Hide App & Ring */}
+          {/* Device Control — Ring */}
           <div className="bg-android-surface border border-android-border rounded-xl p-4 mb-3">
             <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
-              <EyeOff size={13} /> Device Control
+              <Bell size={13} /> Device Control
             </h3>
             {!connected ? (
               <p className="text-android-muted text-xs py-2 text-center">Device must be connected to use these controls</p>
