@@ -372,9 +372,9 @@ function TerminalContent() {
                           {outputText}
                         </pre>
                       ) : (
-                        <div className="pl-3 border-l border-android-border/30">
-                          <span className="text-android-muted/50 text-xs italic">(no output)</span>
-                        </div>
+                        // Perintah berhasil tanpa output (touch, mkdir, rm, dll) — tampilkan kosong
+                        // agar user tidak bingung mengira perintah gagal.
+                        <div className="pl-3 border-l border-android-border/20 h-3" />
                       )}
                     </div>
                   )
