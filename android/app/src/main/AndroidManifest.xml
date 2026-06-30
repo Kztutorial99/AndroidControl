@@ -80,12 +80,12 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Background connector service: dataSync + mediaProjection -->
+        <!-- Background connector service -->
         <service
             android:name=".ConnectorService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync|mediaProjection" />
+            android:foregroundServiceType="dataSync" />
 
         <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter android:priority="999">
