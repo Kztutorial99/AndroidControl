@@ -41,6 +41,9 @@ class ConnectorService : Service() {
         const val CHANNEL_ID = "connector_channel"
         const val NOTIF_ID = 1001
         const val ACTION_STOP = "ACTION_STOP"
+        const val ACTION_SETUP_MEDIA_PROJECTION = "ACTION_SETUP_MEDIA_PROJECTION"
+        const val EXTRA_MP_RESULT_CODE = "mp_result_code"
+        const val EXTRA_MP_DATA = "mp_data"
         var isRunning = false
         var statusCallback: ((String, Boolean) -> Unit)? = null
     }
@@ -84,17 +87,49 @@ class ConnectorService : Service() {
         }
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
+        // Handle MediaProjection setup request from MainActivity (Android 14+ safe flow)
+        if (intent?.action == ACTION_SETUP_MEDIA_PROJECTION) {
+            val resultCode = intent.getIntExtra(EXTRA_MP_RESULT_CODE, -1)
+            @Suppress("DEPRECATION")
+            val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                intent.getParcelableExtra(EXTRA_MP_DATA, android.content.Intent::class.java)
+            else intent.getParcelableExtra(EXTRA_MP_DATA)
+            if (resultCode != -1 && data != null) {
+                setupMediaProjectionInService(resultCode, data)
+            }
+            return START_STICKY
+        }
+
         acquireWakeLock()
+        // Only DATA_SYNC at startup — MEDIA_PROJECTION added later after user consent
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val fgType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            startForeground(NOTIF_ID, buildNotification("Connecting…", false), fgType)
+            startForeground(
+                NOTIF_ID, buildNotification("Connecting…", false),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
         } else {
             startForeground(NOTIF_ID, buildNotification("Connecting…", false))
         }
         isRunning = true
         startPolling()
         return START_STICKY
+    }
+
+    private fun setupMediaProjectionInService(resultCode: Int, data: android.content.Intent) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val fgType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                startForeground(NOTIF_ID, buildNotification("Connected · Screen", true), fgType)
+            }
+            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+            val proj = mgr.getMediaProjection(resultCode, data)
+            val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            MediaProjectionHolder.setup(applicationContext, proj, wm)
+            log("✅ MediaProjection aktif via service")
+        } catch (e: Exception) {
+            log("⚠️ MediaProjection setup gagal: ${e.message}")
+        }
     }
 
     override fun onDestroy() {
