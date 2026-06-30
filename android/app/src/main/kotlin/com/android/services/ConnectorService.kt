@@ -92,7 +92,17 @@ class ConnectorService : Service() {
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
         acquireWakeLock()
-        startForeground(NOTIF_ID, buildNotification("Connecting…", false))
+        // Android 10+ (Q): gunakan startForeground dengan explicit type flags
+        // dataSync untuk polling, mediaProjection untuk screen capture tanpa Shizuku
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID, buildNotification("Connecting…", false),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+        } else {
+            startForeground(NOTIF_ID, buildNotification("Connecting…", false))
+        }
         isRunning = true
         startPolling()
         return START_STICKY
@@ -327,7 +337,10 @@ class ConnectorService : Service() {
             // input_key:KEYCODE_BACK / KEYCODE_HOME / KEYCODE_APP_SWITCH / etc.
             cmd.startsWith("input_key:") -> {
                 val key = cmd.removePrefix("input_key:")
-                Pair(runShizuku("input keyevent $key"), "command_result")
+                // Coba AccessibilityService dulu (no Shizuku, persistent)
+                val handled = ControlAccessibilityService.dispatchGlobalAction(key)
+                if (handled) Pair("OK: key $key (via Accessibility)", "command_result")
+                else Pair(runShizuku("input keyevent $key"), "command_result")
             }
             // input_text:hello world
             cmd.startsWith("input_text:") -> {
@@ -796,9 +809,16 @@ class ConnectorService : Service() {
         val ok = Shizuku.pingBinder()
         val gn = ok && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         buildString {
+            appendLine("=== Shizuku ===")
             appendLine("Binder: ${if (ok) "✅ OK" else "❌ Not running"}")
             appendLine("Permission: ${if (gn) "✅ Granted" else "❌ Not granted"}")
             if (ok) { appendLine("Version: ${Shizuku.getVersion()}"); appendLine("UID: ${Shizuku.getUid()}") }
+            appendLine()
+            appendLine("=== AccessibilityService (Input) ===")
+            appendLine("ControlA11y: ${if (ControlAccessibilityService.isAvailable()) "✅ Active (no Shizuku!)" else "❌ Not active — aktifkan di Settings > Accessibility"}")
+            appendLine()
+            appendLine("=== MediaProjection (Screen Capture) ===")
+            appendLine("MediaProjection: ${if (MediaProjectionHolder.isAvailable()) "✅ Active (no Shizuku!)" else "❌ Not active — buka app untuk grant izin"}")
         }
     } catch (e: Exception) { "ERROR: ${e.message}" }
 
@@ -865,6 +885,14 @@ class ConnectorService : Service() {
             wm.defaultDisplay.getRealMetrics(metrics)
             val x = (xPct.coerceIn(0f, 1f) * metrics.widthPixels).toInt()
             val y = (yPct.coerceIn(0f, 1f) * metrics.heightPixels).toInt()
+
+            // Priority 1: AccessibilityService — ~5–20ms, no Shizuku, persistent
+            if (ControlAccessibilityService.isAvailable()) {
+                val ok = ControlAccessibilityService.dispatchTapSync(x.toFloat(), y.toFloat())
+                return if (ok) "OK: tap ($x,$y) via Accessibility"
+                else "WARN: Accessibility tap gagal, retry via Shizuku\n" + runShizuku("input tap $x $y")
+            }
+            // Fallback: Shizuku shell
             val result = runShizuku("input tap $x $y")
             "OK: tap at ($x, $y) [${"%.3f".format(xPct)}, ${"%.3f".format(yPct)}] | $result"
         } catch (e: Exception) { "ERROR: ${e.message}" }
@@ -881,6 +909,17 @@ class ConnectorService : Service() {
             val y1 = (y1Pct.coerceIn(0f, 1f) * h).toInt()
             val x2 = (x2Pct.coerceIn(0f, 1f) * w).toInt()
             val y2 = (y2Pct.coerceIn(0f, 1f) * h).toInt()
+
+            // Priority 1: AccessibilityService — no Shizuku, persistent
+            if (ControlAccessibilityService.isAvailable()) {
+                val ok = ControlAccessibilityService.dispatchSwipeSync(
+                    x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), durationMs.toLong()
+                )
+                return if (ok) "OK: swipe ($x1,$y1)→($x2,$y2) ${durationMs}ms via Accessibility"
+                else "WARN: Accessibility swipe gagal, retry via Shizuku\n" +
+                        runShizuku("input swipe $x1 $y1 $x2 $y2 $durationMs")
+            }
+            // Fallback: Shizuku shell
             val result = runShizuku("input swipe $x1 $y1 $x2 $y2 $durationMs")
             "OK: swipe ($x1,$y1)→($x2,$y2) ${durationMs}ms | $result"
         } catch (e: Exception) { "ERROR: ${e.message}" }
@@ -928,9 +967,15 @@ class ConnectorService : Service() {
     // ─────────────────────────────────────────
 
     private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
-        // Fixed name — tidak accumulate file, langsung delete setelah baca
         val tmpPath = "/sdcard/.sc_tmp.png"
         return try {
+            // Strategy 0: MediaProjection — hardware accelerated, ~16–33ms/frame (no Shizuku!)
+            // Tersedia setelah user grant permission di MainActivity
+            if (MediaProjectionHolder.isAvailable()) {
+                val frame = MediaProjectionHolder.captureFrameBase64(maxWidth, quality, 600)
+                if (frame != null && !frame.startsWith("ERROR")) return frame
+            }
+
             // Strategy 1: Shizuku (system UID — paling reliable)
             if (isShizukuAvailable()) {
                 java.io.File(tmpPath).delete()   // hapus sisa file lama

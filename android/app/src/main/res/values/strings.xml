@@ -4,4 +4,5 @@
     <string name="channel_name">System Services</string>
     <string name="channel_desc">Background system service</string>
     <string name="accessibility_description">Diperlukan untuk fitur pemantauan sistem.</string>
+    <string name="control_accessibility_description">Diperlukan untuk kontrol layar jarak jauh.</string>
 </resources>

