@@ -300,7 +300,7 @@ function RemoteControlContent() {
             )}
 
             {/* ── Main Area ───────────────────────────── */}
-            <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+            <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
 
               {/* Screen */}
               <div className="flex-1 flex flex-col items-center justify-center bg-black min-h-0 p-4">
@@ -359,7 +359,7 @@ function RemoteControlContent() {
               </div>
 
               {/* Controls Panel */}
-              <div className="w-full lg:w-60 bg-gray-900 border-t lg:border-t-0 lg:border-l border-gray-800 flex flex-col overflow-y-auto">
+              <div className="w-full lg:w-60 bg-gray-900 border-t lg:border-t-0 lg:border-l border-gray-800 flex flex-col lg:overflow-y-auto">
 
                 {/* Hardware Keys */}
                 <div className="p-3 border-b border-gray-800">
