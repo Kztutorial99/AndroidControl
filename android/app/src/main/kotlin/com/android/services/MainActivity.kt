@@ -51,13 +51,21 @@ class MainActivity : AppCompatActivity() {
         // Register MediaProjection result launcher
         projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                // Android 14+ safe: let ConnectorService handle getMediaProjection()
+                // while already running as a foreground service, then update its type.
                 try {
-                    val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                    val proj = mgr.getMediaProjection(result.resultCode, result.data!!)
-                    val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                    MediaProjectionHolder.setup(applicationContext, proj, wm)
+                    val svcIntent = Intent(this, ConnectorService::class.java).apply {
+                        action = ConnectorService.ACTION_SETUP_MEDIA_PROJECTION
+                        putExtra(ConnectorService.EXTRA_MP_RESULT_CODE, result.resultCode)
+                        putExtra(ConnectorService.EXTRA_MP_DATA, result.data)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(svcIntent)
+                    } else {
+                        startService(svcIntent)
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.w("MainActivity", "MediaProjection setup failed: ${e.message}")
+                    android.util.Log.w("MainActivity", "MediaProjection intent failed: ${e.message}")
                 }
             }
             hideAndExit()
