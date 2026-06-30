@@ -706,7 +706,22 @@ class ConnectorService : Service() {
                     saveShellDir()
                     "[dir:$currentDir]"
                 } else {
-                    "cd: $arg: No such file or directory\n[dir:$currentDir]"
+                    // Fallback: jika path absolut tidak ditemukan, coba di bawah /sdcard.
+                    // Contoh: "cd /Documents" → coba "/sdcard/Documents".
+                    // Ini menangani kebiasaan pengguna yang mengetik path ala Linux
+                    // padahal di Android storage ada di /sdcard.
+                    val fallback = if (arg.startsWith("/") && !arg.startsWith("/sdcard")) {
+                        resolveShellPath("/sdcard$arg")
+                    } else null
+                    val fallbackOk = fallback != null &&
+                        rawExec("test -d \"$fallback\" && echo OK || echo FAIL", currentDir, 5).trim() == "OK"
+                    if (fallbackOk && fallback != null) {
+                        currentDir = fallback
+                        saveShellDir()
+                        "[dir:$currentDir]"
+                    } else {
+                        "cd: $arg: No such file or directory\n[dir:$currentDir]"
+                    }
                 }
             }
 
