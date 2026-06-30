@@ -24,13 +24,9 @@ export async function POST(req: NextRequest) {
     const command = typeof cmd === 'string' && cmd.startsWith('screenshot:') ? cmd : 'screenshot:480:55'
     const fps = typeof targetFps === 'number' ? targetFps : 0
 
-    // fps = -1  → ACK mode: server waits for browser ACK before signalling Android
     // fps = 0   → max speed (no delay)
     // fps > 0   → fixed fps (delayMs = 1000/fps)
-    let delayMs: number
-    if (fps < 0)      delayMs = -1
-    else if (fps > 0) delayMs = Math.round(1000 / fps)
-    else              delayMs = 0
+    const delayMs = fps > 0 ? Math.round(1000 / fps) : 0
 
     startStreaming(deviceId, command, delayMs)
 
