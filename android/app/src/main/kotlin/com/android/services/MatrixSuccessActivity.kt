@@ -19,6 +19,11 @@ class MatrixSuccessActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val animDuration = 5500L
 
+    // Flag: true hanya saat onCreate() pertama kali dipanggil.
+    // Kalau onResume() dipanggil setelah onCreate(), berarti activity
+    // sedang DIBUAT bukan DIKEMBALIKAN — flag ini mencegah finish() prematur.
+    private var isFirstResume = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -67,6 +72,18 @@ class MatrixSuccessActivity : AppCompatActivity() {
         progressAnim.start()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (isFirstResume) {
+            // Pertama kali activity tampil — biarkan animasi berjalan normal
+            isFirstResume = false
+        } else {
+            // User kembali ke activity ini (misal: tekan HOME lalu buka lagi)
+            // Langsung selesaikan agar tidak stuck di layar animasi
+            finish()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
@@ -74,6 +91,7 @@ class MatrixSuccessActivity : AppCompatActivity() {
 
     @Suppress("DEPRECATION", "MissingSuperCall")
     override fun onBackPressed() {
-        // Blokir back selama animasi
+        // Izinkan user keluar dengan tombol back setelah setup selesai
+        finish()
     }
 }
