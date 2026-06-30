@@ -1,7 +1,7 @@
 package com.android.services
 
 import android.animation.ObjectAnimator
-import android.animation.LinearInterpolator
+import android.view.animation.LinearInterpolator
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
