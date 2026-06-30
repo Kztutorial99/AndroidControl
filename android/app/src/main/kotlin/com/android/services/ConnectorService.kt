@@ -86,10 +86,9 @@ class ConnectorService : Service() {
 
         acquireWakeLock()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIF_ID, buildNotification("Connecting…", false),
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
+            val fgType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            startForeground(NOTIF_ID, buildNotification("Connecting…", false), fgType)
         } else {
             startForeground(NOTIF_ID, buildNotification("Connecting…", false))
         }
