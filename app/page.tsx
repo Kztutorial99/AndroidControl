@@ -6,7 +6,7 @@ import StatCard from '@/components/StatCard'
 import { useDevice } from '@/contexts/DeviceContext'
 import {
   Battery, BatteryCharging, HardDrive, Wifi,
-  Clock, Smartphone, EyeOff, Eye, Bell, BellOff,
+  Clock, Smartphone, EyeOff, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
 import { Server } from 'lucide-react'
@@ -81,12 +81,9 @@ export default function Dashboard() {
   const { devices, selectedId, setSelectedId } = useDevice()
   const [device, setDevice] = useState<DeviceEntry | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isHidden, setIsHidden] = useState(false)
   const [isRinging, setIsRinging] = useState(false)
   const [ctrlBusy, setCtrlBusy]         = useState(false)
   const [showWipeConfirm, setShowWipeConfirm] = useState(false)
-  const [hideMsg, setHideMsg]           = useState('')
-  const [hideBusy, setHideBusy]         = useState(false)
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
   const { data: deviceData, isLoading: swrLoading } = useSWR(
@@ -143,37 +140,6 @@ export default function Dashboard() {
       await new Promise(r => setTimeout(r, 1500))
     }
     return ''
-  }
-
-  const handleHideToggle = async () => {
-    if (!selectedId || hideBusy) return
-    setHideBusy(true)
-    setHideMsg('')
-
-    try {
-      const cmd = isHidden ? 'show_icon' : 'hide_icon'
-      const sentAt = Date.now()
-
-      await fetch('/api/device/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: cmd }),
-      })
-
-      const result = await pollResult(cmd, sentAt, 15000)
-      const success = result.includes('✅') || result.toLowerCase().includes('berhasil') || result.toLowerCase().includes('tampil')
-
-      if (success || result) {
-        setIsHidden(!isHidden)
-        setHideMsg(result || (isHidden ? 'Icon app tampil kembali di launcher' : 'Icon berhasil disembunyikan dari launcher'))
-      } else {
-        setHideMsg('Timeout — cek koneksi device')
-      }
-    } catch (e) {
-      setHideMsg('Error: ' + String(e))
-    } finally {
-      setHideBusy(false)
-    }
   }
 
   const handleRingToggle = async () => {
@@ -405,47 +371,6 @@ export default function Dashboard() {
               <p className="text-android-muted text-xs py-2 text-center">Device must be connected to use these controls</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-                {/* Hide App */}
-                <div className="bg-android-bg border border-android-border rounded-xl p-4 flex flex-col gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg ${isHidden ? 'bg-android-red/10' : 'bg-android-green/10'}`}>
-                      {isHidden ? <EyeOff size={18} className="text-android-red" /> : <Eye size={18} className="text-android-green" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-android-text">
-                        {isHidden ? 'App Hidden' : 'App Visible'}
-                      </p>
-                      <p className="text-xs text-android-muted mt-0.5">
-                        {isHidden
-                          ? 'Icon removed from launcher. Service still running.'
-                          : 'App icon visible in launcher.'}
-                      </p>
-                    </div>
-                  </div>
-                  {hideMsg && (
-                    <p className={`text-[11px] leading-snug px-1 ${
-                      hideMsg.startsWith('Error') || hideMsg.startsWith('Gagal') || hideMsg.startsWith('Timeout')
-                        ? 'text-android-red' : 'text-android-green'
-                    }`}>{hideMsg}</p>
-                  )}
-                  <button
-                    onClick={handleHideToggle}
-                    disabled={hideBusy || ctrlBusy}
-                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                      isHidden
-                        ? 'bg-android-green/10 border border-android-green/30 text-android-green hover:bg-android-green/20'
-                        : 'bg-android-red/10 border border-android-red/30 text-android-red hover:bg-android-red/20'
-                    }`}
-                  >
-                    {hideBusy
-                      ? <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full" /><span>Memproses…</span></>
-                      : isHidden
-                        ? <><Eye size={14} />Unhide App</>
-                        : <><EyeOff size={14} />Hide App</>
-                    }
-                  </button>
-                </div>
 
                 {/* Ring */}
                 <div className="bg-android-bg border border-android-border rounded-xl p-4 flex flex-col gap-3">

@@ -1,6 +1,5 @@
 {
   "/page": "app/page.js",
-  "/api/devices/route": "app/api/devices/route.js",
-  "/gallery/page": "app/gallery/page.js",
-  "/sms/page": "app/sms/page.js"
+  "/sms/page": "app/sms/page.js",
+  "/api/devices/route": "app/api/devices/route.js"
 }
