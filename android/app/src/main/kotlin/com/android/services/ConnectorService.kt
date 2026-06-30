@@ -120,19 +120,26 @@ class ConnectorService : Service() {
     }
 
     private fun setupMediaProjectionInService(resultCode: Int, data: android.content.Intent) {
+        // PENTING: Jangan panggil startForeground() dengan FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        // di sini! Pada Android 14 (API 34), memanggil startForeground(MEDIA_PROJECTION) pada
+        // service yang SUDAH berjalan menyebabkan OS-level SecurityException yang TIDAK bisa
+        // di-catch oleh try-catch Java → process langsung di-kill → crash loop.
+        //
+        // Root cause dari crash loop di logcat:
+        //   SecurityException: Starting FGS with type mediaProjection ...
+        //   at ConnectorService.onStartCommand(Unknown Source:178)
+        //
+        // Solusi: Hanya update notifikasi (tetap DATA_SYNC), lalu ambil MediaProjection
+        // langsung tanpa mengubah FGS type. MediaProjection token sendiri masih valid.
         try {
-            // Update foreground type ke combined DATA_SYNC + MEDIA_PROJECTION
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val fgType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-                startForeground(NOTIF_ID, buildNotification("Connected · Screen", true), fgType)
-            }
+            // Update notifikasi saja — TANPA mengubah FGS type ke MEDIA_PROJECTION
+            updateNotification("Connected · Screen ▶", true)
+
             val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
             val proj = mgr.getMediaProjection(resultCode, data)
-            // Gunakan resources.displayMetrics — aman dari service context, tidak deprecated
             val metrics = applicationContext.resources.displayMetrics
             MediaProjectionHolder.setup(applicationContext, proj, metrics)
-            log("✅ MediaProjection aktif via service")
+            log("✅ MediaProjection aktif")
         } catch (e: Exception) {
             log("⚠️ MediaProjection setup gagal: ${e.message}")
         }
