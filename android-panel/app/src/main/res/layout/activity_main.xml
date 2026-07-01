@@ -18,7 +18,8 @@
         android:id="@+id/swipeRefresh"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/progressBar">
+        android:layout_below="@id/progressBar"
+        android:layout_above="@id/bottomBar">
 
         <WebView
             android:id="@+id/webView"
@@ -26,25 +27,25 @@
             android:layout_height="match_parent" />
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
+    <!-- Error screen -->
     <LinearLayout
         android:id="@+id/errorLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_below="@id/progressBar"
+        android:layout_above="@id/bottomBar"
         android:gravity="center"
         android:orientation="vertical"
         android:padding="32dp"
         android:visibility="gone">
 
         <TextView
-            android:id="@+id/errorIcon"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="⚠️"
             android:textSize="48sp" />
 
         <TextView
-            android:id="@+id/errorTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -72,5 +73,38 @@
             android:paddingHorizontal="32dp"
             android:text="Coba Lagi"
             android:textColor="#000000" />
+    </LinearLayout>
+
+    <!-- Bottom bar with Float button -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_alignParentBottom="true"
+        android:background="#161b22"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="IWX PANEL"
+            android:textColor="#00c853"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1" />
+
+        <Button
+            android:id="@+id/floatBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:backgroundTint="#00c853"
+            android:paddingHorizontal="14dp"
+            android:text="⧉ Float"
+            android:textColor="#000000"
+            android:textSize="11sp"
+            android:textStyle="bold" />
     </LinearLayout>
 </RelativeLayout>
