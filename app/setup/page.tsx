@@ -64,10 +64,26 @@ function Tag({ color, label }: { color: 'green' | 'yellow' | 'red' | 'blue'; lab
 
 function QrGenerator() {
   const [apkUrl, setApkUrl] = useState('')
+  const [apkMode, setApkMode] = useState<'release' | 'debug'>('release')
+  const [apkInfo, setApkInfo] = useState<{commitSha:string;sizeMb:string;createdAt:string} | null>(null)
+  const [apkFetching, setApkFetching] = useState(false)
   const [wifiSsid, setWifiSsid] = useState('')
   const [wifiPass, setWifiPass] = useState('')
   const [wifiSec, setWifiSec] = useState<'WPA' | 'WEP' | 'NONE'>('WPA')
   const [showQr, setShowQr] = useState(false)
+
+  const fetchApkUrl = async (mode: 'release' | 'debug') => {
+    setApkFetching(true)
+    setApkInfo(null)
+    try {
+      const res = await fetch(`/api/github/apk?mode=${mode}&action=info`)
+      const d = await res.json()
+      if (!res.ok) { alert(d.error ?? 'Gagal fetch info APK'); return }
+      const url = `${window.location.origin}/api/github/apk?mode=${mode}`
+      setApkUrl(url)
+      setApkInfo({ commitSha: d.commitSha, sizeMb: d.sizeMb, createdAt: new Date(d.createdAt).toLocaleDateString('id-ID') })
+    } catch { alert('Gagal konek ke server') } finally { setApkFetching(false) }
+  }
 
   const provisioning = useMemo(() => {
     const obj: Record<string, unknown> = {
@@ -104,13 +120,44 @@ function QrGenerator() {
       <div className="grid grid-cols-1 gap-2">
         <div>
           <label className="text-[10px] font-mono text-android-green/70 uppercase tracking-wider">APK Download URL</label>
+          {/* Auto-fetch dari GitHub Actions */}
+          <div className="flex gap-1.5 mt-1 mb-1.5">
+            {(['release', 'debug'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => { setApkMode(m); fetchApkUrl(m) }}
+                disabled={apkFetching}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-mono font-bold border transition-colors disabled:opacity-50 ${
+                  apkMode === m
+                    ? m === 'release'
+                      ? 'bg-android-green/20 border-android-green/50 text-android-green'
+                      : 'bg-android-blue/20 border-android-blue/40 text-android-blue'
+                    : 'bg-android-bg border-android-border text-android-muted hover:text-android-text'
+                }`}
+              >
+                {apkFetching && apkMode === m ? (
+                  <span className="animate-pulse">⏳</span>
+                ) : (
+                  <span>{m === 'release' ? '🚀' : '🛠️'}</span>
+                )}
+                {m.toUpperCase()}
+              </button>
+            ))}
+            <span className="text-[9px] text-android-muted self-center ml-1">← auto-fetch dari GitHub Actions terbaru</span>
+          </div>
           <input
             value={apkUrl}
-            onChange={e => setApkUrl(e.target.value)}
+            onChange={e => { setApkUrl(e.target.value); setApkInfo(null) }}
             placeholder="https://your-server.com/app.apk"
-            className="mt-1 w-full bg-[#0a0c10] border border-android-border rounded-lg px-3 py-2 text-xs text-android-text font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/50"
+            className="w-full bg-[#0a0c10] border border-android-border rounded-lg px-3 py-2 text-xs text-android-text font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/50"
           />
-          <p className="text-[10px] text-android-muted mt-0.5">Link langsung ke APK kamu (GitHub Release, Drive, server sendiri)</p>
+          {apkInfo ? (
+            <p className="text-[10px] text-android-green mt-0.5 font-mono">
+              ✅ Commit <strong>{apkInfo.commitSha}</strong> · {apkInfo.sizeMb} MB · {apkInfo.createdAt}
+            </p>
+          ) : (
+            <p className="text-[10px] text-android-muted mt-0.5">Klik RELEASE/DEBUG untuk auto-isi, atau ketik manual</p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2">
