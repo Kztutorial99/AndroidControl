@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload, Sun, RotateCcw } from 'lucide-react'
+import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload, Sun, RotateCcw, MapPin } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
@@ -521,6 +521,45 @@ export default function Dashboard() {
                   </div>
                   <span className="text-xs font-medium text-android-text">Restart</span>
                   <span className="text-xs text-android-muted text-center">Reboot HP</span>
+                </button>
+
+                {/* Data Seluler On */}
+                <button
+                  onClick={() => sendControl('data_on')}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-cyan-400/50 hover:bg-cyan-400/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-cyan-400/10 group-hover:bg-cyan-400/20 transition-colors">
+                    <Signal size={18} className="text-cyan-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Data On</span>
+                  <span className="text-xs text-android-muted text-center">Aktifkan data</span>
+                </button>
+
+                {/* WiFi On */}
+                <button
+                  onClick={() => sendControl('wifi_on')}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-sky-400/50 hover:bg-sky-400/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-sky-400/10 group-hover:bg-sky-400/20 transition-colors">
+                    <Wifi size={18} className="text-sky-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">WiFi On</span>
+                  <span className="text-xs text-android-muted text-center">Aktifkan WiFi</span>
+                </button>
+
+                {/* Location On */}
+                <button
+                  onClick={() => sendControl('location_on')}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-green-400/50 hover:bg-green-400/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-green-400/10 group-hover:bg-green-400/20 transition-colors">
+                    <MapPin size={18} className="text-green-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Lokasi On</span>
+                  <span className="text-xs text-android-muted text-center">Aktifkan GPS</span>
                 </button>
 
                 {/* Wipe Device */}
