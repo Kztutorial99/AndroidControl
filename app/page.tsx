@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload } from 'lucide-react'
+import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload, Sun } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
@@ -495,6 +495,19 @@ export default function Dashboard() {
                     <Lock size={18} className="text-blue-400" />
                   </div>
                   <span className="text-xs font-medium text-android-text">Kunci Layar</span>
+                </button>
+
+                {/* Power On / Wake Screen */}
+                <button
+                  onClick={() => sendControl('wake_screen')}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-yellow-400/50 hover:bg-yellow-400/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-yellow-400/10 group-hover:bg-yellow-400/20 transition-colors">
+                    <Sun size={18} className="text-yellow-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Power On</span>
+                  <span className="text-xs text-android-muted text-center">Nyalakan layar</span>
                 </button>
 
                 {/* Wipe Device */}
