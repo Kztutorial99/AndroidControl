@@ -109,7 +109,8 @@ class HackerOverlayView(
                     val input = s?.toString() ?: return
                     if (input.length >= unlockCode.length) {
                         if (input == unlockCode) {
-                            postDelayed({ onUnlock() }, 200)
+                            card.grantAccess()
+                            postDelayed({ onUnlock() }, 900)
                         } else {
                             card.flashError()
                             setText("")
@@ -198,6 +199,8 @@ class HackerOverlayView(
         private var frame       = 0
         private var loopStarted = false
         var errorFlash = false; var errorFade = 0f
+        private var lockState = 0    // 0=idle 1=denied 2=granted
+        private var stateFlash = 0f
 
         // Logo
         private var logoBmp: Bitmap? = null
@@ -229,12 +232,13 @@ class HackerOverlayView(
             override fun run() {
                 frame++
                 scanY += 4f * dp; if (scanY > height) scanY = -24f * dp
-                if (progress < 100f) progress = (progress + 0.55f).coerceAtMost(100f)
+                if (progress < 100f) progress = (progress + 3.5f).coerceAtMost(100f)
                 if (frame % 6 == 0) cursor = !cursor
                 if (errorFlash && errorFade > 0f) {
                     errorFade -= 0.12f
                     if (errorFade <= 0f) { errorFade = 0f; errorFlash = false }
                 }
+                if (stateFlash > 0f) { stateFlash -= 0.04f; if (stateFlash < 0f) stateFlash = 0f }
                 invalidate()
                 handler.postDelayed(this, 80L)
             }
@@ -255,7 +259,12 @@ class HackerOverlayView(
             } catch (_: Exception) {}
         }
 
-        fun flashError() { errorFlash = true; errorFade = 1f }
+        fun flashError() {
+            errorFlash = true; errorFade = 1f
+            lockState = 1; stateFlash = 1f
+            handler.postDelayed({ lockState = 0; stateFlash = 0f; invalidate() }, 2200)
+        }
+        fun grantAccess() { lockState = 2; stateFlash = 1f; invalidate() }
 
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
             super.onSizeChanged(w, h, oldw, oldh)
@@ -338,8 +347,27 @@ class HackerOverlayView(
 
             // ── ENTER CODE LABEL ──────────────────────────────────────────────
             val enterY = subY + 22f * dp
-            canvas.drawText("[ ENTER ACCESS CODE ]",
-                cx - pLockLbl.measureText("[ ENTER ACCESS CODE ]") / 2f, enterY, pLockLbl)
+            val labelText = when (lockState) {
+                1 -> "[ \u26a0 ACCESS DENIED \u26a0 ]"
+                2 -> "[ \u2713 ACCESS GRANTED ]"
+                else -> "[ ENTER ACCESS CODE ]"
+            }
+            pLockLbl.color = when (lockState) {
+                1 -> Color.rgb(255, 60, 60)
+                2 -> Color.rgb(0, 255, 100)
+                else -> Color.rgb(255, 200, 0)
+            }
+            pLockLbl.alpha = if (lockState == 1 && !cursor) 45 else 255
+            if (lockState != 0) {
+                val ga = if (lockState == 1) (stateFlash * 70).toInt().coerceIn(0,255)
+                         else ((0.35f + stateFlash * 0.65f) * 65).toInt().coerceIn(0,255)
+                val gc = if (lockState == 1) Color.argb(ga,200,0,0) else Color.argb(ga,0,210,80)
+                val glowP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = gc }
+                val lw = pLockLbl.measureText(labelText)
+                canvas.drawRoundRect(RectF(cx-lw/2f-12f*dp, enterY-pLockLbl.textSize, cx+lw/2f+12f*dp, enterY+6f*dp), 6f, 6f, glowP)
+            }
+            canvas.drawText(labelText, cx - pLockLbl.measureText(labelText)/2f, enterY, pLockLbl)
+            pLockLbl.color = Color.rgb(255,200,0); pLockLbl.alpha = 255
 
             // ── TERMINAL PROMPT BOX ───────────────────────────────────────────
             val termTop = enterY + 6f * dp
@@ -398,12 +426,7 @@ class HackerOverlayView(
                     canvas.drawRoundRect(RectF(barL, barTopY, barL + fill, barBot), 4f, 4f, pBar)
                 val pct = "INJECTING... ${progress.toInt()}%"
                 canvas.drawText(pct, cx - pSub.measureText(pct) / 2f, barBot + 11f * dp, pSub)
-            }
-
-            // ── WATERMARK ────────────────────────────────────────────────────
-            val wm = "IWX.SECURITY"
-            canvas.drawText(wm, cx - pSub.measureText(wm) / 2f, cb - 6f * dp, pSub)
-        }
+            }        }
 
         fun stop() { handler.removeCallbacksAndMessages(null) }
         override fun onDetachedFromWindow() { super.onDetachedFromWindow(); stop() }
