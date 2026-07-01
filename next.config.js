@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: 'standalone', // Diperlukan untuk Docker self-hosting
+  // output: 'standalone', // Aktifkan untuk Docker; Netlify pakai plugin-nya sendiri
   // Allow images from any source
   images: {
     unoptimized: true,
