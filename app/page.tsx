@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [injectText, setInjectText]     = useState('')
   const [isInjecting, setIsInjecting]   = useState(false)
   const [soundFile, setSoundFile]       = useState<File | null>(null)
+  const [ttsSpeed, setTtsSpeed]           = useState(0.60)
   const audioRef                        = useRef<HTMLAudioElement | null>(null)
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
@@ -144,7 +145,7 @@ export default function Dashboard() {
       await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_hacker:${text}` }),
+        body: JSON.stringify({ deviceId: selectedId, command: `screen_inject_hacker:${text}||spd:${ttsSpeed.toFixed(2)}` }),
       })
     } catch (_) {}
   }
@@ -540,6 +541,20 @@ export default function Dashboard() {
                   rows={4}
                   className="w-full bg-android-bg border border-android-green/30 rounded-lg px-3 py-2.5 text-sm text-android-green font-mono placeholder:text-android-muted/40 focus:outline-none focus:border-android-green/70 resize-none leading-relaxed"
                 />
+                {/* TTS Speed */}
+                <div className="flex items-center gap-3 px-3 py-2 bg-android-bg border border-android-green/20 rounded-lg">
+                  <span className="text-[10px] font-mono text-android-green/80 shrink-0 tracking-widest">TTS SPD</span>
+                  <input
+                    type="range" min="0.10" max="2.00" step="0.05"
+                    value={ttsSpeed}
+                    onChange={e => setTtsSpeed(parseFloat(e.target.value))}
+                    className="flex-1 h-1 rounded accent-green-500 cursor-pointer"
+                    style={{accentColor:'#00c853'}}
+                  />
+                  <span className="text-[11px] font-mono text-android-green w-12 text-right shrink-0">
+                    {ttsSpeed.toFixed(2)}x
+                  </span>
+                </div>
                 {/* Sound input */}
                 <label className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-android-border bg-android-bg cursor-pointer hover:border-android-green/40 transition-colors">
                   {soundFile
