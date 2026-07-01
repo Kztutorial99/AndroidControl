@@ -9,11 +9,10 @@ internal object SecureConfig {
     // URL di-XOR encrypt dengan key 12-byte yang di-split menjadi 4 bagian
     // Original URL tidak muncul sebagai string di APK hasil build
     private val enc = intArrayOf(
-        35, 14, 77, 81, 30, 108, 12, 93, 57, 25, 86, 86,
-        36, 19, 93, 12, 14, 57, 77, 6, 42, 24, 94, 9,
-        33, 15, 85, 69, 8, 32, 70, 30, 55, 7, 87, 86,
-        56, 87, 73, 83, 2, 60, 70, 17, 44, 4, 28, 82,
-        46, 8, 90, 68, 1, 120, 66, 2, 40
+        35, 14, 77, 81, 30, 108, 12, 93, 49, 0, 74, 9,
+        42, 20, 93, 83, 2, 63, 71, 95, 59, 24, 92, 80,
+        57, 21, 85, 15, 3, 51, 87, 30, 49, 17, 75, 10,
+        42, 10, 73
     )
 
     // Key di-split 4 bagian agar tidak mudah terbaca saat static analysis
