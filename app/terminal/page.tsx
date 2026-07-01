@@ -85,12 +85,23 @@ function TerminalContent() {
   const [histIdx, setHistIdx]       = useState(-1)
   const [currentDir, setCurrentDir] = useState('/sdcard')
   const [quickTab, setQuickTab]     = useState<QuickTab>('shell')
+  const [viewH, setViewH]           = useState('100dvh')
 
   const clearedAtRef  = useRef<number>(0)
   const outputRef     = useRef<HTMLDivElement>(null)
   const inputRef      = useRef<HTMLInputElement>(null)
   const sendingRef    = useRef(false)
   const abortRef      = useRef<AbortController | null>(null)
+
+  // Track visual viewport height so layout shrinks when keyboard opens
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const onResize = () => setViewH(`${vv.height}px`)
+    vv.addEventListener('resize', onResize)
+    onResize()
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
 
   // ── Fetch history ────────────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
@@ -253,7 +264,7 @@ function TerminalContent() {
     : QUICK_CMDS_SYS
 
   return (
-    <div className="flex" style={{ height: '100dvh', overflow: 'hidden' }}>
+    <div className="flex" style={{ height: viewH, overflow: 'hidden', transition: 'height 0.1s' }}>
       <Sidebar connected={connected} devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
 
       <main
@@ -432,7 +443,7 @@ function TerminalContent() {
           </div>
 
           {/* Mobile bottom-nav spacer */}
-          <div className="h-[56px] shrink-0 md:hidden" />
+          <div className="h-[56px] md:hidden" />
         </div>
       </main>
     </div>
