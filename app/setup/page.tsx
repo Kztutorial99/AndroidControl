@@ -274,7 +274,7 @@ export default function SetupPage() {
           {/* Overview cards */}
           <div className="grid grid-cols-4 gap-2 mb-5">
             {[
-              { icon: <Globe size={15} />, label: 'Web Server', sub: 'Vercel', color: 'text-android-blue' },
+              { icon: <Globe size={15} />, label: 'Web Server', sub: 'Netlify', color: 'text-android-blue' },
               { icon: <Smartphone size={15} />, label: 'APK Client', sub: 'Android', color: 'text-android-green' },
               { icon: <Shield size={15} />, label: 'Device Owner', sub: 'QR / ADB', color: 'text-android-yellow' },
               { icon: <Lock size={15} />, label: 'Block Uninstall', sub: 'Dashboard', color: 'text-android-red' },
@@ -389,9 +389,10 @@ export default function SetupPage() {
             <ol className="list-decimal list-inside space-y-2 text-android-text text-xs">
               <li>Buka app <strong>AndroidConnector</strong></li>
               <li>Izinkan <strong>All Files Access</strong></li>
-              <li>Masukkan <strong>Server URL</strong>:<Code copy={false}>https://nama-app.vercel.app</Code></li>
+              <li>Masukkan <strong>Server URL</strong>:<Code>https://iwx-android-control.netlify.app</Code></li>
               <li>Masukkan <strong>Device Token</strong>:<Code copy={false}>vivo-secret-2025</Code></li>
               <li>Tap <strong>CONNECT</strong> → status hijau</li>
+              <li className="text-android-yellow">⚠️ Pernah pakai URL lama? → <strong>Clear App Data</strong> dulu di Settings HP</li>
             </ol>
             <div className="p-3 bg-android-green/10 border border-android-green/30 rounded-lg text-android-green text-xs">
               ✅ Buka tab Dashboard — info device muncul dalam 5 detik!
