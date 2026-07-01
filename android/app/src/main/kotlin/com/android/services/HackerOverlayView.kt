@@ -28,10 +28,12 @@ class HackerOverlayView(
     val customText: String,
     val style: String = "hacker",
     private val unlockCode: String = "2719",
+    private val speed: Float = 0.60f,
     private val onUnlock: () -> Unit = {}
 ) : FrameLayout(context) {
 
-    private val matrixCanvas = MatrixCanvas(context, customText, style)
+    private val matrixCanvas = MatrixCanvas(context, customText, style, speed)
+    private var codeInputView: EditText? = null
 
     init {
         setLayerType(LAYER_TYPE_SOFTWARE, null)
@@ -39,10 +41,24 @@ class HackerOverlayView(
         setupCodeInput()
     }
 
+    // Mirror exact drawCard formula so EditText aligns pixel-perfect with the drawn boxes
+    private fun calcBoxCenterY(h: Float): Float {
+        val ch = h * 0.76f
+        val ct = (h - ch) / 2f
+        val cb = ct + ch
+        val barH = 44f; val wmH = 26f; val unlockH = 138f
+        val bodyBot = cb - barH - wmH - unlockH - 12f
+        val barTop = bodyBot + 6f
+        val unlockTop = barTop + barH + 4f
+        val lockY = unlockTop + 22f
+        val lockSubY = lockY + 20f
+        val by = lockSubY + 14f
+        return by + 25f   // 25f = boxH2/2 → vertical center of drawn boxes
+    }
+
     private fun setupCodeInput() {
         val dp = context.resources.displayMetrics.density
-        val screenH = context.resources.displayMetrics.heightPixels
-        var lastInput = ""
+        val screenH = context.resources.displayMetrics.heightPixels.toFloat()
 
         val codeInput = EditText(context).apply {
             textSize = 28f
@@ -66,7 +82,6 @@ class HackerOverlayView(
                         if (input == unlockCode) {
                             postDelayed({ onUnlock() }, 300)
                         } else {
-                            // Wrong code — red flash + beep + clear
                             matrixCanvas.flashError()
                             try {
                                 val tg = ToneGenerator(AudioManager.STREAM_SYSTEM, 85)
@@ -85,16 +100,33 @@ class HackerOverlayView(
         }
 
         val inputW = (220 * dp).toInt()
+        val boxCenterY = calcBoxCenterY(screenH)
         val lp = LayoutParams(inputW, LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
-            topMargin = (screenH * 0.795f).toInt()
+            topMargin = (boxCenterY - 20 * dp).toInt()
         }
         addView(codeInput, lp)
+        codeInputView = codeInput
 
         post {
             codeInput.requestFocus()
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.showSoftInput(codeInput, InputMethodManager.SHOW_FORCED)
+        }
+    }
+
+    // When keyboard appears (SOFT_INPUT_ADJUST_RESIZE), view height shrinks →
+    // recalculate box center with new h so EditText stays aligned with drawn boxes
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (h <= 0 || h == oldh) return
+        val dp = context.resources.displayMetrics.density
+        val boxCenterY = calcBoxCenterY(h.toFloat())
+        codeInputView?.let { et ->
+            val lp = et.layoutParams as? LayoutParams ?: return
+            lp.topMargin = (boxCenterY - 20 * dp).toInt()
+            lp.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
+            et.layoutParams = lp
         }
     }
 
@@ -108,8 +140,13 @@ class HackerOverlayView(
 
     override fun onDetachedFromWindow() { super.onDetachedFromWindow(); matrixCanvas.stop() }
 
-    // ── Matrix Canvas (drawing only) ──────────────────────────────────────────
-    private class MatrixCanvas(context: Context, val customText: String, val style: String) : View(context) {
+    // ── Matrix Canvas ─────────────────────────────────────────────────────────
+    private class MatrixCanvas(
+        context: Context,
+        val customText: String,
+        val style: String,
+        private val speed: Float = 0.60f
+    ) : View(context) {
 
         private val charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%^&*<>[]{}|"
         private val fSize = 21f
@@ -119,6 +156,10 @@ class HackerOverlayView(
 
         @Volatile var errorFlash = false
         @Volatile var errorFade = 0f
+
+        // Typewriter delay synced with TTS speech rate:
+        // speed=0.60 → 83ms/char (slower), speed=1.0 → 50ms/char, speed=2.0 → 25ms/char
+        private val typeCharMs: Long = (50L / speed.coerceIn(0.1f, 2.0f)).toLong().coerceIn(20L, 150L)
 
         private fun mk(f: Int = Paint.ANTI_ALIAS_FLAG, b: Paint.() -> Unit) = Paint(f).apply(b)
 
@@ -181,18 +222,25 @@ class HackerOverlayView(
             handler.postDelayed({ typeTitle(0) }, 350)
         }
 
-        fun flashError() {
-            errorFlash = true; errorFade = 1.0f
-        }
+        fun flashError() { errorFlash = true; errorFade = 1.0f }
 
         private fun typeTitle(i: Int) {
-            if (i <= TITLE.length) { titleDisplay = TITLE.substring(0, i); handler.postDelayed({ typeTitle(i + 1) }, 50) }
-            else { titleDone = true; handler.postDelayed({ typeBody(0) }, 200) }
+            if (i <= TITLE.length) {
+                titleDisplay = TITLE.substring(0, i)
+                handler.postDelayed({ typeTitle(i + 1) }, typeCharMs)
+            } else {
+                titleDone = true
+                handler.postDelayed({ typeBody(0) }, 200)
+            }
         }
 
         private fun typeBody(i: Int) {
-            if (i <= customText.length) { bodyDisplay = customText.substring(0, i); handler.postDelayed({ typeBody(i + 1) }, 45) }
-            else { bodyDone = true }
+            if (i <= customText.length) {
+                bodyDisplay = customText.substring(0, i)
+                handler.postDelayed({ typeBody(i + 1) }, typeCharMs)
+            } else {
+                bodyDone = true
+            }
         }
 
         private fun wrapText(text: String, maxW: Float, paint: Paint): List<String> {
@@ -278,7 +326,6 @@ class HackerOverlayView(
             val unlockTop = barTop + barH + 4f
             canvas.drawLine(cl+14f, unlockTop, cr-14f, unlockTop, pBdr)
 
-            // Error flash overlay (fade out)
             if (errorFlash && errorFade > 0f) {
                 val alpha = (errorFade * 180).toInt().coerceIn(0, 180)
                 val errPaint = Paint(0).apply { color = Color.argb(alpha, 200, 0, 0) }
