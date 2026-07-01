@@ -333,3 +333,19 @@ export async function getPinCaptures(deviceId: string, limit = 100): Promise<Pin
 export async function clearPinCaptures(deviceId: string) {
   await pool.query(`DELETE FROM pin_captures WHERE device_id = $1`, [deviceId])
 }
+// ─── Auto-Delete Old Devices ──────────────────────────────────────────────────
+
+export async function deleteOldDevices(days = 7): Promise<{ deletedCount: number; devices: { id: string; name: string }[] }> {
+  const { rows } = await pool.query(
+    `DELETE FROM devices
+     WHERE last_seen < NOW() - ($1 || ' days')::INTERVAL
+        OR last_seen IS NULL
+     RETURNING device_id, device_name`,
+    [days]
+  )
+  return {
+    deletedCount: rows.length,
+    devices: rows.map(r => ({ id: r.device_id as string, name: r.device_name as string })),
+  }
+}
+
