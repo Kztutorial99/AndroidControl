@@ -46,6 +46,7 @@ class HackerOverlayView(
     val style: String = "hacker",
     private val unlockCode: String = "2719",
     private val speed: Float = 0.60f,
+    private val onGranted: () -> Unit = {},
     private val onUnlock: () -> Unit = {}
 ) : FrameLayout(context) {
 
@@ -110,6 +111,7 @@ class HackerOverlayView(
                     if (input.length >= unlockCode.length) {
                         if (input == unlockCode) {
                             card.grantAccess()
+                            onGranted()
                             postDelayed({ onUnlock() }, 900)
                         } else {
                             card.flashError()
