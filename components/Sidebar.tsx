@@ -252,7 +252,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
         <div className="px-3 py-3 border-t border-android-border relative" ref={buildDropRef}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-android-muted">IWX PANEL v0.4.0</p>
+              <p className="text-xs text-android-muted">IWX PANEL v0.5.0</p>
               <p className="text-[10px] text-android-muted/50">by Kztutorial99</p>
             </div>
             <button
