@@ -54,7 +54,7 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
   const [deleting, setDeleting]       = useState(false)
 
   // ── Build Notification ──────────────────────────────────────────────────────
-  type BuildInfo = { commitSha: string; fullSha: string; createdAt: string; url: string; status: string; conclusion: string | null }
+  type BuildInfo = { commitSha: string; fullSha: string; createdAt: string; updatedAt?: string; url: string; status: string; conclusion: string | null }
   const [buildLatest,   setBuildLatest]   = useState<BuildInfo | null>(null)
   const [buildSuccess,  setBuildSuccess]  = useState<BuildInfo | null>(null)
   const [buildHasNew,   setBuildHasNew]   = useState(false)
