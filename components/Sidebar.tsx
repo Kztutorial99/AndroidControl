@@ -6,8 +6,9 @@ import {
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
+  Bell, BellRing, ExternalLink,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useBadge } from '@/contexts/BadgeContext'
 
 interface DeviceItem {
@@ -51,6 +52,72 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
   const [showDrawer, setShowDrawer]   = useState(false)
   const [toDelete, setToDelete]       = useState<Set<string>>(new Set())
   const [deleting, setDeleting]       = useState(false)
+
+  // ── Build Notification ──────────────────────────────────────────────────────
+  type BuildInfo = { commitSha: string; fullSha: string; createdAt: string; url: string; status: string; conclusion: string | null }
+  const [buildLatest,   setBuildLatest]   = useState<BuildInfo | null>(null)
+  const [buildSuccess,  setBuildSuccess]  = useState<BuildInfo | null>(null)
+  const [buildHasNew,   setBuildHasNew]   = useState(false)
+  const [showBuildDrop, setShowBuildDrop] = useState(false)
+  const [buildLoading,  setBuildLoading]  = useState(false)
+  const buildDropRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const lastSeenSha = localStorage.getItem('iwx_last_build_sha') ?? ''
+    const check = async () => {
+      try {
+        const res = await fetch('/api/github/builds')
+        if (!res.ok) return
+        const d = await res.json()
+        if (d.latest)      setBuildLatest(d.latest)
+        if (d.lastSuccess) {
+          setBuildSuccess(d.lastSuccess)
+          setBuildHasNew(d.lastSuccess.fullSha !== lastSeenSha)
+        }
+      } catch {}
+    }
+    check()
+    const t = setInterval(check, 30000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Tutup dropdown kalau klik luar
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (buildDropRef.current && !buildDropRef.current.contains(e.target as Node)) {
+        setShowBuildDrop(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const markBuildSeen = () => {
+    if (buildSuccess?.fullSha) {
+      localStorage.setItem('iwx_last_build_sha', buildSuccess.fullSha)
+      setBuildHasNew(false)
+    }
+    setShowBuildDrop(v => !v)
+  }
+
+  const copyApkUrl = async (mode: 'release' | 'debug') => {
+    setBuildLoading(true)
+    try {
+      const res  = await fetch(`/api/github/apk?mode=${mode}&action=info`)
+      const info = await res.json()
+      if (!res.ok) { alert(info.error); return }
+      const url = `${window.location.origin}/api/github/apk?mode=${mode}`
+      await navigator.clipboard.writeText(url)
+      alert(`✅ URL ${mode.toUpperCase()} APK disalin!\n\nKommit: ${info.commitSha} · ${info.sizeMb} MB`)
+    } catch { alert('Gagal copy URL') } finally { setBuildLoading(false) }
+  }
+
+  const statusLabel = (s: string, c: string | null) => {
+    if (s === 'in_progress') return { label: 'Building...', color: 'text-android-yellow', dot: 'bg-android-yellow animate-pulse' }
+    if (c === 'success')     return { label: 'Success ✅',  color: 'text-android-green',  dot: 'bg-android-green' }
+    if (c === 'failure')     return { label: 'Failed ❌',   color: 'text-android-red',    dot: 'bg-android-red' }
+    return                          { label: s,             color: 'text-android-muted',  dot: 'bg-android-muted' }
+  }
 
   const selected = devices.find(d => d.deviceId === selectedId)
 
@@ -181,9 +248,79 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
           })}
         </nav>
 
-        <div className="px-4 py-3 border-t border-android-border">
-          <p className="text-xs text-android-muted">IWX PANEL v0.4.0</p>
-          <p className="text-xs text-android-muted/60 mt-0.5">by Kztutorial99</p>
+        {/* Build Notification Bell — Desktop */}
+        <div className="px-3 py-3 border-t border-android-border relative" ref={buildDropRef}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-android-muted">IWX PANEL v0.4.0</p>
+              <p className="text-[10px] text-android-muted/50">by Kztutorial99</p>
+            </div>
+            <button
+              onClick={markBuildSeen}
+              title="Status GitHub Build"
+              className="relative p-2 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              {buildHasNew
+                ? <BellRing size={15} className="text-android-green" />
+                : <Bell size={15} className="text-android-muted" />}
+              {buildHasNew && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-android-green animate-pulse" />
+              )}
+            </button>
+          </div>
+
+          {/* Build Dropdown */}
+          {showBuildDrop && (
+            <div className="absolute bottom-full left-2 right-2 mb-2 bg-android-bg border border-android-border rounded-xl shadow-2xl z-50 overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-android-border flex items-center justify-between">
+                <span className="text-[10px] font-bold text-android-muted uppercase tracking-wider">GitHub Actions</span>
+                {buildLatest && (() => {
+                  const st = statusLabel(buildLatest.status, buildLatest.conclusion)
+                  return (
+                    <span className={`text-[10px] font-mono font-bold flex items-center gap-1.5 ${st.color}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                      {st.label}
+                    </span>
+                  )
+                })()}
+              </div>
+
+              {buildLatest && (
+                <div className="px-3 py-2 border-b border-android-border/50 text-[10px] space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-android-muted">Latest commit</span>
+                    <span className="font-mono text-android-text">{buildLatest.commitSha}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-android-muted">Updated</span>
+                    <span className="font-mono text-android-text">{new Date(buildLatest.updatedAt ?? buildLatest.createdAt).toLocaleTimeString('id-ID', {hour:'2-digit',minute:'2-digit'})}</span>
+                  </div>
+                  {buildLatest.url && (
+                    <a href={buildLatest.url} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1 text-android-blue hover:underline mt-1">
+                      <ExternalLink size={9} /> Lihat di GitHub
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {buildSuccess && (
+                <div className="px-3 py-2.5 space-y-1.5">
+                  <p className="text-[10px] font-semibold text-android-green mb-2">APK Siap — commit {buildSuccess.commitSha}</p>
+                  {(['release','debug'] as const).map(m => (
+                    <button key={m} onClick={() => copyApkUrl(m)} disabled={buildLoading}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] font-mono font-bold border transition-colors disabled:opacity-50 ${
+                        m === 'release'
+                          ? 'bg-android-green/10 border-android-green/30 text-android-green hover:bg-android-green/20'
+                          : 'bg-android-blue/10 border-android-blue/30 text-android-blue hover:bg-android-blue/20'
+                      }`}>
+                      {m === 'release' ? '🚀' : '🛠️'} Copy URL {m.toUpperCase()} APK
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -194,6 +331,13 @@ export default function Sidebar({ connected, devices = [], selectedId, onSelect 
             <Smartphone size={14} className="text-android-bg" />
           </div>
           <span className="text-sm font-bold text-white">IWX PANEL</span>
+          {/* Build bell — mobile */}
+          <button onClick={markBuildSeen} className="relative ml-1 p-1 rounded-lg">
+            {buildHasNew
+              ? <BellRing size={14} className="text-android-green" />
+              : <Bell size={14} className="text-android-muted" />}
+            {buildHasNew && <span className="absolute top-0 right-0 w-1.5 h-1.5 rounded-full bg-android-green animate-pulse" />}
+          </button>
         </div>
 
         {/* Device Manager — top right */}
