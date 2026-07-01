@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">IWX PANEL</string>
+    <string name="overlay_channel_name">IWX Panel Overlay</string>
+    <string name="overlay_notif_title">IWX PANEL</string>
+    <string name="overlay_notif_text">Overlay aktif — tap untuk tutup</string>
+    <string name="overlay_perm_title">Izin Overlay Diperlukan</string>
+    <string name="overlay_perm_msg">IWX PANEL perlu izin tampil di atas aplikasi lain untuk fitur floating panel.</string>
+    <string name="btn_close_overlay">Tutup Overlay</string>
+    <string name="btn_grant">Izinkan</string>
 </resources>
