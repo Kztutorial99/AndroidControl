@@ -91,6 +91,7 @@ export default function Dashboard() {
   const [unlockCodeInput, setUnlockCodeInput] = useState('')
   const [currentCode, setCurrentCode]         = useState('2719')
   const audioRef                        = useRef<HTMLAudioElement | null>(null)
+  const soundInputRef                   = useRef<HTMLInputElement>(null)
 
   const swrKey = selectedId ? `/api/device/heartbeat?deviceId=${encodeURIComponent(selectedId)}` : null
   const { data: deviceData, isLoading: swrLoading } = useSWR(
@@ -596,13 +597,14 @@ export default function Dashboard() {
                   </div>
                   {soundFile && (
                     <button
-                      onClick={e => { e.preventDefault(); setSoundFile(null); if(audioRef.current){audioRef.current.pause();audioRef.current.src='';} }}
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); setSoundFile(null); if(audioRef.current){audioRef.current.pause();audioRef.current.src='';} if(soundInputRef.current){soundInputRef.current.value='';} }}
                       className="text-android-muted hover:text-android-red transition-colors"
                     >
                       <VolumeX size={13} />
                     </button>
                   )}
                   <input
+                    ref={soundInputRef}
                     type="file"
                     accept="audio/*"
                     className="hidden"
