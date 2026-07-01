@@ -88,8 +88,12 @@ function QrGenerator() {
   }, [apkUrl, wifiSsid, wifiPass, wifiSec])
 
   const qrUrl = useMemo(() => {
-    const encoded = encodeURIComponent(JSON.stringify(JSON.parse(provisioning)))
-    return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encoded}&bgcolor=0d1117&color=00c853&margin=10`
+    try {
+      const encoded = encodeURIComponent(JSON.stringify(JSON.parse(provisioning)))
+      return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encoded}&bgcolor=0d1117&color=00c853&margin=10`
+    } catch {
+      return ''
+    }
   }, [provisioning])
 
   return (
@@ -151,7 +155,13 @@ function QrGenerator() {
 
       {/* Generate button */}
       <button
-        onClick={() => setShowQr(true)}
+        onClick={() => {
+          if (!apkUrl.trim()) {
+            alert('Isi APK Download URL dulu — Android butuh URL ini untuk download APK saat provisioning.')
+            return
+          }
+          setShowQr(true)
+        }}
         className="w-full py-2.5 rounded-lg text-sm font-semibold bg-android-green/10 border border-android-green/40 text-android-green hover:bg-android-green/20 transition-colors flex items-center justify-center gap-2"
       >
         <QrCode size={15} />
@@ -169,6 +179,7 @@ function QrGenerator() {
             width={200}
             height={200}
             className="rounded-lg border border-android-green/20"
+            onError={e => { (e.target as HTMLImageElement).alt = '⚠️ Gagal load QR — coba generate ulang' }}
           />
           <div className="text-[10px] text-android-muted text-center space-y-1">
             <p>1. Factory reset HP target</p>
