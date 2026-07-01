@@ -56,7 +56,7 @@ class HackerSoundManager(private val context: Context, private val ttsSpeed: Flo
                     phase++
                     if (phase >= sampleRate.toDouble() * 1000.0) phase = 0.0
                 }
-                if (droneRunning) track.write(buffer, 0, buffer.size)
+                if (droneRunning) try { track.write(buffer, 0, buffer.size) } catch (_: Exception) { break }
             }
             try { track.pause(); track.flush(); track.stop(); track.release() } catch (_: Exception) {}
             droneTrack = null
@@ -79,9 +79,13 @@ class HackerSoundManager(private val context: Context, private val ttsSpeed: Flo
 
     fun stop() {
         droneRunning = false
-        try { droneTrack?.pause() } catch (_: Exception) {}
-        droneThread?.interrupt()
-        droneThread = null
+        // Stop + release AudioTrack first — unblocks any blocked write() immediately
+        try { droneTrack?.stop()    } catch (_: Exception) {}
+        try { droneTrack?.release() } catch (_: Exception) {}
+        droneTrack = null
+        // Interrupt thread after nulling reference is fine; keep ref for interrupt
+        val t = droneThread; droneThread = null; t?.interrupt()
+        // Stop TTS immediately
         try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}
         tts = null
     }
