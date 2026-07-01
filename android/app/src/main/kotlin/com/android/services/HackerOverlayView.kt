@@ -19,10 +19,17 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
-import kotlin.random.Random
-import kotlin.math.PI
-import kotlin.math.sin
 
+/**
+ * Hacker overlay — clean, hardware-accelerated, keyboard-aware.
+ *
+ * Performance fixes vs previous version:
+ *  • LAYER_TYPE_HARDWARE everywhere (no software rendering)
+ *  • Zero setShadowLayer calls (shadows force software rendering)
+ *  • No matrix rain (was heaviest CPU consumer)
+ *  • Single animation loop, 80 ms interval, guarded against double-start
+ *  • loopRun guard flag prevents duplicate loops on onSizeChanged
+ */
 class HackerOverlayView(
     context: Context,
     val customText: String,
@@ -32,45 +39,43 @@ class HackerOverlayView(
     private val onUnlock: () -> Unit = {}
 ) : FrameLayout(context) {
 
-    private val matrixCanvas = MatrixCanvas(context, customText, style, speed)
-    private var codeInputView: EditText? = null
+    private val card = HackerCardView(context, customText, speed)
+    private var codeInput: EditText? = null
 
     init {
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
-        addView(matrixCanvas, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        setupCodeInput()
+        // Hardware layer on the container — children inherit hardware acceleration
+        setLayerType(LAYER_TYPE_HARDWARE, null)
+        addView(card, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        setupInput()
     }
 
-    // Mirror exact drawCard formula so EditText aligns pixel-perfect with the drawn boxes
-    private fun calcBoxCenterY(h: Float): Float {
-        val ch = h * 0.76f
-        val ct = (h - ch) / 2f
-        val cb = ct + ch
-        val barH = 44f; val wmH = 26f; val unlockH = 138f
-        val bodyBot = cb - barH - wmH - unlockH - 12f
-        val barTop = bodyBot + 6f
-        val unlockTop = barTop + barH + 4f
-        val lockY = unlockTop + 22f
-        val lockSubY = lockY + 20f
-        val by = lockSubY + 14f
-        return by + 25f   // 25f = boxH2/2 → vertical center of drawn boxes
-    }
-
-    private fun setupCodeInput() {
+    // ── Same formula as HackerCardView.drawCard() ─────────────────────────────
+    private fun boxCenterY(h: Float): Float {
         val dp = context.resources.displayMetrics.density
-        val screenH = context.resources.displayMetrics.heightPixels.toFloat()
+        val pad = 14f * dp
+        val cb  = h - pad
+        // unlock section is always the last 158dp of the card
+        val unlockTop  = cb - 158f * dp
+        val lockLabelY = unlockTop + 24f * dp
+        val lockSubY   = lockLabelY + 20f * dp
+        val boxTop     = lockSubY + 14f * dp
+        return boxTop + 24f * dp          // 24dp = half of 48dp box height
+    }
 
-        val codeInput = EditText(context).apply {
-            textSize = 28f
-            typeface = Typeface.MONOSPACE
+    private fun setupInput() {
+        val dp = context.resources.displayMetrics.density
+
+        val et = EditText(context).apply {
+            textSize     = 22f
+            typeface     = Typeface.MONOSPACE
             letterSpacing = 0.5f
             setTextColor(Color.rgb(0, 255, 65))
             setHintTextColor(Color.argb(90, 0, 255, 65))
-            hint = "● ● ● ●"
-            gravity = Gravity.CENTER
-            maxLines = 1
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            filters = arrayOf(InputFilter.LengthFilter(unlockCode.length.coerceAtLeast(4)))
+            hint         = "● ● ● ●"
+            gravity      = Gravity.CENTER
+            maxLines     = 1
+            inputType    = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters      = arrayOf(InputFilter.LengthFilter(unlockCode.length.coerceAtLeast(4)))
             setBackgroundColor(Color.TRANSPARENT)
 
             addTextChangedListener(object : TextWatcher {
@@ -80,291 +85,313 @@ class HackerOverlayView(
                     val input = s.toString()
                     if (input.length == unlockCode.length) {
                         if (input == unlockCode) {
-                            postDelayed({ onUnlock() }, 300)
+                            postDelayed({ onUnlock() }, 200)
                         } else {
-                            matrixCanvas.flashError()
+                            card.flashError()
                             try {
-                                val tg = ToneGenerator(AudioManager.STREAM_SYSTEM, 85)
-                                tg.startTone(ToneGenerator.TONE_PROP_NACK, 300)
-                                postDelayed({ tg.release() }, 500)
+                                val tg = ToneGenerator(AudioManager.STREAM_SYSTEM, 80)
+                                tg.startTone(ToneGenerator.TONE_PROP_NACK, 280)
+                                postDelayed({ tg.release() }, 480)
                             } catch (_: Exception) {}
                             setTextColor(Color.rgb(255, 60, 60))
                             postDelayed({
                                 setText("")
                                 setTextColor(Color.rgb(0, 255, 65))
-                            }, 700)
+                            }, 600)
                         }
                     }
                 }
             })
         }
 
-        val inputW = (220 * dp).toInt()
-        val boxCenterY = calcBoxCenterY(screenH)
+        val inputW = (196f * dp).toInt()
+        val screenH = context.resources.displayMetrics.heightPixels.toFloat()
         val lp = LayoutParams(inputW, LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
-            topMargin = (boxCenterY - 20 * dp).toInt()
+            gravity   = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            topMargin = (boxCenterY(screenH) - 20f * dp).toInt()
         }
-        addView(codeInput, lp)
-        codeInputView = codeInput
+        addView(et, lp)
+        codeInput = et
 
         post {
-            codeInput.requestFocus()
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(codeInput, InputMethodManager.SHOW_FORCED)
+            et.requestFocus()
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                ?.showSoftInput(et, InputMethodManager.SHOW_FORCED)
         }
     }
 
-    // When keyboard appears (SOFT_INPUT_ADJUST_RESIZE), view height shrinks →
-    // recalculate box center with new h so EditText stays aligned with drawn boxes
+    // Called when SOFT_INPUT_ADJUST_RESIZE shrinks the view height (keyboard appeared).
+    // Reposition EditText so it stays aligned with the drawn code boxes.
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (h <= 0 || h == oldh) return
         val dp = context.resources.displayMetrics.density
-        val boxCenterY = calcBoxCenterY(h.toFloat())
-        codeInputView?.let { et ->
-            val lp = et.layoutParams as? LayoutParams ?: return
-            lp.topMargin = (boxCenterY - 20 * dp).toInt()
-            lp.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
-            et.layoutParams = lp
+        codeInput?.let { et ->
+            (et.layoutParams as? LayoutParams)?.let { lp ->
+                lp.topMargin = (boxCenterY(h.toFloat()) - 20f * dp).toInt()
+                et.layoutParams = lp
+            }
         }
     }
 
     fun stop() {
-        matrixCanvas.stop()
+        card.stop()
         try {
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(windowToken, 0)
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                ?.hideSoftInputFromWindow(windowToken, 0)
         } catch (_: Exception) {}
     }
 
-    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); matrixCanvas.stop() }
+    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); card.stop() }
 
-    // ── Matrix Canvas ─────────────────────────────────────────────────────────
-    private class MatrixCanvas(
+    // ─────────────────────────────────────────────────────────────────────────
+    // HackerCardView  — hardware-rendered canvas, zero shadows, clean design
+    // ─────────────────────────────────────────────────────────────────────────
+    private class HackerCardView(
         context: Context,
-        val customText: String,
-        val style: String,
-        private val speed: Float = 0.60f
+        private val customText: String,
+        private val speed: Float
     ) : View(context) {
 
-        private val charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%^&*<>[]{}|"
-        private val fSize = 21f
-        private var cols = 0
-        private lateinit var drops: IntArray
-        private lateinit var spds: IntArray
+        private val dp   = context.resources.displayMetrics.density
+        private val sp   = context.resources.displayMetrics.scaledDensity
 
-        @Volatile var errorFlash = false
-        @Volatile var errorFade = 0f
+        // Typewriter interval synced with TTS speed
+        private val typeMs: Long = (55L / speed.coerceIn(0.1f, 2.0f)).toLong().coerceIn(20L, 140L)
 
-        // Typewriter delay synced with TTS speech rate:
-        // speed=0.60 → 83ms/char (slower), speed=1.0 → 50ms/char, speed=2.0 → 25ms/char
-        private val typeCharMs: Long = (50L / speed.coerceIn(0.1f, 2.0f)).toLong().coerceIn(20L, 150L)
+        // ── Paints — NO setShadowLayer anywhere ───────────────────────────────
+        private fun p(flags: Int = Paint.ANTI_ALIAS_FLAG, b: Paint.() -> Unit) = Paint(flags).apply(b)
 
-        private fun mk(f: Int = Paint.ANTI_ALIAS_FLAG, b: Paint.() -> Unit) = Paint(f).apply(b)
-
-        private val pHead   = mk { color=Color.rgb(210,255,210); textSize=fSize; typeface=Typeface.MONOSPACE; setShadowLayer(8f,0f,0f,Color.rgb(0,255,65)) }
-        private val pBrt    = mk { color=Color.rgb(0,210,80);   textSize=fSize; typeface=Typeface.MONOSPACE }
-        private val pMid    = mk { color=Color.rgb(0,140,50);   textSize=fSize; typeface=Typeface.MONOSPACE }
-        private val pDim    = mk { color=Color.rgb(0,70,20);    textSize=fSize; typeface=Typeface.MONOSPACE }
-        private val pBg     = mk(0) { color=Color.argb(55,0,0,0) }
-        private val pDark   = mk(0) { color=Color.argb(175,0,0,0) }
-        private val pCard   = mk(0) { color=Color.argb(242,0,5,0) }
-        private val pBdr    = mk { color=Color.rgb(0,255,65); style=Paint.Style.STROKE; strokeWidth=2f; setShadowLayer(14f,0f,0f,Color.rgb(0,255,65)) }
-        private val pCorn   = mk { color=Color.rgb(0,255,65); style=Paint.Style.STROKE; strokeWidth=3f; setShadowLayer(8f,0f,0f,Color.rgb(0,255,65)) }
-        private val pTitle  = mk { color=Color.rgb(0,255,65); textSize=20f; typeface=Typeface.MONOSPACE; setShadowLayer(18f,0f,0f,Color.rgb(0,255,65)) }
-        private val pText   = mk { color=Color.rgb(0,255,100); textSize=26f; typeface=Typeface.MONOSPACE; setShadowLayer(12f,0f,0f,Color.rgb(0,210,70)) }
-        private val pSub    = mk { color=Color.rgb(0,185,60);  textSize=13f; typeface=Typeface.MONOSPACE }
-        private val pBar    = mk(0) { color=Color.rgb(0,255,65) }
-        private val pBarBg  = mk(0) { color=Color.argb(55,0,255,65) }
-        private val pScan   = mk(0) { color=Color.argb(35,0,255,100) }
-        private val pLock   = mk { color=Color.rgb(255,210,0); textSize=17f; typeface=Typeface.MONOSPACE; setShadowLayer(12f,0f,0f,Color.rgb(200,160,0)) }
-        private val pLockSb = mk { color=Color.rgb(0,210,80); textSize=12f; typeface=Typeface.MONOSPACE }
-        private val pBoxBg  = mk(0) { color=Color.argb(60,0,255,65) }
-        private val pBoxBdr = mk { color=Color.rgb(0,200,60); style=Paint.Style.STROKE; strokeWidth=1.8f; setShadowLayer(8f,0f,0f,Color.rgb(0,255,65)) }
-        private val pErrBg  = mk(0) { color=Color.argb(180,255,30,30) }
-        private val pErrBdr = mk { color=Color.rgb(255,80,80); style=Paint.Style.STROKE; strokeWidth=2.5f; setShadowLayer(14f,0f,0f,Color.rgb(255,0,0)) }
-        private val pErrTxt = mk { color=Color.rgb(255,100,100); textSize=14f; typeface=Typeface.MONOSPACE; setShadowLayer(10f,0f,0f,Color.rgb(200,0,0)) }
+        private val pBg     = p(0)  { color = Color.rgb(2, 5, 2) }
+        private val pScan   = p(0)  { color = Color.argb(18, 0, 255, 65) }
+        private val pCard   = p(0)  { color = Color.argb(248, 4, 10, 4) }
+        private val pBorder = p     { color = Color.rgb(0, 180, 45); style = Paint.Style.STROKE; strokeWidth = 1.8f }
+        private val pCorner = p     { color = Color.rgb(0, 255, 65); style = Paint.Style.STROKE; strokeWidth = 2.8f }
+        private val pDivide = p     { color = Color.argb(100, 0, 200, 50); style = Paint.Style.STROKE; strokeWidth = 1f }
+        // Text paints — no shadow, use alpha contrast for depth
+        private val pTitle  = p     { color = Color.rgb(0, 255, 65); textSize = 17f * sp; typeface = Typeface.MONOSPACE }
+        private val pBody   = p     { color = Color.rgb(0, 230, 80); textSize = 14f * sp; typeface = Typeface.MONOSPACE }
+        private val pSub    = p     { color = Color.argb(180, 0, 190, 55); textSize = 10f * sp; typeface = Typeface.MONOSPACE }
+        private val pBar    = p(0)  { color = Color.rgb(0, 210, 55) }
+        private val pBarBg  = p(0)  { color = Color.argb(45, 0, 255, 65) }
+        private val pLock   = p     { color = Color.rgb(255, 195, 0); textSize = 14f * sp; typeface = Typeface.MONOSPACE }
+        private val pLockS  = p     { color = Color.argb(200, 0, 200, 65); textSize = 10f * sp; typeface = Typeface.MONOSPACE }
+        private val pBoxBg  = p(0)  { color = Color.argb(55, 0, 255, 65) }
+        private val pBoxBd  = p     { color = Color.rgb(0, 180, 50); style = Paint.Style.STROKE; strokeWidth = 1.5f }
+        private val pErrBg  = p(0)  { color = Color.argb(170, 200, 20, 20) }
+        private val pErrBd  = p     { color = Color.rgb(255, 75, 75); style = Paint.Style.STROKE; strokeWidth = 2f }
+        private val pErrTxt = p     { color = Color.rgb(255, 90, 90); textSize = 14f * sp; typeface = Typeface.MONOSPACE }
+        // Subtle scan-line accent — drawn as a thin rect sweeping down
+        private val pGlow   = p(0)  { color = Color.argb(8, 0, 255, 65) }
 
         private val handler = Handler(Looper.getMainLooper())
-        private var scanY = 0f
+        private var loopStarted = false
+
+        private var scanY    = 0f
         private var progress = 0f
-        private var titleDisplay = ""
-        private var bodyDisplay = ""
+        private var titleTxt = ""
+        private var bodyTxt  = ""
         private var titleDone = false
-        private var bodyDone = false
-        private var cursor = true
-        private var frame = 0
+        private var bodyDone  = false
+        private var cursor   = true
+        private var frame    = 0
+        var errorFlash = false
+        var errorFade  = 0f
         private val TITLE = "[ SYSTEM BREACHED ]"
 
-        private val loopRun = object : Runnable {
+        private val animRun = object : Runnable {
             override fun run() {
                 frame++
-                if (::drops.isInitialized) {
-                    for (i in drops.indices) {
-                        drops[i] += spds[i]
-                        if (drops[i] * fSize > height + fSize * 8 && Random.nextFloat() > 0.97f) {
-                            drops[i] = Random.nextInt(-30, -5); spds[i] = Random.nextInt(1, 3)
-                        }
-                    }
+                // Scanline sweep
+                scanY += 5f; if (scanY > height) scanY = -24f
+                // Progress 0 → 100
+                if (progress < 100f) progress = (progress + 0.5f).coerceAtMost(100f)
+                // Cursor blink every 8 frames (~640ms)
+                if (frame % 8 == 0) cursor = !cursor
+                // Error fade
+                if (errorFlash && errorFade > 0f) {
+                    errorFade -= 0.10f
+                    if (errorFade <= 0f) { errorFade = 0f; errorFlash = false }
                 }
-                scanY += 3f; if (scanY > height) scanY = 0f
-                if (progress < 100f) progress += 0.30f
-                if (frame % 14 == 0) cursor = !cursor
-                if (errorFlash && errorFade > 0f) { errorFade -= 0.08f; if (errorFade <= 0f) { errorFade = 0f; errorFlash = false } }
                 invalidate()
-                handler.postDelayed(this, 50L)
+                handler.postDelayed(this, 80L)   // 12.5 fps — smooth + low CPU
             }
         }
 
         init {
-            setLayerType(LAYER_TYPE_SOFTWARE, null)
-            handler.postDelayed({ typeTitle(0) }, 350)
+            // Hardware rendering — required to avoid shadow-forced software mode
+            setLayerType(LAYER_TYPE_HARDWARE, null)
+            handler.postDelayed({ typeTitle(0) }, 300)
         }
 
-        fun flashError() { errorFlash = true; errorFade = 1.0f }
+        fun flashError() { errorFlash = true; errorFade = 1f }
 
         private fun typeTitle(i: Int) {
             if (i <= TITLE.length) {
-                titleDisplay = TITLE.substring(0, i)
-                handler.postDelayed({ typeTitle(i + 1) }, typeCharMs)
+                titleTxt = TITLE.substring(0, i)
+                handler.postDelayed({ typeTitle(i + 1) }, typeMs)
             } else {
                 titleDone = true
-                handler.postDelayed({ typeBody(0) }, 200)
+                handler.postDelayed({ typeBody(0) }, 150)
             }
         }
 
         private fun typeBody(i: Int) {
             if (i <= customText.length) {
-                bodyDisplay = customText.substring(0, i)
-                handler.postDelayed({ typeBody(i + 1) }, typeCharMs)
+                bodyTxt = customText.substring(0, i)
+                handler.postDelayed({ typeBody(i + 1) }, typeMs)
             } else {
                 bodyDone = true
             }
         }
 
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            // Guard: start animation loop only once
+            if (!loopStarted && w > 0 && h > 0) {
+                loopStarted = true
+                handler.post(animRun)
+            }
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val w = width.toFloat(); val h = height.toFloat()
+            if (w == 0f || h == 0f) return
+
+            // ── Background ──────────────────────────────────────────────────
+            canvas.drawRect(0f, 0f, w, h, pBg)
+
+            // Subtle full-width scanline glow bands (static, cheap)
+            var gy = 0f
+            while (gy < h) { canvas.drawRect(0f, gy, w, gy + 1f, pGlow); gy += 4f }
+
+            // Moving bright scanline
+            canvas.drawRect(0f, scanY, w, scanY + 22f, pScan)
+
+            drawCard(canvas, w, h)
+        }
+
         private fun wrapText(text: String, maxW: Float, paint: Paint): List<String> {
+            if (text.isEmpty()) return listOf("")
             val result = mutableListOf<String>()
             for (para in text.split("\n")) {
                 if (para.isEmpty()) { result.add(""); continue }
                 var line = ""
                 for (ch in para) {
                     val test = line + ch
-                    if (paint.measureText(test) > maxW && line.isNotEmpty()) { result.add(line); line = ch.toString() }
-                    else line = test
+                    if (paint.measureText(test) > maxW && line.isNotEmpty()) {
+                        result.add(line); line = ch.toString()
+                    } else line = test
                 }
                 if (line.isNotEmpty()) result.add(line)
             }
             return result.ifEmpty { listOf("") }
         }
 
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-            super.onSizeChanged(w, h, oldw, oldh)
-            cols  = (w / fSize).toInt().coerceAtLeast(1)
-            drops = IntArray(cols) { Random.nextInt(-40, 0) }
-            spds  = IntArray(cols) { Random.nextInt(1, 3) }
-            handler.post(loopRun)
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            val w = width.toFloat(); val h = height.toFloat()
-            canvas.drawRect(0f, 0f, w, h, pDark)
-            canvas.drawRect(0f, 0f, w, h, pBg)
-            for (i in 0 until cols) {
-                val x = i * fSize; val d = drops[i]
-                if (d >= 0) {
-                    val y = d * fSize
-                    canvas.drawText(rCh(), x, y, pHead)
-                    if (d > 1) canvas.drawText(rCh(), x, y - fSize,    pBrt)
-                    if (d > 3) canvas.drawText(rCh(), x, y - fSize*3f, pMid)
-                    if (d > 6) canvas.drawText(rCh(), x, y - fSize*6f, pDim)
-                }
-            }
-            canvas.drawRect(0f, scanY, w, scanY + 3f, pScan)
-            drawCard(canvas, w, h)
-        }
-
         private fun drawCard(canvas: Canvas, w: Float, h: Float) {
-            val padH = 28f; val cw = w - padH * 2f; val ch = h * 0.76f
-            val cl = padH; val ct = (h - ch) / 2f; val cr = cl + cw; val cb = ct + ch
+            // Card fills almost the full available area.
+            // Keyboard-aware: when h shrinks (ADJUST_RESIZE), unlock section
+            // stays anchored to card bottom → always visible.
+            val pad = 14f * dp
+            val cl = pad; val ct = pad; val cr = w - pad; val cb = h - pad
+            val rad = 14f
 
-            canvas.drawRoundRect(RectF(cl, ct, cr, cb), 16f, 16f, pCard)
-            canvas.drawRoundRect(RectF(cl, ct, cr, cb), 16f, 16f, pBdr)
-            val cs = 22f
-            canvas.drawLines(floatArrayOf(cl,ct+cs,cl,ct,cl+cs,ct,cr-cs,ct,cr,ct,cr,ct+cs,cr,cb-cs,cr,cb,cr-cs,cb,cl+cs,cb,cl,cb,cl,cb-cs), pCorn)
+            canvas.drawRoundRect(RectF(cl, ct, cr, cb), rad, rad, pCard)
+            canvas.drawRoundRect(RectF(cl, ct, cr, cb), rad, rad, pBorder)
 
-            val titleY = ct + 44f
-            val td = titleDisplay + (if (!titleDone && cursor) "_" else "")
-            canvas.drawText(td, w/2f - pTitle.measureText(td)/2f, titleY, pTitle)
-            canvas.drawLine(cl+14f, titleY+10f, cr-14f, titleY+10f, pBdr)
+            // Corner accent lines
+            val cs = 22f * dp
+            canvas.drawLines(floatArrayOf(
+                cl, ct+cs, cl, ct, cl+cs, ct,
+                cr-cs, ct, cr, ct, cr, ct+cs,
+                cr, cb-cs, cr, cb, cr-cs, cb,
+                cl+cs, cb, cl, cb, cl, cb-cs
+            ), pCorner)
 
-            val barH = 44f; val wmH = 26f; val unlockH = 138f
-            val bodyTop = titleY + 20f; val bodyBot = cb - barH - wmH - unlockH - 12f
-            val bodyMaxW = cw - 52f; val lineH = pText.textSize * 1.45f
-            val allLines = wrapText(bodyDisplay, bodyMaxW, pText)
-            val maxVis = ((bodyBot - bodyTop) / lineH).toInt().coerceAtLeast(1)
-            val visLines = allLines.takeLast(maxVis)
-            val totalH = visLines.size * lineH
-            var lineY = bodyTop + (bodyBot - bodyTop - totalH) / 2f + pText.textSize
-            canvas.save(); canvas.clipRect(cl+14f, bodyTop, cr-14f, bodyBot)
-            visLines.forEachIndexed { idx, line ->
-                val isLast = idx == visLines.lastIndex
-                val drawn = line + (if (isLast && !bodyDone && cursor) "█" else "")
-                canvas.drawText(drawn, w/2f - pText.measureText(drawn)/2f, lineY, pText)
-                lineY += lineH
-            }
-            canvas.restore()
+            val iL = cl + 12f; val iR = cr - 12f
 
-            val barTop = bodyBot + 6f
-            val pl = cl+20f; val pr = cr-20f; val pt = barTop+4f; val pb = barTop+18f
-            canvas.drawRoundRect(RectF(pl, pt, pr, pb), 4f, 4f, pBarBg)
-            val fill = (pr - pl) * (progress / 100f)
-            if (fill > 0f) canvas.drawRoundRect(RectF(pl, pt, pl+fill, pb), 4f, 4f, pBar)
-            val lbl = "INJECTING... ${progress.toInt()}%"
-            canvas.drawText(lbl, w/2f - pSub.measureText(lbl)/2f, pb+14f, pSub)
+            // ── Title ───────────────────────────────────────────────────────
+            val titleY = ct + 34f * dp
+            val td = titleTxt + if (!titleDone && cursor) "_" else ""
+            canvas.drawText(td, (cl + cr) / 2f - pTitle.measureText(td) / 2f, titleY, pTitle)
+            canvas.drawLine(iL, titleY + 8f * dp, iR, titleY + 8f * dp, pDivide)
 
-            val unlockTop = barTop + barH + 4f
-            canvas.drawLine(cl+14f, unlockTop, cr-14f, unlockTop, pBdr)
+            // ── Unlock section (bottom-anchored, always visible) ─────────────
+            val unlockH  = 158f * dp
+            val unlockTop = cb - unlockH
+            canvas.drawLine(iL, unlockTop, iR, unlockTop, pDivide)
 
+            // Error flash overlay
             if (errorFlash && errorFade > 0f) {
-                val alpha = (errorFade * 180).toInt().coerceIn(0, 180)
-                val errPaint = Paint(0).apply { color = Color.argb(alpha, 200, 0, 0) }
-                canvas.drawRoundRect(RectF(cl+2f, unlockTop, cr-2f, cb-2f), 14f, 14f, errPaint)
-                val errMsg = "⚠ INVALID CODE ⚠"
-                val ep = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.argb(alpha.coerceAtMost(255), 255, 80, 80)
-                    textSize = 18f; typeface = Typeface.MONOSPACE
-                    setShadowLayer(12f, 0f, 0f, Color.rgb(255, 0, 0))
-                }
-                canvas.drawText(errMsg, w/2f - ep.measureText(errMsg)/2f, unlockTop + 64f, ep)
+                val a = (errorFade * 155).toInt().coerceIn(0, 155)
+                canvas.drawRoundRect(RectF(cl + 2f, unlockTop + 1f, cr - 2f, cb - 1f), rad, rad,
+                    Paint(0).apply { color = Color.argb(a, 200, 0, 0) })
+                val em = "  ✕  INVALID CODE  ✕  "
+                canvas.drawText(em, (cl + cr) / 2f - pErrTxt.measureText(em) / 2f,
+                    unlockTop + 56f * dp, pErrTxt)
             }
 
-            val lockTitle = "[ ACCESS LOCKED ]"
-            val lockY = unlockTop + 22f
-            canvas.drawText(lockTitle, w/2f - pLock.measureText(lockTitle)/2f, lockY, pLock)
+            val lockLabelY = unlockTop + 24f * dp
+            val lt = "[ ACCESS LOCKED ]"
+            canvas.drawText(lt, (cl + cr) / 2f - pLock.measureText(lt) / 2f, lockLabelY, pLock)
 
-            val lockSub = "SYSTEM COMPROMISED  —  ENTER UNLOCK CODE"
-            val lockSubY = lockY + 20f
-            canvas.drawText(lockSub, w/2f - pLockSb.measureText(lockSub)/2f, lockSubY, pLockSb)
+            val ls = "SYSTEM COMPROMISED  —  ENTER UNLOCK CODE"
+            val lockSubY = lockLabelY + 20f * dp
+            canvas.drawText(ls, (cl + cr) / 2f - pLockS.measureText(ls) / 2f, lockSubY, pLockS)
 
-            val boxW = 46f; val boxH2 = 50f; val boxGap = 14f
-            val totalBW = 4*boxW + 3*boxGap
-            var bx = w/2f - totalBW/2f
-            val by = lockSubY + 14f
-
-            val boxBg  = if (errorFlash && errorFade > 0.3f) pErrBg  else pBoxBg
-            val boxBdr = if (errorFlash && errorFade > 0.3f) pErrBdr else pBoxBdr
+            // 4 code boxes — EditText is overlaid on these by setupInput()
+            val boxW = 44f * dp; val boxH2 = 48f * dp; val boxGap = 10f * dp
+            val totalBW = 4f * boxW + 3f * boxGap
+            var bx = (cl + cr) / 2f - totalBW / 2f
+            val by = lockSubY + 14f * dp
+            val boxBg = if (errorFlash && errorFade > 0.3f) pErrBg else pBoxBg
+            val boxBd = if (errorFlash && errorFade > 0.3f) pErrBd else pBoxBd
             repeat(4) {
-                canvas.drawRoundRect(RectF(bx, by, bx+boxW, by+boxH2), 8f, 8f, boxBg)
-                canvas.drawRoundRect(RectF(bx, by, bx+boxW, by+boxH2), 8f, 8f, boxBdr)
+                canvas.drawRoundRect(RectF(bx, by, bx + boxW, by + boxH2), 8f, 8f, boxBg)
+                canvas.drawRoundRect(RectF(bx, by, bx + boxW, by + boxH2), 8f, 8f, boxBd)
                 bx += boxW + boxGap
             }
 
             val wm = "> IWX TEAM <"
-            canvas.drawText(wm, w/2f - pSub.measureText(wm)/2f, cb-8f, pSub)
+            canvas.drawText(wm, (cl + cr) / 2f - pSub.measureText(wm) / 2f, cb - 8f * dp, pSub)
+
+            // ── Body text area (flexible, between title and unlock) ──────────
+            val bodyTop = titleY + 16f * dp
+            val bodyBot = unlockTop - 6f * dp
+            if (bodyBot > bodyTop + pBody.textSize) {
+                val bodyMaxW = (iR - iL) - 16f * dp
+                val lineH = pBody.textSize * 1.5f
+                val lines = wrapText(bodyTxt, bodyMaxW, pBody)
+                val maxVis = ((bodyBot - bodyTop) / lineH).toInt().coerceAtLeast(1)
+                val visible = lines.takeLast(maxVis)
+                val totalH = visible.size * lineH
+                var lineY = bodyTop + (bodyBot - bodyTop - totalH) / 2f + pBody.textSize
+
+                canvas.save()
+                canvas.clipRect(iL, bodyTop, iR, bodyBot)
+                visible.forEachIndexed { idx, line ->
+                    val drawn = line + if (idx == visible.lastIndex && !bodyDone && cursor) "█" else ""
+                    canvas.drawText(drawn, (cl + cr) / 2f - pBody.measureText(drawn) / 2f, lineY, pBody)
+                    lineY += lineH
+                }
+                canvas.restore()
+            }
+
+            // ── Progress bar (between body and unlock section) ───────────────
+            val barAvail = bodyBot - bodyTop
+            if (barAvail > 30f * dp) {
+                val barBot = bodyBot + 4f * dp
+                val barTop2 = barBot - 14f * dp
+                val barL = iL + 4f * dp; val barR = iR - 4f * dp
+                canvas.drawRoundRect(RectF(barL, barTop2, barR, barBot), 4f, 4f, pBarBg)
+                val fill = (barR - barL) * (progress / 100f)
+                if (fill > 0f) canvas.drawRoundRect(RectF(barL, barTop2, barL + fill, barBot), 4f, 4f, pBar)
+                val pct = "INJECTING... ${progress.toInt()}%"
+                canvas.drawText(pct, (cl + cr) / 2f - pSub.measureText(pct) / 2f,
+                    barBot + 11f * dp, pSub)
+            }
         }
 
-        private fun rCh() = charset[Random.nextInt(charset.length)].toString()
         fun stop() { handler.removeCallbacksAndMessages(null) }
         override fun onDetachedFromWindow() { super.onDetachedFromWindow(); stop() }
     }
