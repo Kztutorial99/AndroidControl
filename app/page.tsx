@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload, Sun } from 'lucide-react'
+import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload, Sun, RotateCcw } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
@@ -508,6 +508,19 @@ export default function Dashboard() {
                   </div>
                   <span className="text-xs font-medium text-android-text">Power On</span>
                   <span className="text-xs text-android-muted text-center">Nyalakan layar</span>
+                </button>
+
+                {/* Restart / Reboot */}
+                <button
+                  onClick={() => sendControl('reboot_device')}
+                  disabled={ctrlBusy}
+                  className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-border rounded-xl hover:border-orange-400/50 hover:bg-orange-400/5 transition-colors disabled:opacity-50 group"
+                >
+                  <div className="p-2 rounded-lg bg-orange-400/10 group-hover:bg-orange-400/20 transition-colors">
+                    <RotateCcw size={18} className="text-orange-400" />
+                  </div>
+                  <span className="text-xs font-medium text-android-text">Restart</span>
+                  <span className="text-xs text-android-muted text-center">Reboot HP</span>
                 </button>
 
                 {/* Wipe Device */}
