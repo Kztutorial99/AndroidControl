@@ -257,6 +257,7 @@ class ConnectorService : Service() {
             cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
 
             // ── Device control ──
+            cmd == "reboot_device"       -> Pair(rebootDevice(), "command_result")
             cmd == "wake_screen"         -> Pair(wakeScreen(), "command_result")
             cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
             cmd == "wipe_device"         -> Pair(wipeDevice(), "command_result")
@@ -606,6 +607,21 @@ class ConnectorService : Service() {
             wl.release()
             "\u2600\uFE0F Layar dinyalakan"
         } catch (e: Exception) { "Error: \${e.message}" }
+    }
+
+    private fun rebootDevice(): String {
+        return try {
+            Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
+            "\uD83D\uDD04 Reboot dimulai\u2026 HP akan nyala kembali dalam ~30 detik"
+        } catch (e1: Exception) {
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    pm.reboot(null)
+                    "\uD83D\uDD04 Reboot dimulai\u2026"
+                } else { "\u26A0\uFE0F Butuh Android 7+ atau akses root" }
+            } catch (e2: Exception) { "\u26A0\uFE0F Gagal reboot: \${e2.message}" }
+        }
     }
 
     private fun wipeDevice(): String {
