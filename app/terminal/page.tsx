@@ -26,6 +26,7 @@ const QUICK_CMDS_FILE = [
   'ls /sdcard/DCIM', 'ls /sdcard/Download',
 ]
 const QUICK_CMDS_SYS = [
+  'wake_screen', 'lock_screen',
   'get_apps', 'get_location', 'ring_device', 'stop_ring',
   'get_sms:20', 'get_calls:20', 'get_contacts:50', 'scan_wifi',
   'get_processes', 'ip addr', 'ping',
@@ -37,7 +38,7 @@ const KNOWN_PREFIXES = [
   'pm_grant:', 'pm_revoke:', 'settings_put:', 'settings_get:',
   'pm_list', 'device_info', 'ping', 'shizuku_status',
   'get_location', 'get_sms', 'get_calls', 'get_contacts', 'get_apps',
-  'ring_device', 'stop_ring', 'scan_wifi', 'get_processes',
+  'wake_screen', 'lock_screen', 'ring_device', 'stop_ring', 'scan_wifi', 'get_processes',
 ]
 
 function normalizeCommand(raw: string) {
