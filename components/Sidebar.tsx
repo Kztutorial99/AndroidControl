@@ -6,7 +6,7 @@ import {
   Settings, Smartphone, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
-  Bell, BellRing, ExternalLink,
+  Bell, BellRing, ExternalLink, Server,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { useBadge } from '@/contexts/BadgeContext'
@@ -36,6 +36,7 @@ const navItems = [
   { href: '/apps', label: 'Apps', icon: Package },
   { href: '/keylog', label: 'Keylogger', icon: KeySquare },
   { href: '/setup', label: 'Setup', icon: Settings },
+  { href: '/server-config', label: 'Server Config', icon: Server },
 ]
 
 const mobileNavPinned = [
