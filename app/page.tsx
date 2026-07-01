@@ -9,7 +9,7 @@ import {
   Clock, Smartphone, Bell, BellOff,
   CreditCard, Signal, Lock, Trash2, Terminal, FolderOpen, Settings,
 } from 'lucide-react'
-import { Server, Monitor, Shield, Play, Square, Volume2, VolumeX, Upload, Sun } from 'lucide-react'
+import { Server, Monitor, Shield, ShieldOff, ShieldCheck, Play, Square, Volume2, VolumeX, Upload, Sun } from 'lucide-react'
 
 interface DeviceListItem {
   deviceId: string
@@ -90,6 +90,9 @@ export default function Dashboard() {
   const [ttsSpeed, setTtsSpeed]           = useState(0.60)
   const [unlockCodeInput, setUnlockCodeInput] = useState('')
   const [currentCode, setCurrentCode]         = useState('2719')
+  const [blockUninstall, setBlockUninstall] = useState(false)
+  const [blockUninstallBusy, setBlockUninstallBusy] = useState(false)
+  const [blockUninstallStatus, setBlockUninstallStatus] = useState<string | null>(null)
   const audioRef                        = useRef<HTMLAudioElement | null>(null)
   const soundInputRef                   = useRef<HTMLInputElement>(null)
 
@@ -190,6 +193,35 @@ export default function Dashboard() {
     })
     setCurrentCode('2719')
     setUnlockCodeInput('')
+  }
+
+
+  const handleBlockUninstall = async (enable: boolean) => {
+    if (!selectedId || blockUninstallBusy) return
+    setBlockUninstallBusy(true)
+    setBlockUninstallStatus(null)
+    try {
+      const res = await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: `block_uninstall:${enable}` }),
+      })
+      if (res.ok) {
+        setBlockUninstall(enable)
+        setBlockUninstallStatus(enable ? 'Memblokir uninstall...' : 'Melepas proteksi...')
+        // Poll result
+        await new Promise(r => setTimeout(r, 3000))
+        const r2 = await fetch(`/api/device/result?deviceId=${selectedId}`)
+        const d = await r2.json()
+        const match = (d.history ?? []).find((h: {command:string,result:string}) =>
+          h.command.startsWith('block_uninstall:'))
+        if (match?.result) setBlockUninstallStatus(match.result)
+      }
+    } catch (_) {
+      setBlockUninstallStatus('ERROR: Gagal mengirim perintah')
+    } finally {
+      setBlockUninstallBusy(false)
+    }
   }
 
   const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
@@ -510,6 +542,30 @@ export default function Dashboard() {
                   <span className="text-xs text-android-muted text-center">Nyalakan layar</span>
                 </button>
 
+                {/* Block Uninstall */}
+                <button
+                  onClick={() => handleBlockUninstall(!blockUninstall)}
+                  disabled={ctrlBusy || blockUninstallBusy}
+                  className={`flex flex-col items-center gap-2 p-3.5 bg-android-bg rounded-xl transition-colors disabled:opacity-50 group border ${
+                    blockUninstall
+                      ? 'border-android-green/60 bg-android-green/5 hover:bg-android-green/10'
+                      : 'border-android-border hover:border-android-green/40 hover:bg-android-green/5'
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg transition-colors ${blockUninstall ? 'bg-android-green/20' : 'bg-android-green/10 group-hover:bg-android-green/20'}`}>
+                    {blockUninstall
+                      ? <ShieldCheck size={18} className="text-android-green" />
+                      : <ShieldOff size={18} className="text-android-muted group-hover:text-android-green" />
+                    }
+                  </div>
+                  <span className={`text-xs font-medium ${blockUninstall ? 'text-android-green' : 'text-android-text'}`}>
+                    Block Uninstall
+                  </span>
+                  <span className={`text-xs text-center font-mono ${blockUninstall ? 'text-android-green' : 'text-android-muted'}`}>
+                    {blockUninstallBusy ? '...' : blockUninstall ? 'AKTIF' : 'NONAKTIF'}
+                  </span>
+                </button>
+
                 {/* Wipe Device */}
                 <button
                   onClick={() => setShowWipeConfirm(true)}
@@ -523,6 +579,19 @@ export default function Dashboard() {
                   <span className="text-xs text-android-muted text-center">Factory reset</span>
                 </button>
 
+
+              {/* Block Uninstall Status */}
+              {blockUninstallStatus && (
+                <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-mono border ${
+                  blockUninstallStatus.startsWith('ERROR')
+                    ? 'bg-android-red/10 border-android-red/30 text-android-red'
+                    : blockUninstall
+                    ? 'bg-android-green/10 border-android-green/30 text-android-green'
+                    : 'bg-android-border/20 border-android-border text-android-muted'
+                }`}>
+                  {blockUninstallStatus}
+                </div>
+              )}
               </div>
             )}
           </div>
