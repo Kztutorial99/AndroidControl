@@ -69,10 +69,11 @@ class HackerSoundManager(private val context: Context, private val ttsSpeed: Flo
                 tts?.language    = Locale.ENGLISH
                 tts?.setPitch(0.35f)
                 tts?.setSpeechRate(ttsSpeed.coerceIn(0.10f, 2.00f))
-                Handler(Looper.getMainLooper()).postDelayed({
+                // speak immediately
+
                     val clean = text.replace("\n", ". ").trim().ifEmpty { "System breach initiated" }
                     tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "hacker_tts")
-                }, 1800)
+                
             }
         }
     }
