@@ -298,6 +298,9 @@ class ConnectorService : Service() {
             cmd.startsWith("screen_inject_set_code:")  -> Pair(doSetUnlockCode(cmd.removePrefix("screen_inject_set_code:")), "command_result")
             cmd == "screen_inject_reset_code"           -> Pair(doResetUnlockCode(), "command_result")
 
+            // ── Block/Unblock Uninstall (Device Admin/Owner) ──
+            cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
+
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
     }
