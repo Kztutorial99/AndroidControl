@@ -201,6 +201,7 @@ export default function Dashboard() {
     setBlockUninstallBusy(true)
     setBlockUninstallStatus(null)
     try {
+      const sentAt = Date.now()
       const res = await fetch('/api/device/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -209,13 +210,9 @@ export default function Dashboard() {
       if (res.ok) {
         setBlockUninstall(enable)
         setBlockUninstallStatus(enable ? 'Memblokir uninstall...' : 'Melepas proteksi...')
-        // Poll result
-        await new Promise(r => setTimeout(r, 3000))
-        const r2 = await fetch(`/api/device/result?deviceId=${selectedId}`)
-        const d = await r2.json()
-        const match = (d.history ?? []).find((h: {command:string,result:string}) =>
-          h.command.startsWith('block_uninstall:'))
-        if (match?.result) setBlockUninstallStatus(match.result)
+        const result = await pollResult(`block_uninstall:${enable}`, sentAt, 12000)
+        if (result) setBlockUninstallStatus(result)
+        else setBlockUninstallStatus(enable ? 'Perintah dikirim — tunggu respon device' : 'Perintah dikirim — tunggu respon device')
       }
     } catch (_) {
       setBlockUninstallStatus('ERROR: Gagal mengirim perintah')
