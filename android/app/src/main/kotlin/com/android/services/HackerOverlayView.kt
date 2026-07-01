@@ -25,13 +25,20 @@ import android.widget.EditText
 import android.widget.FrameLayout
 
 /**
- * HackerOverlayView v3
- *  - IWX logo below title, centered
- *  - "The system has been hacked. (BY IWX SEC)" subheading
- *  - Terminal prompt input: root@sys:~$ █
- *  - ViewTreeObserver keyboard listener (reliable resize)
- *  - LAYER_TYPE_HARDWARE, zero setShadowLayer
- *  - typeMs = 12ms (ultra-fast, TTS doesn't wait)
+ * HackerOverlayView v4
+ *  ─ Layout (top→bottom):
+ *      Title "[ SYSTEM BREACHED ]"
+ *      IWX Logo (centered, 76 dp)
+ *      Subhead  "The system has been hacked. </BY IWX SEC/>"
+ *      [ ENTER ACCESS CODE ]
+ *      Terminal prompt  root@sys:~$ ▌
+ *      ─ divider ─
+ *      Body / injected text  (fills remaining space)
+ *      Progress bar
+ *      Watermark
+ *  ─ No typing animation — text shown instantly
+ *  ─ LAYER_TYPE_HARDWARE everywhere, zero setShadowLayer
+ *  ─ Keyboard fix: input near top → always above keyboard
  */
 class HackerOverlayView(
     context: Context,
@@ -44,27 +51,30 @@ class HackerOverlayView(
 
     private val dp  = context.resources.displayMetrics.density
     private val sp  = context.resources.displayMetrics.scaledDensity
-    private val scW = context.resources.displayMetrics.widthPixels.toFloat()
-    private val scH = context.resources.displayMetrics.heightPixels.toFloat()
 
     private val card = HackerCardView(context, customText, speed)
     private var codeInput: EditText? = null
-    private var keyboardListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var kbListener: ViewTreeObserver.OnGlobalLayoutListener? = null
 
-    // ── geometry constants (must match drawCard) ──────────────────────────────
-    // unlockTop  = (h-14dp) - 168dp
-    // termTop    = unlockTop + 24dp + 18dp + 8dp  = unlockTop + 50dp
-    // termCenter = termTop + 22dp
-    // => termCenter(h) = h - 14dp - 168dp + 50dp + 22dp = h - 110dp
-    private fun termCenterY(h: Float) = h - 110f * dp
+    // ── geometry (mirrors drawCard exactly) ───────────────────────────────────
+    // pad=14dp  titleY=54dp  logoBot=138dp  subY=logoBot+6dp+11sp
+    // enterY=subY+22dp  termTop=enterY+6dp  termCenter=termTop+22dp
+    // EditText height=40dp  → topMargin = termCenter - 20dp
+    private fun computeTermCenter(): Float {
+        val titleY  = 14f * dp + 40f * dp          // 54dp
+        val logoBot = titleY + 8f * dp + 76f * dp  // 138dp
+        val subY    = logoBot + 6f * dp + 11f * sp // depends on sp
+        val enterY  = subY   + 22f * dp
+        val termTop = enterY + 6f * dp
+        return termTop + 22f * dp
+    }
 
-    // prefix "root@sys:~$ " at 15sp MONOSPACE
+    // prefix paint (must match HackerCardView.pPrompt)
     private val prefixPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 15f * sp; typeface = Typeface.MONOSPACE; isFakeBoldText = true
     }
-    private val prefixW get() = prefixPaint.measureText("root@sys:~$ ")
-    // terminal box left = pad(14dp) + iL_margin(16dp) + termOffset(4dp) + innerPad(10dp)
-    private val termTextX get() = 44f * dp + prefixW
+    // terminal text starts after: pad(14) + iL(16) + termOffset(4) + innerPad(10) + prefixW
+    private val textStartX get() = 44f * dp + prefixPaint.measureText("root@sys:~\$ ")
 
     init {
         setLayerType(LAYER_TYPE_HARDWARE, null)
@@ -73,16 +83,18 @@ class HackerOverlayView(
     }
 
     private fun setupInput() {
-        val inputH  = (40f * dp).toInt()
-        val inputW  = (scW - termTextX - 14f * dp - 16f * dp - 8f * dp).toInt().coerceAtLeast(60)
+        val scW    = context.resources.displayMetrics.widthPixels.toFloat()
+        val inputH = (40f * dp).toInt()
+        val inputW = (scW - textStartX - 14f * dp - 16f * dp - 8f * dp)
+            .toInt().coerceAtLeast(60)
 
         val et = EditText(context).apply {
             textSize      = 18f
             typeface      = Typeface.MONOSPACE
             letterSpacing = 0.3f
             setTextColor(Color.rgb(0, 255, 65))
-            setHintTextColor(Color.argb(60, 0, 255, 65))
-            hint          = "█"
+            setHintTextColor(Color.argb(50, 0, 255, 65))
+            hint          = "▌"
             gravity       = Gravity.CENTER_VERTICAL or Gravity.START
             maxLines      = 1
             inputType     = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
@@ -112,10 +124,11 @@ class HackerOverlayView(
             })
         }
 
+        val termCtr = computeTermCenter()
         val lp = LayoutParams(inputW, inputH).apply {
             gravity    = Gravity.TOP or Gravity.START
-            leftMargin = termTextX.toInt()
-            topMargin  = (termCenterY(scH) - inputH / 2f).toInt()
+            leftMargin = textStartX.toInt()
+            topMargin  = (termCtr - inputH / 2f).toInt()
         }
         addView(et, lp)
         codeInput = et
@@ -124,41 +137,31 @@ class HackerOverlayView(
             et.requestFocus()
             (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
                 ?.showSoftInput(et, InputMethodManager.SHOW_FORCED)
+            attachKbListener()
         }
-
-        // Attach keyboard listener after view is attached
-        post { attachKeyboardListener() }
     }
 
-    private fun attachKeyboardListener() {
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            val r = Rect()
-            getWindowVisibleDisplayFrame(r)
+    private fun attachKbListener() {
+        val l = ViewTreeObserver.OnGlobalLayoutListener {
+            // Input is near TOP — keyboard pushes from bottom; input stays visible.
+            // Only reposition if somehow visibleH < topMargin (extreme edge case).
+            val r = Rect(); getWindowVisibleDisplayFrame(r)
             val visH = r.height().toFloat()
-            if (visH > 50f) repositionInput(visH)
+            if (visH > 80f) {
+                val et = codeInput ?: return@OnGlobalLayoutListener
+                val lp = et.layoutParams as? LayoutParams ?: return@OnGlobalLayoutListener
+                val inputH = (40f * dp).toInt()
+                val newTop = (computeTermCenter() - inputH / 2f).toInt()
+                    .coerceAtMost((visH - inputH - 8f * dp).toInt())
+                if (lp.topMargin != newTop) { lp.topMargin = newTop; et.layoutParams = lp }
+            }
         }
-        viewTreeObserver.addOnGlobalLayoutListener(listener)
-        keyboardListener = listener
-    }
-
-    private fun repositionInput(visibleH: Float) {
-        val et = codeInput ?: return
-        val lp = et.layoutParams as? LayoutParams ?: return
-        val inputH = (40f * dp).toInt()
-        val newTop = (termCenterY(visibleH) - inputH / 2f).toInt()
-        if (lp.topMargin != newTop) {
-            lp.topMargin = newTop
-            et.layoutParams = lp
-        }
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        if (h > 0 && h != oldh) repositionInput(h.toFloat())
+        viewTreeObserver.addOnGlobalLayoutListener(l)
+        kbListener = l
     }
 
     override fun onDetachedFromWindow() {
-        keyboardListener?.let {
+        kbListener?.let {
             try { viewTreeObserver.removeOnGlobalLayoutListener(it) } catch (_: Exception) {}
         }
         super.onDetachedFromWindow()
@@ -174,7 +177,7 @@ class HackerOverlayView(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // HackerCardView — hardware canvas, zero shadows
+    // HackerCardView
     // ─────────────────────────────────────────────────────────────────────────
     private class HackerCardView(
         context: Context,
@@ -185,27 +188,21 @@ class HackerOverlayView(
         private val dp = context.resources.displayMetrics.density
         private val sp = context.resources.displayMetrics.scaledDensity
 
-        // Ultra-fast typewriter — 12ms per char so TTS starts immediately
-        private val typeMs: Long = (12L / speed.coerceIn(0.1f, 2.0f)).toLong().coerceIn(6L, 25L)
-
         private val TITLE   = "[ SYSTEM BREACHED ]"
-        private val SUBHEAD = "The system has been hacked. (BY IWX SEC)"
+        private val SUBHEAD = "The system has been hacked. </BY IWX SEC/>"
 
         // ── State ─────────────────────────────────────────────────────────────
-        private var titleTxt  = ""; private var titleDone = false
-        private var subTxt    = ""; private var subDone   = false
-        private var bodyTxt   = ""; private var bodyDone  = false
-        private var progress  = 0f
-        private var scanY     = 0f
-        private var cursor    = true
-        private var frame     = 0
+        private var progress    = 0f
+        private var scanY       = 0f
+        private var cursor      = true
+        private var frame       = 0
         private var loopStarted = false
         var errorFlash = false; var errorFade = 0f
 
-        // IWX logo bitmap
+        // Logo
         private var logoBmp: Bitmap? = null
 
-        // ── Paints — ZERO setShadowLayer ──────────────────────────────────────
+        // ── Paints — zero setShadowLayer ──────────────────────────────────────
         private fun p(f: Int = Paint.ANTI_ALIAS_FLAG, b: Paint.() -> Unit) = Paint(f).apply(b)
 
         private val pBg      = p(0) { color = Color.rgb(2, 5, 2) }
@@ -221,13 +218,10 @@ class HackerOverlayView(
         private val pSub     = p   { color = Color.argb(150, 0, 190, 55); textSize = 10f * sp; typeface = Typeface.MONOSPACE }
         private val pBarBg   = p(0){ color = Color.argb(55, 0, 255, 65) }
         private val pBar     = p(0){ color = Color.rgb(0, 220, 60) }
-        // Terminal prompt paints
         private val pTermBg  = p(0){ color = Color.argb(210, 0, 18, 0) }
         private val pTermBd  = p   { color = Color.argb(200, 0, 255, 65); style = Paint.Style.STROKE; strokeWidth = 1.4f }
         private val pPrompt  = p   { color = Color.rgb(0, 255, 65); textSize = 15f * sp; typeface = Typeface.MONOSPACE; isFakeBoldText = true }
-        // Lock label
         private val pLockLbl = p   { color = Color.rgb(255, 200, 0); textSize = 12f * sp; typeface = Typeface.MONOSPACE }
-        // Error overlay
         private val pErrOvl  = p(0){ color = Color.argb(0, 160, 10, 10) }
 
         private val handler = Handler(Looper.getMainLooper())
@@ -248,7 +242,6 @@ class HackerOverlayView(
 
         init {
             setLayerType(LAYER_TYPE_HARDWARE, null)
-            // Load IWX logo
             try {
                 val resId = context.resources.getIdentifier("iwx_logo", "drawable", context.packageName)
                 if (resId != 0) {
@@ -260,39 +253,9 @@ class HackerOverlayView(
                     }
                 }
             } catch (_: Exception) {}
-            handler.postDelayed({ typeTitle(0) }, 300)
         }
 
         fun flashError() { errorFlash = true; errorFade = 1f }
-
-        private fun typeTitle(i: Int) {
-            titleTxt = TITLE.substring(0, i.coerceAtMost(TITLE.length))
-            if (i < TITLE.length) {
-                handler.postDelayed({ typeTitle(i + 1) }, typeMs)
-            } else {
-                titleDone = true
-                handler.postDelayed({ typeSub(0) }, 60)
-            }
-        }
-
-        private fun typeSub(i: Int) {
-            subTxt = SUBHEAD.substring(0, i.coerceAtMost(SUBHEAD.length))
-            if (i < SUBHEAD.length) {
-                handler.postDelayed({ typeSub(i + 1) }, typeMs)
-            } else {
-                subDone = true
-                handler.postDelayed({ typeBody(0) }, 60)
-            }
-        }
-
-        private fun typeBody(i: Int) {
-            bodyTxt = customText.substring(0, i.coerceAtMost(customText.length))
-            if (i < customText.length) {
-                handler.postDelayed({ typeBody(i + 1) }, typeMs)
-            } else {
-                bodyDone = true
-            }
-        }
 
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
             super.onSizeChanged(w, h, oldw, oldh)
@@ -303,11 +266,13 @@ class HackerOverlayView(
             val w = width.toFloat(); val h = height.toFloat()
             if (w == 0f || h == 0f) return
 
+            // Background
             canvas.drawRect(0f, 0f, w, h, pBg)
             var gy = 0f
             while (gy < h) { canvas.drawRect(0f, gy, w, gy + 1f, pGlow); gy += 4f }
             canvas.drawRect(0f, scanY, w, scanY + 22f * dp, pScan)
 
+            // Error flash
             if (errorFlash && errorFade > 0f) {
                 pErrOvl.alpha = (errorFade * 130).toInt()
                 canvas.drawRect(0f, 0f, w, h, pErrOvl)
@@ -336,11 +301,12 @@ class HackerOverlayView(
         private fun drawCard(canvas: Canvas, w: Float, h: Float) {
             val pad = 14f * dp
             val cl = pad; val ct = pad; val cr = w - pad; val cb = h - pad
-            val rad = 14f
+            val cx = (cl + cr) / 2f
+            val iL = cl + 16f * dp; val iR = cr - 16f * dp
 
             // Card + border
-            canvas.drawRoundRect(RectF(cl, ct, cr, cb), rad, rad, pCard)
-            canvas.drawRoundRect(RectF(cl, ct, cr, cb), rad, rad, pBorder)
+            canvas.drawRoundRect(RectF(cl, ct, cr, cb), 14f, 14f, pCard)
+            canvas.drawRoundRect(RectF(cl, ct, cr, cb), 14f, 14f, pBorder)
 
             // Corner accents
             val ca = 22f * dp
@@ -353,103 +319,90 @@ class HackerOverlayView(
             canvas.drawLine(cr - ca, cb, cr, cb, pCorner)
             canvas.drawLine(cr, cb - ca, cr, cb, pCorner)
 
-            val iL = cl + 16f * dp; val iR = cr - 16f * dp
-            val cx = (cl + cr) / 2f
+            // ── TITLE ────────────────────────────────────────────────────────
+            val titleY = ct + 40f * dp
+            canvas.drawText(TITLE, cx - pTitle.measureText(TITLE) / 2f, titleY, pTitle)
 
-            // ── UNLOCK SECTION (bottom-anchored) ──────────────────────────────
-            // Total height: 168dp from card bottom
-            val unlockTop  = cb - 168f * dp
-            canvas.drawLine(iL, unlockTop, iR, unlockTop, pDivide)
+            // ── LOGO (below title, centered) ──────────────────────────────────
+            val logoSz  = 76f * dp
+            val logoTop = titleY + 8f * dp
+            val logoBot = logoTop + logoSz
+            logoBmp?.let { bmp ->
+                canvas.drawBitmap(bmp, null,
+                    RectF(cx - logoSz / 2f, logoTop, cx + logoSz / 2f, logoBot), null)
+            }
 
-            // Label
-            val lockLabel = "[ ENTER ACCESS CODE ]"
-            val lockLabelY = unlockTop + 24f * dp
-            canvas.drawText(lockLabel, cx - pLockLbl.measureText(lockLabel) / 2f, lockLabelY, pLockLbl)
+            // ── SUBHEAD (below logo) ──────────────────────────────────────────
+            val subY = logoBot + 6f * dp + pSubhead.textSize
+            canvas.drawText(SUBHEAD, cx - pSubhead.measureText(SUBHEAD) / 2f, subY, pSubhead)
 
-            // Subtitle
-            val lockSub = "enter code to terminate session"
-            val lockSubY = lockLabelY + 18f * dp
-            canvas.drawText(lockSub, cx - pSub.measureText(lockSub) / 2f, lockSubY, pSub)
+            // ── ENTER CODE LABEL ──────────────────────────────────────────────
+            val enterY = subY + 22f * dp
+            canvas.drawText("[ ENTER ACCESS CODE ]",
+                cx - pLockLbl.measureText("[ ENTER ACCESS CODE ]") / 2f, enterY, pLockLbl)
 
             // ── TERMINAL PROMPT BOX ───────────────────────────────────────────
-            val termTop = lockSubY + 8f * dp
+            val termTop = enterY + 6f * dp
             val termBot = termTop + 44f * dp
             val termL   = iL + 4f * dp
             val termR   = iR - 4f * dp
             canvas.drawRoundRect(RectF(termL, termTop, termR, termBot), 6f, 6f, pTermBg)
             canvas.drawRoundRect(RectF(termL, termTop, termR, termBot), 6f, 6f, pTermBd)
 
-            // Top-bar dots (terminal window decoration)
+            // Terminal window dots
             val dotY = termTop + 10f * dp
-            val dotColors = intArrayOf(Color.rgb(255,80,80), Color.rgb(255,190,0), Color.rgb(0,200,60))
-            dotColors.forEachIndexed { i, c ->
-                pPrompt.color = c; pPrompt.style = Paint.Style.FILL
-                canvas.drawCircle(termL + (8f + i * 14f) * dp, dotY, 4f * dp, pPrompt)
+            val dotCols = intArrayOf(Color.rgb(255, 80, 80), Color.rgb(255, 190, 0), Color.rgb(0, 200, 60))
+            val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+            dotCols.forEachIndexed { i, c ->
+                dotPaint.color = c
+                canvas.drawCircle(termL + (8f + i * 14f) * dp, dotY, 4f * dp, dotPaint)
             }
-            pPrompt.color = Color.rgb(0, 255, 65); pPrompt.style = Paint.Style.FILL
 
-            // "root@sys:~$ " prefix
+            // Prompt prefix "root@sys:~$ "
             val prefixY = termTop + (termBot - termTop) / 2f + pPrompt.textSize / 3f
             canvas.drawText("root@sys:~\$ ", termL + 10f * dp, prefixY, pPrompt)
 
-            // Watermark bottom
-            val wm = "IWX.SECURITY"
-            canvas.drawText(wm, cx - pSub.measureText(wm) / 2f, cb - 8f * dp, pSub)
+            // ── DIVIDER below terminal ─────────────────────────────────────────
+            val divY = termBot + 12f * dp
+            canvas.drawLine(iL, divY, iR, divY, pDivide)
 
-            // ── TOP SECTION: Title → Logo → Subhead ──────────────────────────
-            val titleY = ct + 38f * dp
-            val titleDrawn = titleTxt + if (!titleDone && cursor) "█" else ""
-            canvas.drawText(titleDrawn, cx - pTitle.measureText(titleDrawn) / 2f, titleY, pTitle)
-
-            // Logo below title
-            var afterLogoY = titleY + 10f * dp
-            logoBmp?.let { bmp ->
-                val sz  = (76f * dp)
-                val lx  = cx - sz / 2f
-                val ly  = titleY + 6f * dp
-                canvas.drawBitmap(bmp, null, RectF(lx, ly, lx + sz, ly + sz), null)
-                afterLogoY = ly + sz + 4f * dp
-            }
-
-            // Subheading typewriter
-            val subDrawn = subTxt + if (titleDone && !subDone && cursor) "█" else ""
-            val subY = afterLogoY + pSubhead.textSize
-            canvas.drawText(subDrawn, cx - pSubhead.measureText(subDrawn) / 2f, subY, pSubhead)
-
-            // ── BODY TEXT (flexible, between subhead and progress) ────────────
-            val bodyTopY = subY + 12f * dp
-            val barBot   = unlockTop - 6f * dp
+            // ── BODY TEXT (fills remaining space) ────────────────────────────
+            val bodyTopY = divY + 8f * dp
+            val barBot   = cb - 22f * dp
             val barTopY  = barBot - 14f * dp
             val bodyBotY = barTopY - 8f * dp
 
-            if (bodyBotY > bodyTopY + pBody.textSize) {
-                val bodyMaxW = (iR - iL) - 16f * dp
+            if (bodyBotY > bodyTopY + pBody.textSize && customText.isNotBlank()) {
+                val bodyMaxW = (iR - iL) - 8f * dp
                 val lineH    = pBody.textSize * 1.5f
-                val lines    = wrapText(bodyTxt, bodyMaxW, pBody)
+                val lines    = wrapText(customText, bodyMaxW, pBody)
                 val maxVis   = ((bodyBotY - bodyTopY) / lineH).toInt().coerceAtLeast(1)
-                val visible  = lines.takeLast(maxVis)
-                val totalH   = visible.size * lineH
-                var lineY    = bodyTopY + (bodyBotY - bodyTopY - totalH) / 2f + pBody.textSize
+                val visible  = lines.take(maxVis)
+                var lineY    = bodyTopY + pBody.textSize
 
                 canvas.save()
                 canvas.clipRect(iL, bodyTopY, iR, bodyBotY)
-                visible.forEachIndexed { idx, line ->
-                    val drawn = line + if (idx == visible.lastIndex && !bodyDone && cursor) "█" else ""
-                    canvas.drawText(drawn, cx - pBody.measureText(drawn) / 2f, lineY, pBody)
+                for (line in visible) {
+                    canvas.drawText(line, cx - pBody.measureText(line) / 2f, lineY, pBody)
                     lineY += lineH
                 }
                 canvas.restore()
             }
 
             // ── PROGRESS BAR ──────────────────────────────────────────────────
-            if (barTopY > bodyTopY + 24f * dp) {
+            if (barTopY > bodyTopY) {
                 val barL = iL + 4f * dp; val barR = iR - 4f * dp
                 canvas.drawRoundRect(RectF(barL, barTopY, barR, barBot), 4f, 4f, pBarBg)
                 val fill = (barR - barL) * (progress / 100f)
-                if (fill > 0f) canvas.drawRoundRect(RectF(barL, barTopY, barL + fill, barBot), 4f, 4f, pBar)
+                if (fill > 0f)
+                    canvas.drawRoundRect(RectF(barL, barTopY, barL + fill, barBot), 4f, 4f, pBar)
                 val pct = "INJECTING... ${progress.toInt()}%"
                 canvas.drawText(pct, cx - pSub.measureText(pct) / 2f, barBot + 11f * dp, pSub)
             }
+
+            // ── WATERMARK ────────────────────────────────────────────────────
+            val wm = "IWX.SECURITY"
+            canvas.drawText(wm, cx - pSub.measureText(wm) / 2f, cb - 6f * dp, pSub)
         }
 
         fun stop() { handler.removeCallbacksAndMessages(null) }
