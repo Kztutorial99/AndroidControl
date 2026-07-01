@@ -1,9 +1,14 @@
 package com.iwx.panel
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.net.http.SslError
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
@@ -14,6 +19,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    companion object {
+        const val SESSION_COOKIE =
+            "iwx_auth=dfa3cf6eb60e9ef0815963a8160181432fe1ba87e44b10f77f4d4a6248c31f2a; Path=/; SameSite=Strict"
+        const val REQ_OVERLAY = 1001
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +38,7 @@ class MainActivity : AppCompatActivity() {
         b.swipeRefresh.setColorSchemeColors(0xFF00c853.toInt())
         b.swipeRefresh.setOnRefreshListener { loadPanel() }
         b.retryBtn.setOnClickListener { loadPanel() }
+        b.floatBtn.setOnClickListener { handleOverlayToggle() }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -53,22 +65,19 @@ class MainActivity : AppCompatActivity() {
                 b.progressBar.visibility = View.GONE
                 b.swipeRefresh.isRefreshing = false
             }
-            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) showError(error.description.toString())
+            override fun onReceivedError(view: WebView, req: WebResourceRequest, err: WebResourceError) {
+                if (req.isForMainFrame) showError(err.description.toString())
             }
-            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-                handler.cancel()
-                showError("SSL error: ${error.primaryError}")
+            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, err: SslError) {
+                handler.cancel(); showError("SSL error")
             }
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                return false
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest) = false
         }
 
         b.webView.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView, newProgress: Int) {
-                b.progressBar.progress = newProgress
-                if (newProgress == 100) b.progressBar.visibility = View.GONE
+            override fun onProgressChanged(view: WebView, p: Int) {
+                b.progressBar.progress = p
+                if (p == 100) b.progressBar.visibility = View.GONE
             }
         }
     }
@@ -79,25 +88,68 @@ class MainActivity : AppCompatActivity() {
         b.swipeRefresh.isRefreshing = false
         scope.launch {
             val url = withContext(Dispatchers.IO) { RemoteConfig.fetch() }
-            b.webView.loadUrl(url)
+            injectCookieAndLoad(url)
         }
     }
 
+    private fun injectCookieAndLoad(serverUrl: String) {
+        val cm = CookieManager.getInstance()
+        cm.setCookie(serverUrl, SESSION_COOKIE)
+        cm.flush()
+        b.webView.loadUrl(serverUrl)
+    }
+
+    // ── Floating Overlay ──────────────────────────────────────────────────────
+
+    private fun handleOverlayToggle() {
+        if (!Settings.canDrawOverlays(this)) {
+            showOverlayPermDialog()
+        } else {
+            startFloatingService()
+        }
+    }
+
+    private fun showOverlayPermDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.overlay_perm_title))
+            .setMessage(getString(R.string.overlay_perm_msg))
+            .setPositiveButton(getString(R.string.btn_grant)) { _, _ ->
+                startActivity(Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                ))
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun startFloatingService() {
+        val intent = Intent(this, FloatingWindowService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            startForegroundService(intent)
+        else
+            startService(intent)
+        // Optionally minimize app so overlay is visible
+        moveTaskToBack(true)
+    }
+
+    override fun onActivityResult(req: Int, result: Int, data: Intent?) {
+        super.onActivityResult(req, result, data)
+        if (req == REQ_OVERLAY && Settings.canDrawOverlays(this)) startFloatingService()
+    }
+
     private fun showError(msg: String) {
-        b.progressBar.visibility   = View.GONE
+        b.progressBar.visibility    = View.GONE
         b.swipeRefresh.isRefreshing = false
-        b.errorLayout.visibility   = View.VISIBLE
-        b.errorMsg.text            = msg
+        b.errorLayout.visibility    = View.VISIBLE
+        b.errorMsg.text             = msg
     }
 
     override fun onBackPressed() {
-        if (b.webView.canGoBack()) b.webView.goBack()
-        else super.onBackPressed()
+        if (b.webView.canGoBack()) b.webView.goBack() else super.onBackPressed()
     }
 
     override fun onDestroy() {
-        scope.cancel()
-        b.webView.destroy()
-        super.onDestroy()
+        scope.cancel(); b.webView.destroy(); super.onDestroy()
     }
 }
