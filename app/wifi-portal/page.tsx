@@ -19,6 +19,8 @@ export default function WifiPortalPage() {
   const [showPass, setShowPass] = useState(false)
   const [copied, setCopied] = useState(false)
   const [loadingConfig, setLoadingConfig] = useState(false)
+  const [sendingCmd, setSendingCmd] = useState<'start' | 'stop' | null>(null)
+  const [cmdFeedback, setCmdFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/devices').then(r => r.json()).then(d => {
@@ -52,6 +54,30 @@ export default function WifiPortalPage() {
       })
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     } finally { setSaving(false) }
+  }
+
+  async function sendPortalCommand(action: 'start' | 'stop') {
+    if (!selectedId) return
+    setSendingCmd(action)
+    setCmdFeedback(null)
+    try {
+      const res = await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: `wifi_portal_${action}` })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setCmdFeedback({ ok: true, msg: action === 'start' ? '✅ Perintah start dikirim ke device' : '✅ Perintah stop dikirim ke device' })
+        setTimeout(() => { loadConfig(selectedId); setCmdFeedback(null) }, 3000)
+      } else {
+        setCmdFeedback({ ok: false, msg: `❌ Gagal: ${data.error ?? 'Unknown error'}` })
+      }
+    } catch (e: any) {
+      setCmdFeedback({ ok: false, msg: `❌ Error: ${e.message}` })
+    } finally {
+      setSendingCmd(null)
+    }
   }
 
   async function clearSessions() {
@@ -100,7 +126,7 @@ export default function WifiPortalPage() {
         <>
           {/* Status bar */}
           <div className="flex items-center gap-3 mb-4 p-3 bg-android-surface border border-android-border rounded-xl">
-            <div className={`w-2.5 h-2.5 rounded-full ${config.portalActive ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'bg-gray-600'}`} />
+            <div className={`w-2.5 h-2.5 rounded-full ${config.portalActive ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)] animate-pulse' : 'bg-gray-600'}`} />
             <span className="text-sm text-android-text font-medium">
               {config.portalActive ? `Portal Aktif — ${config.portalIp}:${config.portalPort}` : 'Portal Tidak Aktif di Device'}
             </span>
@@ -109,12 +135,48 @@ export default function WifiPortalPage() {
             )}
           </div>
 
+          {/* ── START / STOP PORTAL COMMAND BUTTON ── */}
+          <div className="bg-android-surface border border-android-border rounded-xl p-4 mb-4">
+            <h3 className="text-xs font-semibold text-android-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Power size={13} /> Kontrol Portal di Device
+            </h3>
+            <div className="flex gap-3">
+              <button
+                onClick={() => sendPortalCommand('start')}
+                disabled={sendingCmd !== null || config.portalActive}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed
+                  ${config.portalActive
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    : 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/30'}`}
+              >
+                <Wifi size={15} />
+                {sendingCmd === 'start' ? 'Mengirim...' : config.portalActive ? 'Portal Berjalan' : 'Start Portal di Device'}
+              </button>
+              <button
+                onClick={() => sendPortalCommand('stop')}
+                disabled={sendingCmd !== null || !config.portalActive}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <WifiOff size={15} />
+                {sendingCmd === 'stop' ? 'Mengirim...' : 'Stop Portal'}
+              </button>
+            </div>
+            {cmdFeedback && (
+              <p className={`mt-2 text-xs font-medium text-center ${cmdFeedback.ok ? 'text-green-400' : 'text-red-400'}`}>
+                {cmdFeedback.msg}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] text-android-muted">
+              ⚠️ Device harus terhubung &amp; hotspot aktif. Portal berjalan di port 8080 device.
+            </p>
+          </div>
+
           {/* Toggle + Portal URL */}
           <div className="bg-android-surface border border-android-border rounded-xl p-4 mb-4">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-sm font-semibold text-android-text">Aktifkan Portal</p>
-                <p className="text-xs text-android-muted mt-0.5">Client hotspot diarahkan ke halaman login</p>
+                <p className="text-sm font-semibold text-android-text">Password Protection</p>
+                <p className="text-xs text-android-muted mt-0.5">Client wajib masukkan password untuk dapat akses</p>
               </div>
               <button onClick={() => setConfig(c => ({ ...c, enabled: !c.enabled }))}
                 className={`relative w-12 h-6 rounded-full transition-colors ${config.enabled ? 'bg-indigo-500' : 'bg-gray-700'}`}>
