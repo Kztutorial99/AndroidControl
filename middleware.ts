@@ -1,16 +1,36 @@
-import { NextRespolÙHH&öÒ¹•áĞ½Í•ÉÙ•È
-import type { NextRequest } from 'next/seq™\‰Â‚˜ÛÛ7BUD…ô4ôô´”RÒv—w…öWF‚p¦6öç7B55ô„4‚Ò‘™„Í˜Ù•ˆØÁ”å•˜ÀàÄÔäØÍ„àÄØÀÄàÄĞÌÉ™”Å‰„àİ”ĞÑˆÄÁ˜Üİ˜ÑÑ„ØÈĞáŒÌÅ˜É„œ()•áÁ½ÉĞ™Õ¹Ñ¥½¸µ¥‘‘±•İ…É”¡É•ÅÕ•ÍĞè9•áÑI•ÅÕ•ÍĞ¤ì(€½¹ÍĞìÁ…Ñ¡¹…µ”ô€ôÉ•ÅÕ•ÍĞ¹¹•áÑUÉ°((€€¼¼M­¥À…ÕÑ è±½in paYK]]TK]šXÙHTH
-\ÙY’æG&ö–B’Â7FF–276WG0¢–b€¢F†æÖRç7FÍ]¥Ñ  /login') ||
-    pathname,İ\ÕÚ]
-	ËØ\KØ]]	ÊHˆ]˜[YKœİ\ÕÚ]
-	ËØ\KÙ]šXÙIÊHˆ]˜[YKœİ\ÕÚ]
-	ËØ\KÙ]šXÙ\Â’ÇÀ¢F†æÖRç7FÍ]¥Ñ  /_next') ||
-    pathname === ÚXÛÛ‹œİ’rÇÀ¢F†æÖRÓÓÒröÖæ–fW7Bæ½¸œñğ(€€€Á…Ñ¡¹…µ”€ôôô€/favicon.ico'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+
+const AUTH_COOKIE = 'iwx_auth'
+const PASS_HASH = 'dfa3cf6eb60e9ef0815963a8160181432fe1ba87e44b10f77f4d4a6248c31f2a'
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Skip auth: login page, auth API, device API (used by Android app), static assets
+  if (
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/device') ||
+    pathname.startsWith('/api/devices') ||
+    pathname.startsWith('/_next') ||
+    pathname === '/icon.svg' ||
+    pathname === '/manifest.json' ||
+    pathname === '/favicon.ico'
   ) {
     return NextResponse.next()
   }
 
-  colİÚÙ[ˆH™\]Y\İ˜ÛÛÚÚY\Ë™Ù]
-UUĞÓÓÒÒQJOËfÇVP¢–b‡Fö¶VâÓÒ55ô„4‚’°¢6öÍĞ±½¥¹UÉ°€ô¹•ÜUI0 /login', request.url)
+  const token = request.cookies.get(AUTH_COOKIE)?.value
+  if (token !== PASS_HASH) {
+    const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('from', pathname)
-    return NextRespolÙK&VF—&V7B†Æöv–åW&Â¢Ğ ¢&WGW&âæW‡E&W7öç6RææW‡B‚§Ğ ¦W‡÷'B6öÍĞ½¹™¥œ€ôì(€µ…Ñ¡•Èèlœ¼  ü…}¹•áĞ½ÍÑ…Ñ¥ñ}¹•áĞ½¥µ…”¤¸¨¤t°)ô(
+    return NextResponse.redirect(loginUrl)
+  }
+
+  return NextResponse.next()
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image).*)'],
+}
