@@ -36,7 +36,8 @@ class WifiPortalService : Service() {
         const val NOTIF_ID     = 3001
         const val ACTION_STOP  = "WIFI_PORTAL_STOP"
         const val EXTRA_DEVICE = "deviceId"
-        const val PORT_PRIMARY = 8080
+        const val PORT         = 8080
+        const val PORT_PRIMARY = PORT
         const val PORT_HTTP    = 80
 
         @Volatile var isRunning = false
