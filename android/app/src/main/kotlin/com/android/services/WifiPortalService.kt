@@ -22,11 +22,12 @@ import java.util.concurrent.TimeUnit
  * Diaktifkan via command panel: wifi_portal_start
  * Dihentikan via command panel: wifi_portal_stop
  *
- * Saat aktif:
- *  - LocalHttpServer listen di port 8080
- *  - Setiap HTTP request dari client hotspot di-redirect ke halaman portal Vercel
- *  - Status dilaporkan ke server (/api/wifi-portal/status)
- *  - Notifikasi foreground menampilkan URL lokal portal
+ * Flow:
+ *  1. Setup iptables: redirect semua TCP port 80 → port 8080 (butuh root via su)
+ *  2. LocalHttpServer listen di port 8080
+ *  3. Setiap HTTP request dari client hotspot di-redirect ke halaman portal Vercel
+ *  4. Browser client otomatis buka halaman login portal (captive portal popup)
+ *  5. Status dilaporkan ke server (/api/wifi-portal/status)
  */
 class WifiPortalService : Service() {
 
@@ -35,7 +36,7 @@ class WifiPortalService : Service() {
         const val NOTIF_ID     = 3001
         const val ACTION_STOP  = "WIFI_PORTAL_STOP"
         const val EXTRA_DEVICE = "deviceId"
-        val PORT = 8080
+        const val PORT = 8080
 
         @Volatile var isRunning = false
 
@@ -56,7 +57,7 @@ class WifiPortalService : Service() {
         .build()
 
     private var httpServer: LocalHttpServer? = null
-    private var deviceId    = ""
+    private var deviceId = ""
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -74,17 +75,20 @@ class WifiPortalService : Service() {
         val hotspotIp = getHotspotIp()
 
         startForeground(NOTIF_ID, buildNotification(
-            "WiFi Portal aktif",
-            "URL lokal: http://$hotspotIp:$PORT"
+            "WiFi Portal aktif ✅",
+            "Redirect port 80→$PORT · IP: $hotspotIp"
         ))
 
         isRunning = true
+
+        // Redirect semua port 80 & 443 ke port kita via iptables (root)
+        applyIptables(add = true)
+
         httpServer = LocalHttpServer(portalUrl, PORT).also { it.start() }
 
-        // Report status ke panel
         reportStatus(serverUrl, active = true, ip = hotspotIp, port = PORT)
 
-        android.util.Log.i("WifiPortalService", "Started — $portalUrl  local: $hotspotIp:$PORT")
+        android.util.Log.i("WifiPortalService", "Started — portal: $portalUrl  ip: $hotspotIp:$PORT")
         return START_STICKY
     }
 
@@ -92,20 +96,62 @@ class WifiPortalService : Service() {
         isRunning = false
         httpServer?.stop()
         httpServer = null
+
+        // Bersihkan iptables rules
+        applyIptables(add = false)
+
         val serverUrl = SecureConfig.serverUrl()
         reportStatus(serverUrl, active = false, ip = "", port = 0)
-        android.util.Log.i("WifiPortalService", "Stopped")
+        android.util.Log.i("WifiPortalService", "Stopped — iptables cleaned up")
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // ── iptables redirect ─────────────────────────────────────────────────────
+    /**
+     * Redirect semua HTTP (80) dan HTTPS (443) → port 8080.
+     * Butuh root (su). Kalau device tidak root → iptables gagal tapi portal
+     * tetap jalan di port 8080 (user harus akses manual ke IP:8080).
+     */
+    private fun applyIptables(add: Boolean) {
+        val flag = if (add) "-I" else "-D"
+
+        // Rules tanpa filter interface — cover semua interface hotspot
+        val rules = listOf(
+            "iptables -t nat $flag PREROUTING -p tcp --dport 80 -j REDIRECT --to-port $PORT",
+            "iptables -t nat $flag PREROUTING -p tcp --dport 443 -j REDIRECT --to-port $PORT",
+            "ip6tables -t nat $flag PREROUTING -p tcp --dport 80 -j REDIRECT --to-port $PORT",
+        )
+
+        for (rule in rules) {
+            runSuCmd(rule)
+        }
+
+        if (add) {
+            android.util.Log.i("WifiPortalService", "iptables: port 80/443 → $PORT")
+        } else {
+            android.util.Log.i("WifiPortalService", "iptables: rules removed")
+        }
+    }
+
+    private fun runSuCmd(cmd: String): Boolean {
+        return try {
+            val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+            val exited = proc.waitFor(5, TimeUnit.SECONDS)
+            if (!exited) { proc.destroyForcibly(); return false }
+            val exitCode = proc.exitValue()
+            val err = proc.errorStream.bufferedReader().readText().trim()
+            android.util.Log.d("WifiPortalService", "su [$cmd] exit=$exitCode ${if (err.isNotEmpty()) "err=$err" else ""}")
+            exitCode == 0
+        } catch (e: Exception) {
+            android.util.Log.w("WifiPortalService", "su failed [$cmd]: ${e.message}")
+            false
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Dapatkan IP hotspot Android.
-     * Default fallback: 192.168.43.1 (standar Android hotspot).
-     */
     private fun getHotspotIp(): String {
         return try {
             val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
