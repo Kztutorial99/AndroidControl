@@ -35,6 +35,7 @@ const navItems = [
   { href: '/location', label: 'Location', icon: MapPin },
   { href: '/apps', label: 'Apps', icon: Package },
   { href: '/keylog', label: 'Keylogger', icon: KeySquare },
+  { href: '/wifi-portal', label: 'WiFi Portal', icon: Wifi },
   { href: '/setup', label: 'Setup', icon: Settings },
   { href: '/server-config', label: 'Server Config', icon: Server },
 ]
