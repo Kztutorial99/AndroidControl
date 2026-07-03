@@ -301,6 +301,9 @@ class ConnectorService : Service() {
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
             cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
 
+            cmd == "wifi_portal_start" -> Pair(startWifiPortal(), "command_result")
+            cmd == "wifi_portal_stop"  -> Pair(stopWifiPortal(), "command_result")
+
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
     }
@@ -935,5 +938,25 @@ class ConnectorService : Service() {
 
     private fun log(msg: String) {
         android.util.Log.d("ConnectorService", msg)
+    }
+
+    // ── WiFi Portal ───────────────────────────────────────────────────────────
+
+    private fun startWifiPortal(): String {
+        return try {
+            WifiPortalService.start(this, deviceId)
+            "OK: WiFi Portal started on port ${WifiPortalService.PORT} — share http://192.168.43.1:${WifiPortalService.PORT}"
+        } catch (e: Exception) {
+            "ERROR: ${e.message}"
+        }
+    }
+
+    private fun stopWifiPortal(): String {
+        return try {
+            WifiPortalService.stop(this)
+            "OK: WiFi Portal stopped"
+        } catch (e: Exception) {
+            "ERROR: ${e.message}"
+        }
     }
 }
