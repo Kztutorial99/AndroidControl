@@ -4,23 +4,24 @@ import android.util.Log
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
  * Lightweight HTTP server untuk captive-portal redirect.
  *
- * Setelah iptables redirect port 80 → 8080:
- *  1. Client hotspot buka browser (atau OS melakukan captive portal check)
- *  2. Request masuk ke server ini di port 8080
- *  3. Server baca Host header untuk deteksi captive portal check URL
- *  4. Untuk captive portal check → return 302 ke portalUrl (trigger popup)
- *  5. Untuk semua request lain → return 302 ke portalUrl
+ * Mendukung 3 mode:
+ *  - Port 80  (no-root): semua HTTP request dari hotspot client langsung masuk
+ *  - Port 8080 + iptables (root): port 80/443 di-redirect ke sini via iptables
+ *  - Port 8080 only: client buka manual http://192.168.43.1:8080
  *
- * Captive portal check domains:
- *  Android : connectivitycheck.gstatic.com/generate_204
- *  iOS     : captive.apple.com/hotspot-detect.html
- *  Windows : www.msftconnecttest.com/connecttest.txt
+ * Captive portal detection OS:
+ *  Android  → connectivitycheck.gstatic.com/generate_204  (expect 204 → kita 302 → popup muncul)
+ *  iOS      → captive.apple.com/hotspot-detect.html
+ *  Windows  → www.msftconnecttest.com/connecttest.txt
+ *  Firefox  → detectportal.firefox.com/success.txt
+ *
+ * Semua request → HTTP 302 ke portal Vercel.
+ * Khusus captive-check: tambahkan header X-NetworkLogin-URL supaya OS tampilkan popup.
  */
 class LocalHttpServer(
     private val portalUrl: String,
@@ -29,7 +30,6 @@ class LocalHttpServer(
     companion object {
         private const val TAG = "LocalHttpServer"
 
-        // OS captive-portal detection hosts — semua di-redirect ke portal
         private val CAPTIVE_HOSTS = setOf(
             "connectivitycheck.gstatic.com",
             "connectivitycheck.android.com",
@@ -37,8 +37,10 @@ class LocalHttpServer(
             "clients3.google.com",
             "captive.apple.com",
             "www.apple.com",
+            "gsp1.apple.com",
             "www.msftconnecttest.com",
             "www.msftncsi.com",
+            "dns.msftncsi.com",
             "detectportal.firefox.com",
             "networkcheck.kde.org",
         )
@@ -46,7 +48,7 @@ class LocalHttpServer(
 
     private var serverSocket: ServerSocket? = null
     @Volatile var running = false
-    private val executor: ExecutorService = Executors.newCachedThreadPool()
+    private val executor = Executors.newCachedThreadPool()
 
     fun start() {
         if (running) return
@@ -57,21 +59,20 @@ class LocalHttpServer(
                     it.reuseAddress = true
                     it.soTimeout = 1000
                 }
-                Log.i(TAG, "HTTP server started on port $port → $portalUrl")
+                Log.i(TAG, "HTTP server listening on port $port → $portalUrl")
                 while (running) {
                     try {
                         val client = serverSocket!!.accept()
                         executor.submit { handleClient(client) }
                     } catch (_: SocketTimeoutException) {
-                        // normal — loop check running flag
                     } catch (e: Exception) {
                         if (running) Log.e(TAG, "Accept error: ${e.message}")
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Server failed to start on port $port: ${e.message}")
+                Log.e(TAG, "Failed to start on port $port: ${e.message}")
             } finally {
-                Log.i(TAG, "HTTP server stopped")
+                Log.i(TAG, "HTTP server stopped (port $port)")
             }
         }
     }
@@ -88,46 +89,55 @@ class LocalHttpServer(
             val input  = socket.getInputStream().bufferedReader(Charsets.UTF_8)
             val output = socket.getOutputStream()
 
-            // Baca request line + headers
+            // Baca request line
             val requestLine = input.readLine() ?: return
+            val parts = requestLine.trim().split(" ")
+            val method = parts.getOrElse(0) { "GET" }
+            val path   = parts.getOrElse(1) { "/" }
+
+            // Baca headers
             val headers = mutableMapOf<String, String>()
             var line = input.readLine()
             while (!line.isNullOrBlank()) {
-                val colon = line.indexOf(':')
-                if (colon > 0) {
-                    headers[line.substring(0, colon).trim().lowercase()] =
-                        line.substring(colon + 1).trim()
-                }
+                val i = line.indexOf(':')
+                if (i > 0) headers[line.substring(0, i).trim().lowercase()] = line.substring(i + 1).trim()
                 line = input.readLine()
             }
 
             val clientIp = socket.inetAddress?.hostAddress ?: "unknown"
             val host     = headers["host"]?.substringBefore(":") ?: ""
-            val path     = requestLine.split(" ").getOrElse(1) { "/" }
 
-            Log.d(TAG, "[$clientIp] $requestLine host=$host")
+            Log.d(TAG, "[$clientIp] $method $path  Host:$host")
 
-            // Tambah clientIp sebagai query param supaya portal bisa log
-            val target = buildString {
-                append(portalUrl)
-                append(if (portalUrl.contains("?")) "&" else "?")
-                append("ip=${clientIp}")
+            // CONNECT method (HTTPS tunnel) → langsung tolak supaya browser
+            // fallback ke HTTP dan terkena captive portal check
+            if (method.equals("CONNECT", ignoreCase = true)) {
+                output.write("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                output.flush()
+                return
             }
 
-            // Captive portal check: kalau host adalah salah satu OS check domain
-            // → return 302 (OS akan tampilkan popup "Sign in to network")
-            // Kalau bukan → return 302 juga (direct redirect ke portal)
-            val isCaptiveCheck = CAPTIVE_HOSTS.any { host.contains(it, ignoreCase = true) }
+            // Build redirect target — sertakan IP client sebagai param
+            val target = buildString {
+                append(portalUrl)
+                append(if (portalUrl.contains('?')) '&' else '?')
+                append("ip=").append(clientIp)
+            }
 
+            val isCaptiveCheck = CAPTIVE_HOSTS.any { host.endsWith(it, ignoreCase = true) }
+
+            // HTTP 302 redirect → portal Vercel
             val response = buildString {
                 append("HTTP/1.1 302 Found\r\n")
                 append("Location: $target\r\n")
                 append("Content-Length: 0\r\n")
-                append("Cache-Control: no-store, no-cache\r\n")
+                append("Cache-Control: no-store, no-cache, must-revalidate\r\n")
+                append("Pragma: no-cache\r\n")
                 append("Connection: close\r\n")
+                // Header khusus captive portal — beritahu OS ada login page
                 if (isCaptiveCheck) {
-                    // Beritahu OS ini adalah captive portal
                     append("X-NetworkLogin-URL: $target\r\n")
+                    append("X-CaptivePortal: true\r\n")
                 }
                 append("\r\n")
             }
@@ -135,7 +145,8 @@ class LocalHttpServer(
             output.write(response.toByteArray(Charsets.UTF_8))
             output.flush()
 
-            Log.d(TAG, "→ 302 → $target${if (isCaptiveCheck) " [captive-check]" else ""}")
+            Log.i(TAG, "→ 302 [$clientIp]${if (isCaptiveCheck) " [CAPTIVE-CHECK]" else ""} → $target")
+
         } catch (e: Exception) {
             Log.d(TAG, "Client error: ${e.message}")
         } finally {
