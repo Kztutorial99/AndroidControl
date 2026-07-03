@@ -348,4 +348,92 @@ export async function deleteOldDevices(days = 7): Promise<{ deletedCount: number
     devices: rows.map(r => ({ id: r.device_id as string, name: r.device_name as string })),
   }
 }
+// ─── WiFi Portal ──────────────────────────────────────────────────────────────
 
+export interface PortalConfig {
+  deviceId: string
+  enabled: boolean
+  password: string
+  title: string
+  message: string
+  portalActive: boolean
+  portalIp: string
+  portalPort: number
+}
+
+const PORTAL_DEFAULTS: Omit<PortalConfig, "deviceId"> = {
+  enabled: false,
+  password: "",
+  title: "WiFi Login",
+  message: "Masukkan password untuk terhubung ke internet.",
+  portalActive: false,
+  portalIp: "",
+  portalPort: 0,
+}
+
+export async function getPortalConfig(deviceId: string): Promise<PortalConfig> {
+  const { rows } = await pool.query(
+    `SELECT * FROM wifi_portal_config WHERE device_id=$1`,
+    [deviceId]
+  )
+  if (rows.length === 0) return { deviceId, ...PORTAL_DEFAULTS }
+  const r = rows[0]
+  return {
+    deviceId: r.device_id,
+    enabled: r.enabled,
+    password: r.password,
+    title: r.title,
+    message: r.message,
+    portalActive: r.portal_active,
+    portalIp: r.portal_ip,
+    portalPort: r.portal_port,
+  }
+}
+
+export async function setPortalConfig(
+  deviceId: string,
+  fields: Partial<Omit<PortalConfig, "deviceId">>
+) {
+  await pool.query(
+    `INSERT INTO wifi_portal_config (device_id, enabled, password, title, message)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (device_id) DO UPDATE
+       SET enabled=$2, password=$3, title=$4, message=$5, updated_at=NOW()`,
+    [
+      deviceId,
+      fields.enabled ?? false,
+      fields.password ?? "",
+      fields.title ?? "WiFi Login",
+      fields.message ?? "Masukkan password untuk terhubung ke internet.",
+    ]
+  )
+}
+
+export interface PortalSession {
+  id: number
+  clientIp: string
+  authorizedAt: string
+}
+
+export async function logPortalSession(deviceId: string, clientIp: string) {
+  await pool.query(
+    `INSERT INTO wifi_portal_sessions (device_id, client_ip) VALUES ($1, $2)`,
+    [deviceId, clientIp]
+  )
+}
+
+export async function getPortalSessions(deviceId: string, limit = 200): Promise<PortalSession[]> {
+  const { rows } = await pool.query(
+    `SELECT * FROM wifi_portal_sessions WHERE device_id=$1 ORDER BY authorized_at DESC LIMIT $2`,
+    [deviceId, limit]
+  )
+  return rows.map(r => ({
+    id: r.id,
+    clientIp: r.client_ip,
+    authorizedAt: r.authorized_at,
+  }))
+}
+
+export async function clearPortalSessions(deviceId: string) {
+  await pool.query(`DELETE FROM wifi_portal_sessions WHERE device_id=$1`, [deviceId])
+}
