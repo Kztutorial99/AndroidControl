@@ -14,20 +14,20 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 
 /**
- * Service yang menjalankan LocalHttpServer sebagai captive portal.
+ * WiFi Captive Portal Service — No-Root & Root support.
  *
- * Diaktifkan via command panel: wifi_portal_start
- * Dihentikan via command panel: wifi_portal_stop
+ * Strategi (dicoba berurutan):
+ *  1. Bind port 80 langsung  → no-root, works di beberapa ROM (MIUI, One UI)
+ *  2. iptables 80→8080 via su → root mode
+ *  3. Port 8080 only          → universal fallback, user akses manual / QR code
  *
- * Flow:
- *  1. Setup iptables: redirect semua TCP port 80 → port 8080 (butuh root via su)
- *  2. LocalHttpServer listen di port 8080
- *  3. Setiap HTTP request dari client hotspot di-redirect ke halaman portal Vercel
- *  4. Browser client otomatis buka halaman login portal (captive portal popup)
- *  5. Status dilaporkan ke server (/api/wifi-portal/status)
+ * Diaktifkan via command: wifi_portal_start
+ * Dihentikan via command: wifi_portal_stop
  */
 class WifiPortalService : Service() {
 
@@ -36,19 +36,18 @@ class WifiPortalService : Service() {
         const val NOTIF_ID     = 3001
         const val ACTION_STOP  = "WIFI_PORTAL_STOP"
         const val EXTRA_DEVICE = "deviceId"
-        const val PORT = 8080
+        const val PORT_PRIMARY = 8080
+        const val PORT_HTTP    = 80
 
         @Volatile var isRunning = false
+        @Volatile var activePort = 0
 
-        fun start(context: Context, deviceId: String) {
-            val intent = Intent(context, WifiPortalService::class.java)
-                .putExtra(EXTRA_DEVICE, deviceId)
-            context.startForegroundService(intent)
-        }
+        fun start(context: Context, deviceId: String) =
+            context.startForegroundService(Intent(context, WifiPortalService::class.java)
+                .putExtra(EXTRA_DEVICE, deviceId))
 
-        fun stop(context: Context) {
+        fun stop(context: Context) =
             context.stopService(Intent(context, WifiPortalService::class.java))
-        }
     }
 
     private val http = OkHttpClient.Builder()
@@ -58,6 +57,8 @@ class WifiPortalService : Service() {
 
     private var httpServer: LocalHttpServer? = null
     private var deviceId = ""
+    private var iptablesActive = false
+    private var serverPort = PORT_PRIMARY
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -74,81 +75,100 @@ class WifiPortalService : Service() {
         val portalUrl = "$serverUrl/portal/$deviceId"
         val hotspotIp = getHotspotIp()
 
-        startForeground(NOTIF_ID, buildNotification(
-            "WiFi Portal aktif ✅",
-            "Redirect port 80→$PORT · IP: $hotspotIp"
-        ))
+        startForeground(NOTIF_ID, buildNotification("WiFi Portal — memulai...", hotspotIp, -1))
 
         isRunning = true
+        serverPort = startBestServer(portalUrl, hotspotIp)
+        activePort = serverPort
 
-        // Redirect semua port 80 & 443 ke port kita via iptables (root)
-        applyIptables(add = true)
+        val mode = when {
+            serverPort == PORT_HTTP -> "No-Root · port 80 ✅"
+            iptablesActive          -> "Root · iptables 80→$serverPort ✅"
+            else                    -> "Fallback · port $serverPort (akses manual)"
+        }
 
-        httpServer = LocalHttpServer(portalUrl, PORT).also { it.start() }
-
-        reportStatus(serverUrl, active = true, ip = hotspotIp, port = PORT)
-
-        android.util.Log.i("WifiPortalService", "Started — portal: $portalUrl  ip: $hotspotIp:$PORT")
+        updateNotification("Portal aktif [$mode]", hotspotIp, serverPort)
+        reportStatus(serverUrl, active = true, ip = hotspotIp, port = serverPort)
+        android.util.Log.i("WifiPortalService", "Started [$mode] → $portalUrl  ip:$hotspotIp:$serverPort")
         return START_STICKY
     }
 
     override fun onDestroy() {
         isRunning = false
+        activePort = 0
         httpServer?.stop()
         httpServer = null
-
-        // Bersihkan iptables rules
-        applyIptables(add = false)
-
-        val serverUrl = SecureConfig.serverUrl()
-        reportStatus(serverUrl, active = false, ip = "", port = 0)
-        android.util.Log.i("WifiPortalService", "Stopped — iptables cleaned up")
+        if (iptablesActive) {
+            iptablesRedirect(add = false)
+            iptablesActive = false
+        }
+        reportStatus(SecureConfig.serverUrl(), active = false, ip = "", port = 0)
+        android.util.Log.i("WifiPortalService", "Stopped")
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // ── iptables redirect ─────────────────────────────────────────────────────
+    // ── Server Startup Strategy ───────────────────────────────────────────────
+
     /**
-     * Redirect semua HTTP (80) dan HTTPS (443) → port 8080.
-     * Butuh root (su). Kalau device tidak root → iptables gagal tapi portal
-     * tetap jalan di port 8080 (user harus akses manual ke IP:8080).
+     * Coba bind port 80 → iptables+8080 → 8080 only.
+     * @return port yang berhasil digunakan
      */
-    private fun applyIptables(add: Boolean) {
-        val flag = if (add) "-I" else "-D"
+    private fun startBestServer(portalUrl: String, hotspotIp: String): Int {
 
-        // Rules tanpa filter interface — cover semua interface hotspot
-        val rules = listOf(
-            "iptables -t nat $flag PREROUTING -p tcp --dport 80 -j REDIRECT --to-port $PORT",
-            "iptables -t nat $flag PREROUTING -p tcp --dport 443 -j REDIRECT --to-port $PORT",
-            "ip6tables -t nat $flag PREROUTING -p tcp --dport 80 -j REDIRECT --to-port $PORT",
-        )
-
-        for (rule in rules) {
-            runSuCmd(rule)
-        }
-
-        if (add) {
-            android.util.Log.i("WifiPortalService", "iptables: port 80/443 → $PORT")
-        } else {
-            android.util.Log.i("WifiPortalService", "iptables: rules removed")
-        }
-    }
-
-    private fun runSuCmd(cmd: String): Boolean {
-        return try {
-            val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-            val exited = proc.waitFor(5, TimeUnit.SECONDS)
-            if (!exited) { proc.destroyForcibly(); return false }
-            val exitCode = proc.exitValue()
-            val err = proc.errorStream.bufferedReader().readText().trim()
-            android.util.Log.d("WifiPortalService", "su [$cmd] exit=$exitCode ${if (err.isNotEmpty()) "err=$err" else ""}")
-            exitCode == 0
+        // ── Strategi 1: Port 80 langsung (no-root) ───────────────────────────
+        try {
+            val test = ServerSocket()
+            test.reuseAddress = true
+            test.bind(InetSocketAddress(PORT_HTTP))
+            test.close()
+            // Port 80 berhasil! Start server
+            httpServer = LocalHttpServer(portalUrl, PORT_HTTP).also { it.start() }
+            android.util.Log.i("WifiPortalService", "✅ Strategy 1: port 80 no-root")
+            return PORT_HTTP
         } catch (e: Exception) {
-            android.util.Log.w("WifiPortalService", "su failed [$cmd]: ${e.message}")
-            false
+            android.util.Log.w("WifiPortalService", "Strategy 1 failed (port 80): ${e.message}")
         }
+
+        // ── Strategi 2: iptables redirect (root) ─────────────────────────────
+        iptablesActive = iptablesRedirect(add = true)
+        if (iptablesActive) {
+            android.util.Log.i("WifiPortalService", "✅ Strategy 2: iptables 80/443→$PORT_PRIMARY")
+        } else {
+            android.util.Log.w("WifiPortalService", "Strategy 2 failed (no root / iptables)")
+        }
+
+        // ── Strategi 3: Port 8080 selalu jalan ───────────────────────────────
+        httpServer = LocalHttpServer(portalUrl, PORT_PRIMARY).also { it.start() }
+        android.util.Log.i("WifiPortalService", if (iptablesActive)
+            "✅ Running port $PORT_PRIMARY + iptables (root)" else
+            "⚠️ Running port $PORT_PRIMARY only (manual access)")
+        return PORT_PRIMARY
     }
+
+    // ── iptables ──────────────────────────────────────────────────────────────
+
+    private fun iptablesRedirect(add: Boolean): Boolean {
+        val flag = if (add) "-I" else "-D"
+        val rules = listOf(
+            "iptables -t nat $flag PREROUTING -p tcp --dport 80  -j REDIRECT --to-port $PORT_PRIMARY",
+            "iptables -t nat $flag PREROUTING -p tcp --dport 443 -j REDIRECT --to-port $PORT_PRIMARY",
+            "ip6tables -t nat $flag PREROUTING -p tcp --dport 80  -j REDIRECT --to-port $PORT_PRIMARY",
+        )
+        var anyOk = false
+        for (rule in rules) {
+            if (runSu(rule)) anyOk = true
+        }
+        return anyOk
+    }
+
+    private fun runSu(cmd: String): Boolean = try {
+        val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+        val ok = proc.waitFor(5, TimeUnit.SECONDS)
+        if (!ok) proc.destroyForcibly()
+        ok && proc.exitValue() == 0
+    } catch (e: Exception) { false }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -166,12 +186,10 @@ class WifiPortalService : Service() {
         Thread {
             try {
                 val json = """{"active":$active,"ip":"$ip","port":$port}"""
-                http.newCall(
-                    Request.Builder()
-                        .url("$serverUrl/api/wifi-portal/status?deviceId=$deviceId")
-                        .post(json.toRequestBody("application/json".toMediaType()))
-                        .build()
-                ).execute().close()
+                http.newCall(Request.Builder()
+                    .url("$serverUrl/api/wifi-portal/status?deviceId=$deviceId")
+                    .post(json.toRequestBody("application/json".toMediaType()))
+                    .build()).execute().close()
             } catch (_: Exception) {}
         }.start()
     }
@@ -181,25 +199,34 @@ class WifiPortalService : Service() {
     private fun createNotificationChannel() {
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-        mgr.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "WiFi Portal", NotificationManager.IMPORTANCE_LOW)
-                .also { it.description = "Captive portal redirect service" }
-        )
+        mgr.createNotificationChannel(NotificationChannel(
+            CHANNEL_ID, "WiFi Portal", NotificationManager.IMPORTANCE_LOW
+        ).also { it.description = "Captive portal service" })
     }
 
-    private fun buildNotification(title: String, text: String): Notification {
-        val stopPi = PendingIntent.getService(
-            this, 0,
+    private fun buildNotification(title: String, hotspotIp: String, port: Int): Notification {
+        val stopPi = PendingIntent.getService(this, 0,
             Intent(this, WifiPortalService::class.java).apply { action = ACTION_STOP },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val text = if (port > 0)
+            if (port == PORT_HTTP) "http://$hotspotIp/ — semua client otomatis diarahkan"
+            else "http://$hotspotIp:$port/ — client buka URL ini manual"
+        else "Memulai server..."
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true).setSilent(true)
             .addAction(android.R.drawable.ic_delete, "Stop Portal", stopPi)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
+    }
+
+    private fun updateNotification(title: String, hotspotIp: String, port: Int) {
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        mgr.notify(NOTIF_ID, buildNotification(title, hotspotIp, port))
     }
 }
