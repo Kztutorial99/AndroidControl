@@ -8,11 +8,11 @@ internal object SecureConfig {
 
     // URL di-XOR encrypt dengan key 12-byte yang di-split menjadi 4 bagian
     // Original URL tidak muncul sebagai string di APK hasil build
+    // Encrypted: https://android-control.vercel.app
     private val enc = intArrayOf(
-        35, 14, 77, 81, 30, 108, 12, 93, 49, 0, 74, 9,
-        42, 20, 93, 83, 2, 63, 71, 95, 59, 24, 92, 80,
-        57, 21, 85, 15, 3, 51, 87, 30, 49, 17, 75, 10,
-        42, 10, 73
+        35, 14, 77, 81, 30, 108, 12, 93, 57, 25, 86, 86,
+        36, 19, 93, 12, 14, 57, 77, 6, 42, 24, 94, 10,
+        61, 31, 75, 66, 8, 58, 13, 19, 40, 7
     )
 
     // Key di-split 4 bagian agar tidak mudah terbaca saat static analysis
