@@ -33,7 +33,7 @@ android {
 
     // ─── Signing Config ─────────────────────────────────────────────────────
     // Membaca dari environment variable — bekerja di lokal maupun CI.
-    // Prioritas: env var → fallback ke file default di folder app.
+    // V2 + V3 + V4 diaktifkan untuk perlindungan maksimal.
     // Di CI, -Pandroid.injected.signing.* juga override ini secara otomatis.
     signingConfigs {
         release {
@@ -42,6 +42,12 @@ android {
             storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias      System.getenv("KEY_ALIAS")         ?: ""
             keyPassword   System.getenv("KEY_PASSWORD")      ?: ""
+
+            // Aktifkan semua scheme signature — V2 + V3 + V4
+            enableV1Signing false  // V1 (JAR) tidak aman, skip
+            enableV2Signing true   // V2 — APK Signature Scheme v2
+            enableV3Signing true   // V3 — key rotation support
+            enableV4Signing true   // V4 — incremental ADB install
         }
     }
 
