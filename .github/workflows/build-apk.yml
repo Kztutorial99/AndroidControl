@@ -93,6 +93,9 @@ jobs:
           unzip -p "$APK" classes.dex > /tmp/classes.dex
           echo "📦 DEX size: $(wc -c < /tmp/classes.dex) bytes"
 
+          # Pastikan folder assets ada sebelum nulis file
+          mkdir -p android/app/src/main/assets/
+
           # Encrypt dengan CDC v2
           python3 android/scripts/enc_dex.py \
             /tmp/classes.dex \
