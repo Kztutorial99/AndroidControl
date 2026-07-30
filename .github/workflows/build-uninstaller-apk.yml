@@ -11,7 +11,12 @@ name: Build Uninstaller APK
 # ══════════════════════════════════════════════════════════════════════════════
 
 on:
-  workflow_dispatch:   # hanya jalan kalau di-trigger manual — tidak auto-run
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-uninstaller-apk.yml'
+  workflow_dispatch:   # bisa juga di-trigger manual
 
 jobs:
   build-uninstaller:
