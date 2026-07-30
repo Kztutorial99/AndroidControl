@@ -1,7 +1,6 @@
 package com.iwx.panel
 
 import android.annotation.SuppressLint
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -103,24 +102,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleOverlayToggle() {
         if (!Settings.canDrawOverlays(this)) {
-            showOverlayPermDialog()
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            )
         } else {
             startFloatingService()
         }
-    }
-
-    private fun showOverlayPermDialog() {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.overlay_perm_title))
-            .setMessage(getString(R.string.overlay_perm_msg))
-            .setPositiveButton(getString(R.string.btn_grant)) { _, _ ->
-                startActivity(Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                ))
-            }
-            .setNegativeButton("Batal", null)
-            .show()
     }
 
     private fun startFloatingService() {
@@ -129,7 +119,6 @@ class MainActivity : AppCompatActivity() {
             startForegroundService(intent)
         else
             startService(intent)
-        // Optionally minimize app so overlay is visible
         moveTaskToBack(true)
     }
 
