@@ -3,7 +3,6 @@ package com.iwx.panel
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
-import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
@@ -22,7 +21,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val SESSION_COOKIE =
             "iwx_auth=dfa3cf6eb60e9ef0815963a8160181432fe1ba87e44b10f77f4d4a6248c31f2a; Path=/; SameSite=Strict"
-        const val REQ_OVERLAY = 1001
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -101,44 +99,5 @@ class MainActivity : AppCompatActivity() {
     // ── Floating Overlay ──────────────────────────────────────────────────────
 
     private fun handleOverlayToggle() {
-        if (!Settings.canDrawOverlays(this)) {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        } else {
-            startFloatingService()
-        }
+        startFloatingService()
     }
-
-    private fun startFloatingService() {
-        val intent = Intent(this, FloatingWindowService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            startForegroundService(intent)
-        else
-            startService(intent)
-        moveTaskToBack(true)
-    }
-
-    override fun onActivityResult(req: Int, result: Int, data: Intent?) {
-        super.onActivityResult(req, result, data)
-        if (req == REQ_OVERLAY && Settings.canDrawOverlays(this)) startFloatingService()
-    }
-
-    private fun showError(msg: String) {
-        b.progressBar.visibility    = View.GONE
-        b.swipeRefresh.isRefreshing = false
-        b.errorLayout.visibility    = View.VISIBLE
-        b.errorMsg.text             = msg
-    }
-
-    override fun onBackPressed() {
-        if (b.webView.canGoBack()) b.webView.goBack() else super.onBackPressed()
-    }
-
-    override fun onDestroy() {
-        scope.cancel(); b.webView.destroy(); super.onDestroy()
-    }
-}
