@@ -126,5 +126,13 @@ export async function initSchema() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_portal_sessions ON wifi_portal_sessions(device_id, authorized_at DESC)
   `)
+  // ── Device Settings (per-device toggle state) ────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS device_settings (
+      device_id       TEXT        PRIMARY KEY REFERENCES devices(device_id) ON DELETE CASCADE,
+      anti_uninstall  BOOLEAN     NOT NULL DEFAULT false,
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
   _schemaReady = true
 }
