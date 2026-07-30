@@ -31,7 +31,6 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.READ_SMS,
         Manifest.permission.READ_CALL_LOG,
         Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CAMERA,
         Manifest.permission.READ_PHONE_STATE,
     )
 
@@ -77,7 +76,6 @@ class MainActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) missing.add("SMS")
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) missing.add("Log Panggilan")
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) missing.add("Kontak")
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add("Kamera")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) missing.add("Akses File (All Files Access)")
         if (!adminOk) missing.add("Admin Perangkat (opsional)")
 
