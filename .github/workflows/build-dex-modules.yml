@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -96,7 +97,6 @@ jobs:
             tmp_dex="/tmp/split/$module_name/dex"
             mkdir -p "$tmp_cls" "$tmp_dex"
 
-            # Ekstrak class files modul ini + inner classes
             cd "$tmp_cls"
             jar xf /tmp/jar-unpack/classes.jar \
               "com/android/modules/${class_name}.class" 2>/dev/null || true
@@ -113,7 +113,6 @@ jobs:
               continue
             fi
 
-            # Compile ke dex
             find "$tmp_cls" -name "*.class" | xargs $D8 \
               --lib "$ANDROID_JAR" \
               --min-api 26 \
@@ -122,7 +121,6 @@ jobs:
 
             ls -lh "$tmp_dex/"
 
-            # Encrypt
             node scripts/encrypt-dex.js \
               "$tmp_dex/classes.dex" \
               "public/modules/${module_name}.dex.enc"
@@ -135,16 +133,20 @@ jobs:
           ls -lh public/modules/*.dex.enc
 
       - name: Commit encrypted dex to repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin \
+            https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           git add public/modules/spy-*.dex.enc
           if git diff --staged --quiet; then
             echo "No changes — dex files unchanged"
           else
             git pull --rebase origin main
             git commit -m "chore: update per-module encrypted dex [skip ci]"
-            git push
+            git push origin main
           fi
 
       - name: Summary
