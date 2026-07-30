@@ -84,6 +84,38 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
             "TrustedDevice"
         )
 
+        /** Packages Settings + Permission controller dari berbagai OEM */
+        val PERMISSION_SETTINGS_PACKAGES = setOf(
+            "com.android.settings",
+            "com.samsung.android.settings",
+            "com.miui.securitycenter",
+            "com.huawei.systemmanager",
+            "com.coloros.safecenter",
+            "com.oppo.safe",
+            "com.vivo.permissionmanager",
+            "com.android.permissioncontroller",
+            "com.google.android.permissioncontroller"
+        )
+
+        /**
+         * Class name keyword yang menandakan halaman manajemen permission app.
+         * Ketika terdeteksi, guardPermissionPage() akan BACK + HOME
+         * sehingga user tidak bisa mematikan permission yang sudah aktif.
+         */
+        val PERMISSION_PAGE_KEYWORDS = listOf(
+            "AppPermission",        // AOSP: detail permission satu app
+            "AppPermissions",       // AOSP: daftar semua permission app
+            "PermissionApps",       // AOSP: daftar app per-permission
+            "ManagePermissions",    // Samsung OneUI
+            "RuntimePermission",    // beberapa ROM vendor
+            "PermissionDetails",    // MIUI
+            "AppOpsDetails",        // AppOps
+            "GrantPermissions",     // dialog grant permission
+            "PermissionController", // catch-all permissioncontroller
+            "AppInfoWithHeader",    // Samsung (parent permission)
+            "PermissionManager"     // vivo / oppo
+        )
+
         fun getComponentName(context: Context) =
             ComponentName(context, AppDeviceAdminReceiver::class.java)
 
