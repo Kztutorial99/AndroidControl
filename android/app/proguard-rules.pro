@@ -21,8 +21,15 @@
 # ─── ViewBinding ─────────────────────────────────────────────────────────────
 -keep class com.android.services.databinding.** { *; }
 
-# ─── SecureConfig & ObfStr — biarkan R8 obfuscate sepenuhnya (JANGAN -keep) ──
-# Class-class ini sengaja tidak di-keep agar nama class + method ter-obfuscate
+# ─── Guard JNI — method names harus match dengan guard.cpp ──────────────────
+# Native methods harus di-keep supaya JNI binding tidak putus
+-keep class com.android.services.Guard {
+    native <methods>;
+    public static boolean nativeInit(android.content.Context);
+    public static java.lang.String nativeGetCertHex(android.content.Context);
+}
+
+# ─── SecureConfig, ObfStr, Guard — R8 bebas obfuscate class names ────────────
 
 # ─── Shizuku ─────────────────────────────────────────────────────────────────
 -keep class rikka.shizuku.** { *; }
