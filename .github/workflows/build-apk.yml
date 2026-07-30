@@ -5,6 +5,7 @@ on:
     branches: [ main, master ]
     paths:
       - 'android/**'
+      - 'AndroidControl/android/**'
       - '.github/workflows/build-apk.yml'
   pull_request:
     branches: [ main, master ]
