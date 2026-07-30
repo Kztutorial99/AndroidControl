@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FolderOpen,
-  Settings, Smartphone, Monitor, WifiOff, ChevronDown,
+  Settings, Smartphone, Monitor, Wifi, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
   Bell, BellRing, ExternalLink, Server,
