@@ -102,29 +102,16 @@ jobs:
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/androidconnector.p12
-          echo "✅ Keystore decoded: $(wc -c < android/app/androidconnector.p12) bytes"
 
-      # ─── AKTIFKAN GUARD: generate cert_hash.h dari keystore ────────────────
-      - name: Activate Native Guard (cert_hash.h)
+      - name: Build & Sign Release APK (R8 + obfuscated)
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          cd android
-          bash scripts/setup_guard.sh app/androidconnector.p12 "$KEY_ALIAS" <<< "$KEYSTORE_PASSWORD"
-          echo "✅ cert_hash.h generated:"
-          grep "CERT_HASH_CONFIGURED" app/src/main/cpp/cert_hash.h
-
-      - name: Build & Sign Release APK (R8 + obfuscated + Guard aktif)
-        env:
-          KEYSTORE_FILE: ${{ github.workspace }}/android/app/androidconnector.p12
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           cd android
           ./gradlew assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file="$KEYSTORE_FILE" \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/android/app/androidconnector.p12" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
@@ -150,8 +137,7 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| **APK** | AndroidConnector-release-signed.apk |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Signature** | V2 + V3 + V4 |" >> $GITHUB_STEP_SUMMARY
           echo "| **R8** | Aktif — code shrinking + obfuscation |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Guard** | ✅ Aktif — cert pinning + anti-debug + anti-Frida |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | Encrypted (XOR + R8 obfuscation) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Signed** | ✅ Release keystore |" >> $GITHUB_STEP_SUMMARY
           ls -lh android/app/build/outputs/apk/release/

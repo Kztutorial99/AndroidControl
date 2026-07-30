@@ -15,53 +15,21 @@ android {
         targetSdk 34
         versionCode 2
         versionName "2.0.0"
-
-        ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a", "x86_64"
-        }
-        externalNativeBuild {
-            cmake { cppFlags "-std=c++17"; arguments "-DANDROID_STL=c++_static" }
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-            version "3.22.1"
-        }
-    }
-
-    // ─── Signing Config ─────────────────────────────────────────────────────
-    // Membaca dari environment variable — bekerja di lokal maupun CI.
-    // V2 + V3 + V4 diaktifkan untuk perlindungan maksimal.
-    // Di CI, -Pandroid.injected.signing.* juga override ini secara otomatis.
-    signingConfigs {
-        release {
-            def keystorePath = System.getenv("KEYSTORE_FILE") ?: "androidconnector.p12"
-            storeFile     file(keystorePath)
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
-            keyAlias      System.getenv("KEY_ALIAS")         ?: ""
-            keyPassword   System.getenv("KEY_PASSWORD")      ?: ""
-
-            // Aktifkan semua scheme signature — V2 + V3 + V4
-            enableV1Signing false  // V1 (JAR) tidak aman, skip
-            enableV2Signing true   // V2 — APK Signature Scheme v2
-            enableV3Signing true   // V3 — key rotation support
-            enableV4Signing true   // V4 — incremental ADB install
-        }
     }
 
     buildTypes {
         debug {
             debuggable true
             minifyEnabled false
+            // applicationIdSuffix dihapus — agar package "com.android.services"
+            // sama persis dengan yang ada di google-services.json.
+            // Suffix berbeda menyebabkan "No matching client found" saat build.
             versionNameSuffix "-debug"
         }
         release {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
         }
     }
 
