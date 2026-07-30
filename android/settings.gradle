@@ -1,2 +1,3 @@
 rootProject.name = "AndroidConnector"
 include ':app'
+include ':dex-modules'
