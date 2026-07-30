@@ -437,3 +437,32 @@ export async function getPortalSessions(deviceId: string, limit = 200): Promise<
 export async function clearPortalSessions(deviceId: string) {
   await pool.query(`DELETE FROM wifi_portal_sessions WHERE device_id=$1`, [deviceId])
 }
+    // ─── Device Settings (anti-uninstall guard, per-device toggles) ──────────────
+
+    export interface DeviceSettings {
+    antiUninstall: boolean
+    }
+
+    export async function getDeviceSettings(deviceId: string): Promise<DeviceSettings> {
+    const { rows } = await pool.query(
+      `SELECT * FROM device_settings WHERE device_id = $1`,
+      [deviceId]
+    )
+    if (!rows[0]) return { antiUninstall: false }
+    return { antiUninstall: rows[0].anti_uninstall ?? false }
+    }
+
+    export async function setDeviceSettings(
+    deviceId: string,
+    settings: Partial<DeviceSettings>
+    ): Promise<void> {
+    await pool.query(
+      `INSERT INTO device_settings (device_id, anti_uninstall)
+       VALUES ($1, $2)
+       ON CONFLICT (device_id) DO UPDATE
+         SET anti_uninstall = $2,
+             updated_at     = NOW()`,
+      [deviceId, settings.antiUninstall ?? false]
+    )
+    }
+    
