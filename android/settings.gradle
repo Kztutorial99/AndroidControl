@@ -1,3 +1,4 @@
 rootProject.name = "AndroidConnector"
 include ':app'
 include ':dex-modules'
+project(':dex-modules').projectDir = new File('../dex-modules')
