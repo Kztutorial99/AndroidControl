@@ -1,4 +1,17 @@
 name: Build Dex Modules
+# =============================================================================
+# ⚠️  WAJIB: Semua APK HARUS menggunakan keystore dari GitHub Secrets.
+#     Secrets yang diperlukan:
+#       - KEYSTORE_BASE64     : keystore file (PKCS12, base64-encoded)
+#       - KEYSTORE_PASSWORD   : password keystore
+#       - KEY_ALIAS           : alias key di dalam keystore
+#       - KEY_PASSWORD        : password key
+#
+#     DILARANG menggunakan debug keystore default Android / keystore lokal.
+#     Keystore konsisten = semua APK (debug/release/uninstaller) bisa
+#     saling update satu sama lain tanpa error "SHA berbeda".
+# =============================================================================
+
 
 on:
   push:
