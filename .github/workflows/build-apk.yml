@@ -31,9 +31,9 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-  # ─── RELEASE BUILD + CDC v2 ENCRYPT + SIGN ────────────────────────────────
+  # ─── RELEASE BUILD + SIGN ────────────────────────────────────────────────────
   build-release:
-    name: Build & Sign Release APK (+ CDC v2 DEX Encrypt)
+    name: Build & Sign Release APK
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
@@ -51,26 +51,14 @@ jobs:
       - uses: android-actions/setup-android@v3
       - run: yes | sdkmanager --licenses || true
 
-      # ── Decode keystore & ambil cert SHA256 ──────────────────────────────
-      - name: Decode Keystore + Extract Cert SHA256
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      # ── Decode keystore ───────────────────────────────────────────────────
+      - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/androidconnector.p12
+          echo "✅ Keystore decoded"
 
-          keytool -exportcert \
-            -keystore android/app/androidconnector.p12 \
-            -alias "$KEY_ALIAS" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -file /tmp/cert.der 2>/dev/null
-
-          CERT_SHA256=$(openssl dgst -sha256 -hex /tmp/cert.der | awk '{print $2}')
-          echo "CERT_SHA256=$CERT_SHA256" >> $GITHUB_ENV
-          echo "✅ Cert SHA256: ${CERT_SHA256:0:16}..."
-
-      # ── Pass 1: Build release untuk hasilkan DEX ─────────────────────────
-      - name: Pass 1 — Compile & Build Release APK
+      # ── Build & Sign Release APK ──────────────────────────────────────────
+      - name: Build Release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -82,55 +70,14 @@ jobs:
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
-          echo "✅ Pass 1 complete — DEX compiled"
+          echo "✅ Release APK signed"
 
-      # ── CDC v2: Encrypt DEX dengan server key, inject ke assets ──────────
-      - name: CDC v2 — Encrypt DEX & Inject ke Assets
-        env:
-          CDC_STATIC_KEY: ${{ secrets.CDC_STATIC_KEY }}
-        run: |
-          APK="android/app/build/outputs/apk/release/app-release.apk"
-
-          # Ekstrak classes.dex dari APK
-          unzip -p "$APK" classes.dex > /tmp/classes.dex
-          echo "📦 DEX size: $(wc -c < /tmp/classes.dex) bytes"
-
-          # Pastikan folder assets ada sebelum nulis file
-          mkdir -p android/app/src/main/assets/
-
-          # Encrypt dengan CDC v2 — key dari secret (bukan hardcode APK)
-          python3 android/scripts/enc_dex.py \
-            /tmp/classes.dex \
-            "$CERT_SHA256" \
-            "com.android.services" \
-            android/app/src/main/assets/classes.dex.enc
-
-          echo "✅ CDC v2 encrypted → assets/classes.dex.enc"
-          echo "   $(wc -c < android/app/src/main/assets/classes.dex.enc) bytes"
-
-      # ── Pass 2: Rebuild APK dengan encrypted DEX di assets ───────────────
-      - name: Pass 2 — Rebuild APK (include classes.dex.enc in assets)
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          cd android
-          ./gradlew assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/android/app/androidconnector.p12" \
-            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
-            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
-          echo "✅ Pass 2 complete — APK with CDC encrypted DEX"
-
-      # ── Copy + upload ─────────────────────────────────────────────────────
+      # ── Package & Upload ──────────────────────────────────────────────────
       - name: Package Artifact
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk \
              dist/AndroidConnector-release-signed.apk
-          # Bersihkan encrypted DEX dari src (agar tidak ter-commit)
-          rm -f android/app/src/main/assets/classes.dex.enc
 
       - uses: actions/upload-artifact@v4
         with:
@@ -145,9 +92,7 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| **APK** | AndroidConnector-release-signed.apk |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **DEX Enc** | ✅ CDC v2 — SHA256-chain stream cipher |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Key** | ✅ Runtime-fetched (not in APK) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Key Binding** | cert SHA256 + pkg + server secret |" >> $GITHUB_STEP_SUMMARY
-          echo "| **R8** | ✅ Aktif |" >> $GITHUB_STEP_SUMMARY
+          echo "| **R8** | ✅ Aktif (minify + shrink) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Signed** | ✅ V2 + V3 |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Modules** | ✅ Server-side encrypted (DexModuleLoader) |" >> $GITHUB_STEP_SUMMARY
           ls -lh android/app/build/outputs/apk/release/
