@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - 'dex-modules/**'
+      - 'android/dex-modules/**'
       - 'scripts/encrypt-dex.js'
       - '.github/workflows/build-dex-modules.yml'
   workflow_dispatch:
@@ -50,7 +50,7 @@ jobs:
       - name: Build dex-modules AAR
         run: |
           cd android
-          ./gradlew :dex-modules:bundleReleaseAar --no-daemon
+          ./gradlew :dex-modules:assembleRelease --no-daemon
 
       - name: Extract classes.dex from AAR
         run: |
@@ -67,7 +67,6 @@ jobs:
       - name: Encrypt dex modules
         run: |
           mkdir -p public/modules
-          # Semua modul dari 1 dex (semua class ada di satu classes.dex)
           node scripts/encrypt-dex.js /tmp/dex-out/classes.dex public/modules/dex-modules.dex.enc
           ls -lh public/modules/
 
