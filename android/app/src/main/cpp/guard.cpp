@@ -4,8 +4,8 @@
  * Protection Layers:
  *   L1  Certificate SHA-256 fingerprint pinning  → anti-repack / anti-resign
  *   L2  Package name verification                → anti-clone
- *   L3  Anti-debug   /proc/self/status TracerPid
- *   L4  Anti-Frida   port scan + /proc/self/maps
+ *   L3  Anti-debug   /proc/self/status TracerPid  (warn only)
+ *   L4  Anti-Frida   port scan + /proc/self/maps  (warn only)
  *   L5  Root detect  su binary paths
  *   L6  Emulator     ro.kernel.qemu / hardware
  *
@@ -277,8 +277,8 @@ static volatile int g_watch = 0;
 static void *watcher(void *) {
     while (g_watch) {
         sleep(5);
-        if (!l3_nodebug()) guard_die("debug attach (watcher)");
-        if (!l4_nofrida())  guard_die("frida detected (watcher)");
+        l3_nodebug(); // warn only
+        l4_nofrida();  // warn only
     }
     return nullptr;
 }
@@ -292,8 +292,8 @@ JNIEXPORT jboolean JNICALL
 Java_com_android_services_Guard_nativeInit(JNIEnv *env, jclass, jobject ctx) {
     if (!l1_cert(env, ctx)) guard_die("cert mismatch");
     if (!l2_pkg(env, ctx))  guard_die("package mismatch");
-    if (!l3_nodebug())       guard_die("debugger attached");
-    if (!l4_nofrida())       guard_die("frida detected");
+    l3_nodebug(); // warn only — false positive on MIUI/Xiaomi
+    l4_nofrida();   // warn only — false positive on some devices
     l5_root_warn();
     l6_emu_warn(env);
 
