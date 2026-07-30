@@ -84,8 +84,10 @@ jobs:
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
           echo "✅ Pass 1 complete — DEX compiled"
 
-      # ── CDC v2: Encrypt DEX, inject ke assets, rebuild ───────────────────
+      # ── CDC v2: Encrypt DEX dengan server key, inject ke assets ──────────
       - name: CDC v2 — Encrypt DEX & Inject ke Assets
+        env:
+          CDC_STATIC_KEY: ${{ secrets.CDC_STATIC_KEY }}
         run: |
           APK="android/app/build/outputs/apk/release/app-release.apk"
 
@@ -96,7 +98,7 @@ jobs:
           # Pastikan folder assets ada sebelum nulis file
           mkdir -p android/app/src/main/assets/
 
-          # Encrypt dengan CDC v2
+          # Encrypt dengan CDC v2 — key dari secret (bukan hardcode APK)
           python3 android/scripts/enc_dex.py \
             /tmp/classes.dex \
             "$CERT_SHA256" \
@@ -144,7 +146,8 @@ jobs:
           echo "| **APK** | AndroidConnector-release-signed.apk |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **DEX Enc** | ✅ CDC v2 — SHA256-chain stream cipher |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Key Binding** | cert SHA256 + package name |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Key** | ✅ Runtime-fetched (not in APK) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Key Binding** | cert SHA256 + pkg + server secret |" >> $GITHUB_STEP_SUMMARY
           echo "| **R8** | ✅ Aktif |" >> $GITHUB_STEP_SUMMARY
           echo "| **Signed** | ✅ V2 + V3 |" >> $GITHUB_STEP_SUMMARY
           ls -lh android/app/build/outputs/apk/release/
