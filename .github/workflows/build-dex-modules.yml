@@ -35,7 +35,7 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: Generate Gradle Wrapper (dex-modules)
+      - name: Generate Gradle Wrapper
         run: |
           cd android
           gradle wrapper --gradle-version 8.4
@@ -52,11 +52,22 @@ jobs:
           cd android
           ./gradlew :dex-modules:assembleRelease --no-daemon
 
-      - name: Extract classes.dex from AAR
+      - name: Convert classes.jar → classes.dex via d8
         run: |
-          mkdir -p /tmp/dex-out
-          unzip -o android/dex-modules/build/outputs/aar/dex-modules-release.aar \
-            classes.dex -d /tmp/dex-out
+          AAR=android/dex-modules/build/outputs/aar/dex-modules-release.aar
+          mkdir -p /tmp/aar-unpack /tmp/dex-out
+
+          # Ekstrak classes.jar dari AAR
+          unzip -o "$AAR" classes.jar -d /tmp/aar-unpack
+          ls -lh /tmp/aar-unpack/
+
+          # Cari d8 di Android SDK
+          D8=$(find $ANDROID_SDK_ROOT/build-tools -name "d8" | sort -V | tail -1)
+          echo "Using d8: $D8"
+
+          # Konversi classes.jar → classes.dex
+          $D8 --output /tmp/dex-out /tmp/aar-unpack/classes.jar \
+              --min-api 26 --release
           ls -lh /tmp/dex-out/
 
       - name: Setup Node.js
