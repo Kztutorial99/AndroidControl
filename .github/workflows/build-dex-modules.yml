@@ -134,20 +134,25 @@ jobs:
 
       - name: Commit encrypted dex to repo
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin \
-            https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
           git add public/modules/spy-*.dex.enc
+
           if git diff --staged --quiet; then
-            echo "No changes — dex files unchanged"
-          else
-            git pull --rebase origin main
-            git commit -m "chore: update per-module encrypted dex [skip ci]"
-            git push origin main
+            echo "✅ No changes — dex files unchanged, nothing to commit"
+            exit 0
           fi
+
+          # Commit dulu baru pull --rebase supaya tidak konflik
+          git commit -m "chore: update per-module encrypted dex [skip ci]"
+          git pull --rebase origin main
+          git push origin main
+          echo "✅ Pushed successfully"
 
       - name: Summary
         run: |
