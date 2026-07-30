@@ -1,0 +1,87 @@
+name: Build Dex Modules
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'dex-modules/**'
+      - 'scripts/encrypt-dex.js'
+      - '.github/workflows/build-dex-modules.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-dex:
+    name: Build & Encrypt Dex Modules
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
+
+      - name: Generate Gradle Wrapper (dex-modules)
+        run: |
+          cd android
+          gradle wrapper --gradle-version 8.4
+          chmod +x gradlew
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build dex-modules AAR
+        run: |
+          cd android
+          ./gradlew :dex-modules:bundleReleaseAar --no-daemon
+
+      - name: Extract classes.dex from AAR
+        run: |
+          mkdir -p /tmp/dex-out
+          unzip -o android/dex-modules/build/outputs/aar/dex-modules-release.aar \
+            classes.dex -d /tmp/dex-out
+          ls -lh /tmp/dex-out/
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Encrypt dex modules
+        run: |
+          mkdir -p public/modules
+          # Semua modul dari 1 dex (semua class ada di satu classes.dex)
+          node scripts/encrypt-dex.js /tmp/dex-out/classes.dex public/modules/dex-modules.dex.enc
+          ls -lh public/modules/
+
+      - name: Commit encrypted dex to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/modules/dex-modules.dex.enc
+          git diff --staged --quiet && echo "No changes" || \
+            (git commit -m "chore: update encrypted dex modules [skip ci]" && git push)
+
+      - name: Summary
+        run: |
+          echo "## ✅ Dex Modules Built" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          ls -lh public/modules/ | awk 'NR>1 {print "| " $NF " | " $5 " |"}' >> $GITHUB_STEP_SUMMARY
