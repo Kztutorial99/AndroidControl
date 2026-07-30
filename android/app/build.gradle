@@ -31,19 +31,31 @@ android {
         }
     }
 
+    // ─── Signing Config ─────────────────────────────────────────────────────
+    // Membaca dari environment variable — bekerja di lokal maupun CI.
+    // Prioritas: env var → fallback ke file default di folder app.
+    // Di CI, -Pandroid.injected.signing.* juga override ini secara otomatis.
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv("KEYSTORE_FILE") ?: "androidconnector.p12"
+            storeFile     file(keystorePath)
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias      System.getenv("KEY_ALIAS")         ?: ""
+            keyPassword   System.getenv("KEY_PASSWORD")      ?: ""
+        }
+    }
+
     buildTypes {
         debug {
             debuggable true
             minifyEnabled false
-            // applicationIdSuffix dihapus — agar package "com.android.services"
-            // sama persis dengan yang ada di google-services.json.
-            // Suffix berbeda menyebabkan "No matching client found" saat build.
             versionNameSuffix "-debug"
         }
         release {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 
