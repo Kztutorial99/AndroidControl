@@ -54,11 +54,30 @@ jobs:
           cd android-panel
           ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Re-sign APK dengan Release Keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /tmp/androidconnector.p12
+          APKSIGNER=$(find $ANDROID_SDK_ROOT/build-tools -name "apksigner" | sort -V | tail -1)
+          $APKSIGNER sign \
+            --ks /tmp/androidconnector.p12 \
+            --ks-type PKCS12 \
+            --ks-pass pass:"$KEYSTORE_PASSWORD" \
+            --key-pass pass:"$KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --out android-panel/app/build/outputs/apk/debug/app-debug-signed.apk \
+            android-panel/app/build/outputs/apk/debug/app-debug.apk
+          echo "✅ Re-sign selesai"
+          $APKSIGNER verify --print-certs android-panel/app/build/outputs/apk/debug/app-debug-signed.apk | head -3
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: IwxPanel-debug-${{ github.sha }}
-          path: android-panel/app/build/outputs/apk/debug/app-debug.apk
+          name: IwxPanel-signed-${{ github.sha }}
+          path: android-panel/app/build/outputs/apk/debug/app-debug-signed.apk
           retention-days: 30
 
       - name: Summary
