@@ -1,0 +1,72 @@
+name: Build IWX PANEL APK
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'android-panel/**'
+      - '.github/workflows/build-panel-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build IWX PANEL APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
+
+      - name: Generate Gradle Wrapper
+        run: |
+          cd android-panel
+          gradle wrapper --gradle-version 8.4
+          chmod +x gradlew
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-panel-gradle-${{ hashFiles('android-panel/**/*.gradle*') }}
+          restore-keys: ${{ runner.os }}-panel-gradle-
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build Debug APK
+        run: |
+          cd android-panel
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: IwxPanel-debug-${{ github.sha }}
+          path: android-panel/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## ✅ IWX PANEL APK Built" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Package** | com.iwx.panel |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | Fetched from android-config.json |" >> $GITHUB_STEP_SUMMARY
+          ls -lh android-panel/app/build/outputs/apk/debug/

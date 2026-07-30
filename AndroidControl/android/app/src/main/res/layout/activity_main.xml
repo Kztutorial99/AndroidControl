@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚙️"
+        android:textSize="64sp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="System Service"
+        android:textColor="@color/white"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Berikan izin agar layanan berjalan"
+        android:textColor="@color/muted"
+        android:textSize="13sp"
+        android:gravity="center"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Card status izin -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/card_bg"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:id="@+id/tvAccessStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="@color/red"
+            android:textSize="13sp"
+            android:lineSpacingExtra="4dp"
+            android:layout_marginBottom="16dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAccessibility"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="Berikan Izin →"
+            android:textColor="@color/bg"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:backgroundTint="@color/green"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
+
+    <!-- Tombol sembunyikan (muncul setelah semua izin diberikan) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnLaunch"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="✅  Sembunyikan Aplikasi"
+        android:textColor="@color/bg"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:backgroundTint="#FF9500"
+        android:visibility="gone"
+        app:cornerRadius="10dp" />
+
+
+</LinearLayout>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "647882259208",
+    "project_id": "androidcontrol-app",
+    "storage_bucket": "androidcontrol-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:647882259208:android:6e3f7f4c1c527126674abd",
+        "android_client_info": {
+          "package_name": "com.android.services"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDo4VsdhzANZAf9hj84xOkWmI-UzGlqSdQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
