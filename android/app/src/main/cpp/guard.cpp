@@ -35,6 +35,17 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  TAG, __VA_ARGS__)
 
+// ─── CodeDev Protection Brand ─────────────────────────────────────────────────
+// volatile + __attribute__((used)) = tidak di-strip linker, muncul di strings .so
+static const volatile char _brand[]  __attribute__((used)) =
+    "\x43\x6F\x64\x65\x44\x65\x76"   // CodeDev
+    "\x20\x53\x65\x63\x75\x72\x69\x74\x79"  //  Security
+    "\x20\x76\x31\x2E\x30";             //  v1.0
+static const volatile char _brand2[] __attribute__((used)) =
+    "Protected by CodeDev | com.codedev.protection";
+// ───────────────────────────────────────────────────────────────────────────────
+
+
 // ─── XOR decode (same scheme as ObfStr.kt) ───────────────────────────────────
 static void xdec(const int *enc, int n, char *out) {
     for (int i = 0; i < n; i++) out[i] = (char)(enc[i] ^ _xk[i % 12]);
