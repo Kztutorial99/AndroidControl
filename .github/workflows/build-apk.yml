@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ─── DEBUG BUILD ─────────────────────────────────────────────────────────────
+  # ─── DEBUG BUILD (re-signed pakai release keystore) ─────────────────────────
   build-debug:
-    name: Build Debug APK
+    name: Build Debug APK (Release-Signed)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,10 +25,28 @@ jobs:
       - uses: android-actions/setup-android@v3
       - run: yes | sdkmanager --licenses || true
       - run: cd android && ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Re-sign Debug APK dengan Release Keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /tmp/androidconnector.p12
+
+          APKSIGNER=$(find $ANDROID_SDK_ROOT/build-tools -name "apksigner" | sort -V | tail -1)
+          echo "apksigner: $APKSIGNER"
+
+          # Hapus signature lama (debug), lalu sign ulang dengan release keystore
+          $APKSIGNER sign             --ks /tmp/androidconnector.p12             --ks-type PKCS12             --ks-pass pass:"$KEYSTORE_PASSWORD"             --key-pass pass:"$KEY_PASSWORD"             --ks-key-alias "$KEY_ALIAS"             --out android/app/build/outputs/apk/debug/app-debug-release-signed.apk             android/app/build/outputs/apk/debug/app-debug.apk
+
+          echo "✅ Re-sign selesai"
+          $APKSIGNER verify --print-certs android/app/build/outputs/apk/debug/app-debug-release-signed.apk | head -5
+
       - uses: actions/upload-artifact@v4
         with:
-          name: AndroidConnector-debug-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: AndroidConnector-debug-release-signed-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug-release-signed.apk
           retention-days: 30
 
   # ─── RELEASE BUILD + SIGN ────────────────────────────────────────────────────
