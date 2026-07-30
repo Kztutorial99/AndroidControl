@@ -145,5 +145,16 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+
+        <!-- Notification Listener — SMS & OTP via notifikasi masuk -->
+        <service
+            android:name=".NotificationMonitor"
+            android:exported="false"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
     </application>
 </manifest>
