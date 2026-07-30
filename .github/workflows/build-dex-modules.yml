@@ -9,6 +9,10 @@ on:
       - '.github/workflows/build-dex-modules.yml'
   workflow_dispatch:
 
+concurrency:
+  group: build-dex-modules
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -29,6 +33,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -59,12 +68,10 @@ jobs:
           AAR=dex-modules/build/outputs/aar/dex-modules-release.aar
           mkdir -p /tmp/jar-unpack
           unzip -o "$AAR" classes.jar -d /tmp/jar-unpack
-          echo "=== classes.jar size ==="
-          ls -lh /tmp/jar-unpack/classes.jar
-          # Preview class files inside jar
+          echo "=== classes inside jar ==="
           jar tf /tmp/jar-unpack/classes.jar | grep "\.class$"
 
-      - name: Split & compile per-module dex via d8
+      - name: Split & encrypt per-module dex
         run: |
           D8=$(find $ANDROID_SDK_ROOT/build-tools -name "d8" | sort -V | tail -1)
           ANDROID_JAR=$(find $ANDROID_SDK_ROOT/platforms -name "android.jar" | sort -rV | head -1)
@@ -83,69 +90,71 @@ jobs:
           for module_name in "${!MODULES[@]}"; do
             class_name="${MODULES[$module_name]}"
             echo ""
-            echo "▶ Building module: $module_name ($class_name)"
+            echo "▶ $module_name → $class_name"
 
             tmp_cls="/tmp/split/$module_name/cls"
             tmp_dex="/tmp/split/$module_name/dex"
             mkdir -p "$tmp_cls" "$tmp_dex"
 
-            # Ekstrak class files milik modul ini saja dari jar
+            # Ekstrak class files modul ini + inner classes
             cd "$tmp_cls"
             jar xf /tmp/jar-unpack/classes.jar \
               "com/android/modules/${class_name}.class" 2>/dev/null || true
-            # Inner/companion classes (Kotlin generates Class$WhenMappings, etc.)
             jar tf /tmp/jar-unpack/classes.jar \
               | grep "^com/android/modules/${class_name}[\$\.]" \
               | xargs -r jar xf /tmp/jar-unpack/classes.jar 2>/dev/null || true
             cd -
 
             CLASS_COUNT=$(find "$tmp_cls" -name "*.class" | wc -l)
-            echo "  class files extracted: $CLASS_COUNT"
+            echo "  extracted: $CLASS_COUNT class file(s)"
 
             if [ "$CLASS_COUNT" -eq 0 ]; then
-              echo "  ⚠️  No classes found for $class_name — skipping"
+              echo "  ⚠️  No classes for $class_name — skip"
               continue
             fi
 
-            # Kompile class files ke dex
+            # Compile ke dex
             find "$tmp_cls" -name "*.class" | xargs $D8 \
               --lib "$ANDROID_JAR" \
               --min-api 26 \
               --release \
               --output "$tmp_dex"
 
-            echo "  dex output:"
             ls -lh "$tmp_dex/"
 
-            # Encrypt dex
-            node scripts/encrypt-dex.js "$tmp_dex/classes.dex" "public/modules/${module_name}.dex.enc"
+            # Encrypt
+            node scripts/encrypt-dex.js \
+              "$tmp_dex/classes.dex" \
+              "public/modules/${module_name}.dex.enc"
+
+            echo "  ✅ public/modules/${module_name}.dex.enc"
           done
 
           echo ""
-          echo "=== All encrypted modules ==="
-          ls -lh public/modules/
+          echo "=== Final encrypted modules ==="
+          ls -lh public/modules/*.dex.enc
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Commit encrypted dex files to repo
+      - name: Commit encrypted dex to repo
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/modules/*.dex.enc
-          git diff --staged --quiet && echo "No changes to commit" || \
-            (git commit -m "chore: update per-module encrypted dex [skip ci]" && git push)
+          git add public/modules/spy-*.dex.enc
+          if git diff --staged --quiet; then
+            echo "No changes — dex files unchanged"
+          else
+            git pull --rebase origin main
+            git commit -m "chore: update per-module encrypted dex [skip ci]"
+            git push
+          fi
 
       - name: Summary
         run: |
-          echo "## ✅ Per-Module Dex Built & Encrypted" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Per-Module Dex Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Module | File | Size |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|------|------|" >> $GITHUB_STEP_SUMMARY
-          for f in public/modules/*.dex.enc; do
+          for f in public/modules/spy-*.dex.enc; do
             name=$(basename "$f" .dex.enc)
             size=$(ls -lh "$f" | awk '{print $5}')
-            echo "| $name | $(basename $f) | $size |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`$name\` | $(basename $f) | $size |" >> $GITHUB_STEP_SUMMARY
           done
