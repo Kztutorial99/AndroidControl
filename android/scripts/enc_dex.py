@@ -6,16 +6,16 @@ Algorithm: SHA256-chain stream cipher (NOT XOR/AES/ChaCha — custom)
 
 Key derivation:
   ikm  = cert_sha256 || SHA256(pkg_name) || static_key
-  prk  = HMAC-SHA256(salt, ikm)         -- HKDF extract
+  prk  = HMAC-SHA256(salt, ikm)          -- HKDF extract
   seed = HMAC-SHA256(prk, "CDC-ENC\x01") -- HKDF expand
 
 Keystream per 32-byte block:
   h1 = SHA256(seed || counter_LE8)
   twist = h1[:8] XOR counter_LE8 || h1[8:]
-  K_n = SHA256(seed || twist)            -- double-pass
+  K_n = SHA256(seed || twist)             -- double-pass
 
-Cipher: C[n] = P[n] XOR K_n             -- keystream cipher (NOT static XOR)
-MAC   : HMAC-SHA256(mac_key, ciphertext) -- integrity
+Cipher: C[n] = P[n] XOR K_n
+MAC   : HMAC-SHA256(mac_key, ciphertext)
 
 File format:
   [0..3]   "CDC2" magic
@@ -24,16 +24,34 @@ File format:
   [52..55] 4-byte original DEX size (LE)
   [56+]    encrypted DEX
 
+static_key: dibaca dari env CDC_STATIC_KEY (hex string)
+            TIDAK hardcode di source — hanya ada di GitHub Secret + Vercel env
+
 Usage:
-  python3 enc_dex.py <dex> <cert_sha256_hex> <pkg_name> <output.enc>
+  CDC_STATIC_KEY=<hex64> python3 enc_dex.py <dex> <cert_sha256_hex> <pkg_name> <output.enc>
 """
 
 import sys, hashlib, hmac as hmaclib, struct, secrets, os
 
-MAGIC      = b'CDC2'
-STATIC_KEY = b'CodeDev-CDC-v2-2026-IWX'
-BLOCK      = 32
-HDR_SIZE   = 56  # 4+16+32+4
+MAGIC    = b'CDC2'
+BLOCK    = 32
+HDR_SIZE = 56  # 4+16+32+4
+
+# ── Load static key dari env ──────────────────────────────────────────────────
+_sk_env = os.environ.get('CDC_STATIC_KEY', '').strip()
+if _sk_env:
+    try:
+        STATIC_KEY = bytes.fromhex(_sk_env)
+        print(f"[*] Key    : from CDC_STATIC_KEY env ({len(STATIC_KEY)} bytes)")
+    except ValueError:
+        print("[!] CDC_STATIC_KEY bukan hex yang valid!")
+        sys.exit(1)
+else:
+    # Fallback untuk local dev — JANGAN dipakai di production
+    STATIC_KEY = b'CodeDev-CDC-v2-2026-IWX'
+    print("[!] CDC_STATIC_KEY tidak di-set — pakai fallback (dev only)")
+
+# ── Core functions ────────────────────────────────────────────────────────────
 
 def _hmac(key: bytes, data: bytes) -> bytes:
     return hmaclib.new(key, data, hashlib.sha256).digest()
@@ -67,7 +85,7 @@ def encrypt(plain: bytes, seed: bytes) -> bytes:
 
 def main():
     if len(sys.argv) != 5:
-        print(f"Usage: {sys.argv[0]} <dex> <cert_sha256_hex> <pkg_name> <output>")
+        print(f"Usage: CDC_STATIC_KEY=<hex> {sys.argv[0]} <dex> <cert_sha256_hex> <pkg_name> <output>")
         sys.exit(1)
 
     dex_path, cert_hex, pkg_name, out_path = sys.argv[1:]
@@ -94,7 +112,8 @@ def main():
     print(f"[*] Salt   : {salt.hex()}")
     print(f"[*] MAC    : {mac.hex()[:16]}...")
     print(f"[✓] Output : {os.path.basename(out_path)} ({len(output):,} bytes)")
-    print(f"[✓] Algo   : CDC v2 | SHA256-chain stream | cert+pkg bound")
+    print(f"[✓] Algo   : CDC v2 | SHA256-chain | cert+pkg+server-key bound")
+    print(f"[✓] Key    : runtime-fetched (not stored in APK)")
 
 if __name__ == '__main__':
     main()
