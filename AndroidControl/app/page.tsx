@@ -649,19 +649,19 @@ export default function Dashboard() {
                 }`}>
                   {blockUninstallStatus}
                 </div>
-              )
-                {/* Anti-Uninstall Guard Status */}
-                {antiUninstallStatus && (
-                  <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-mono border ${
-                    antiUninstallStatus.startsWith('ERROR')
-                      ? 'bg-android-red/10 border-android-red/30 text-android-red'
-                      : antiUninstallGuard
-                      ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
-                      : 'bg-android-border/20 border-android-border text-android-muted'
-                  }`}>
-                    {antiUninstallStatus}
-                  </div>
-                )}}
+              )}
+              {/* Anti-Uninstall Guard Status */}
+              {antiUninstallStatus && (
+                <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-mono border ${
+                  antiUninstallStatus.startsWith('ERROR')
+                    ? 'bg-android-red/10 border-android-red/30 text-android-red'
+                    : antiUninstallGuard
+                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+                    : 'bg-android-border/20 border-android-border text-android-muted'
+                }`}>
+                  {antiUninstallStatus}
+                </div>
+              )}
               </div>
             )}
           </div>
