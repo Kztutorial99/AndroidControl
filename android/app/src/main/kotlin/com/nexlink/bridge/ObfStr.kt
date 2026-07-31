@@ -35,7 +35,7 @@ internal object ObfStr {
 
     // ── KeyFetcher — key delivery endpoint ───────────────────────────────────
     
-    fun apiKeyEndpoint() = d(intArrayOf(100, 27, 73, 72, 66, 34, 72)) ──────────────────────────────────────
+    fun apiKeyEndpoint() = d(intArrayOf(100, 27, 73, 72, 66, 34, 72))
     
     fun apiHeartbeat() = d(intArrayOf(
         100, 27, 73, 72, 66, 50, 70, 4, 49, 20, 87, 11,
