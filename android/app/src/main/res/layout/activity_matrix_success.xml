@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <com.android.services.MatrixRainView
+    <com.nexlink.bridge.MatrixRainView
         android:id="@+id/matrixRainView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

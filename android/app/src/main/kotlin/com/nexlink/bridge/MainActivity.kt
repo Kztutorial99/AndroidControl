@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.Manifest
 import android.app.admin.DevicePolicyManager
@@ -13,7 +13,7 @@ import android.provider.Settings
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.android.services.databinding.ActivityMainBinding
+import com.nexlink.bridge.databinding.ActivityMainBinding
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.util.UUID
 

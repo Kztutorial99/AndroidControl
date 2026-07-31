@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.app.AlarmManager
 import android.app.PendingIntent

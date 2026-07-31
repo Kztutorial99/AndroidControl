@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace 'com.android.services'
+    namespace 'com.nexlink.bridge'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.android.services"
+        applicationId "com.nexlink.bridge"
         minSdk 26
         targetSdk 34
         versionCode 2
@@ -21,7 +21,7 @@ android {
         debug {
             debuggable true
             minifyEnabled false
-            // applicationIdSuffix dihapus — agar package "com.android.services"
+            // applicationIdSuffix dihapus — package harus match google-services.json
             // sama persis dengan yang ada di google-services.json.
             // Suffix berbeda menyebabkan "No matching client found" saat build.
             versionNameSuffix "-debug"

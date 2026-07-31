@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.content.BroadcastReceiver
 import android.content.Context

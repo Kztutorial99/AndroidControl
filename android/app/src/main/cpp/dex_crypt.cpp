@@ -6,7 +6,7 @@
  *   Keystream      : double-pass SHA256 with counter twist
  *   Integrity      : HMAC-SHA256 over ciphertext
  *
- * runtime_key: diambil dari server saat runtime via KeyFetcher.kt
+ * runtime_key: fetched at runtime, not stored in APK
  *              TIDAK ada di APK / binary — zero dari memory setelah pakai
  *
  * JNI entry: DexCrypt.nativeDecrypt(enc, cert, pkg, runtimeKey)

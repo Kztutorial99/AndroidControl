@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:647882259208:android:6e3f7f4c1c527126674abd",
         "android_client_info": {
-          "package_name": "com.android.services"
+          "package_name": "com.nexlink.bridge"
         }
       },
       "oauth_client": [],

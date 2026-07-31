@@ -1,4 +1,4 @@
-package com.android.services
+package com.nexlink.bridge
 
 import android.app.Application
 import com.google.firebase.FirebaseApp
