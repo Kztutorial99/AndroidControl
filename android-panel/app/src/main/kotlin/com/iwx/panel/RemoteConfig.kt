@@ -6,7 +6,7 @@ internal object RemoteConfig {
 
     private const val CONFIG_URL =
         "https://raw.githubusercontent.com/Kztutorial99/AndroidControl/main/android-config.json"
-    private const val FALLBACK = "https://android-control.vercel.app"
+    private const val FALLBACK = "https://android-ctrl-proxy.xyraofficialsup.workers.dev"
 
     @Volatile private var cached: String? = null
 
