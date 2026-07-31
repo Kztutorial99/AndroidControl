@@ -3,6 +3,7 @@ package com.iwx.panel
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val SESSION_COOKIE =
             "iwx_auth=dfa3cf6eb60e9ef0815963a8160181432fe1ba87e44b10f77f4d4a6248c31f2a; Path=/; SameSite=Strict"
+        private const val OVERLAY_PERMISSION_REQUEST = 1001
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -96,8 +98,45 @@ class MainActivity : AppCompatActivity() {
         b.webView.loadUrl(serverUrl)
     }
 
+    private fun showError(msg: String) {
+        b.progressBar.visibility = View.GONE
+        b.swipeRefresh.isRefreshing = false
+        b.errorLayout.visibility = View.VISIBLE
+    }
+
     // ── Floating Overlay ──────────────────────────────────────────────────────
 
     private fun handleOverlayToggle() {
-        startFloatingService()
+        if (Settings.canDrawOverlays(this)) {
+            startFloatingService()
+        } else {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST)
+        }
     }
+
+    private fun startFloatingService() {
+        val intent = Intent(this, FloatingWindowService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == OVERLAY_PERMISSION_REQUEST && Settings.canDrawOverlays(this)) {
+            startFloatingService()
+        }
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+}
