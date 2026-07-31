@@ -50,7 +50,7 @@ class ConnectorService : Service() {
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
     private val JSON = "application/json; charset=utf-8".toMediaType()
-    private val prefs by lazy { getSharedPreferences("connector_prefs", Context.MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences(ObfStr.prefsName(), Context.MODE_PRIVATE) }
 
     private var deviceId = ""
     private var deviceName = ""
