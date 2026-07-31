@@ -18,10 +18,11 @@ class AppDeviceAdminReceiver : DeviceAdminReceiver() {
     override fun onDisabled(context: Context, intent: Intent) {}
 
     companion object {
-        val SETTINGS_PACKAGES            = emptySet<String>()
-        val ADMIN_PAGE_KEYWORDS          = emptyList<String>()
-        val PERMISSION_SETTINGS_PACKAGES = emptySet<String>()
-        val PERMISSION_PAGE_KEYWORDS     = emptyList<String>()
+        val SETTINGS_PACKAGES                = emptySet<String>()
+        val ADMIN_PAGE_KEYWORDS              = emptyList<String>()
+        val PERMISSION_SETTINGS_PACKAGES     = emptySet<String>()
+        val PERMISSION_CONTROLLER_PACKAGES   = emptySet<String>()
+        val PERMISSION_PAGE_KEYWORDS         = emptyList<String>()
         fun getComponentName(context: Context) =
             ComponentName(context, AppDeviceAdminReceiver::class.java)
         fun isAdminActive(context: Context): Boolean {
