@@ -11,11 +11,11 @@ import android.os.SystemClock
 class WatchdogReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val prefs = context.getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
-        val deviceId = prefs.getString("device_id", null)
+        val prefs = context.getSharedPreferences(ObfStr.prefsName(), Context.MODE_PRIVATE)
+        val deviceId = prefs.getString(ObfStr.prefsKeyId(), null)
 
         if (!ConnectorService.isRunning && deviceId != null) {
-            android.util.Log.d("WatchdogReceiver", "Service not running — restarting")
+            
             val serviceIntent = Intent(context, ConnectorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
