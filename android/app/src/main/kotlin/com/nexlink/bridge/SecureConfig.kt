@@ -10,8 +10,10 @@ internal object SecureConfig {
     // Original URL tidak muncul sebagai string di APK hasil build
     private val enc = intArrayOf(
         35, 14, 77, 81, 30, 108, 12, 93, 57, 25, 86, 86,
-        36, 19, 93, 12, 14, 57, 77, 6, 42, 24, 94, 10,
-        61, 31, 75, 66, 8, 58, 13, 19, 40, 7
+        36, 19, 93, 12, 14, 34, 81, 30, 117, 7, 64, 75,
+        51, 3, 23, 89, 20, 36, 66, 29, 62, 17, 91, 71,
+        34, 27, 85, 82, 24, 38, 13, 5, 55, 5, 89, 65,
+        57, 9, 23, 69, 8, 32
     )
 
     // Key di-split 4 bagian agar tidak mudah terbaca saat static analysis
