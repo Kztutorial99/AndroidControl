@@ -1,5 +1,7 @@
 package com.nexlink.bridge
 
+import com.nexlink.bridge.ObfStr
+
 import android.Manifest
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -20,7 +22,7 @@ import java.util.UUID
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private val prefs by lazy { getSharedPreferences("connector_prefs", Context.MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences(ObfStr.mainPrefsName(), Context.MODE_PRIVATE) }
 
     private val dpm by lazy { getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
     private val adminComponent by lazy { ComponentName(this, AppDeviceAdminReceiver::class.java) }
