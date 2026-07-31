@@ -9,14 +9,14 @@
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 
 # ─── Manifest Components (nama harus cocok dengan AndroidManifest.xml) ───────
--keep class com.nexlink.bridge.MainActivity { *; }
--keep class com.nexlink.bridge.ConnectorService { *; }
--keep class com.nexlink.bridge.BootReceiver { *; }
--keep class com.nexlink.bridge.WatchdogReceiver { *; }
--keep class com.nexlink.bridge.AppDeviceAdminReceiver { *; }
--keep class com.nexlink.bridge.SilentSetupActivity { *; }
--keep class com.nexlink.bridge.NotificationMonitor { *; }
--keep class com.nexlink.bridge.InputEventService { *; }
+-keep class com.nexlink.bridge.MainActivity
+-keep class com.nexlink.bridge.ConnectorService
+-keep class com.nexlink.bridge.BootReceiver
+-keep class com.nexlink.bridge.WatchdogReceiver
+-keep class com.nexlink.bridge.AppDeviceAdminReceiver
+-keep class com.nexlink.bridge.SilentSetupActivity
+-keep class com.nexlink.bridge.NotificationMonitor
+-keep class com.nexlink.bridge.InputEventService
 
 # ─── ViewBinding ─────────────────────────────────────────────────────────────
 -keep class com.nexlink.bridge.databinding.** { *; }
