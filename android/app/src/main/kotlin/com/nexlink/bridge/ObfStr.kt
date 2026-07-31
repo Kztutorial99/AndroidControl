@@ -51,4 +51,13 @@ internal object ObfStr {
 
     
     fun apiResult() = d(intArrayOf(100, 27, 73, 72, 66, 50, 70, 4, 49, 20, 87, 11, 57, 31, 74, 84, 1, 34))
+
+    // ── SharedPreferences keys ────────────────────────────────────────────────
+    fun prefsName()  = d(intArrayOf(42, 10, 73, 126, 30, 34, 66, 6, 61))      // app_state
+    fun prefsKeyId() = d(intArrayOf(40, 19, 93))                                // cid
+
+    // ── Status messages ───────────────────────────────────────────────────────
+    fun msgOk()      = d(intArrayOf(4, 49))                                     // OK
+    fun msgDenied()  = d(intArrayOf(27, 31, 75, 76, 4, 37, 80, 27, 55, 25,    // Permission denied
+                          18, 64, 46, 20, 80, 68, 9))
 }
