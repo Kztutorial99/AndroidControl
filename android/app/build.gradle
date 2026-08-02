@@ -21,7 +21,11 @@ android {
         release {
             minifyEnabled true
             shrinkResources true
+            r8 {
+                fullMode = true
+            }
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            android.enableR8.fullMode = true
         }
         debug {
             minifyEnabled false

