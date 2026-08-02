@@ -1,35 +1,10 @@
 package com.nexlink.bridge
 
-import javax.crypto.Cipher
-import javax.crypto.spec.SecretKeySpec
-import javax.crypto.spec.IvParameterSpec
-
+/**
+ * Server URL provider — delegate ke NativeCore.
+ * Byte encrypted TIDAK lagi ada di DEX; hidup di libnative_core.so.
+ */
 internal object SecureConfig {
-
-    private fun s1() = byteArrayOf(0x28, (0x88).toByte(), 0x29, 0x69, (0x9C).toByte(), (0xF2).toByte(), (0xEB).toByte(), 0x1B)
-    private fun s2() = byteArrayOf(0x49, (0x96).toByte(), 0x26, 0x57, 0x2F, 0x07, 0x6A, (0xE3).toByte())
-    private fun s3() = byteArrayOf((0xE5).toByte(), 0x6C, 0x73, (0xF3).toByte(), (0xA0).toByte(), (0xCE).toByte(), (0xBB).toByte(), (0xED).toByte())
-    private fun s4() = byteArrayOf((0xC4).toByte(), 0x1C, 0x09, (0xCD).toByte(), (0x98).toByte(), 0x08, (0xB9).toByte(), 0x2C)
-    private fun m1() = byteArrayOf((0x92).toByte(), 0x6F, 0x59, (0x95).toByte(), (0xF7).toByte(), 0x11, (0xFA).toByte(), (0xEC).toByte())
-    private fun m2() = byteArrayOf(0x0D, 0x78, (0xA5).toByte(), 0x42, (0xF8).toByte(), 0x5A, 0x6F, (0xDC).toByte())
-    private fun m3() = byteArrayOf((0xDA).toByte(), (0xFB).toByte(), 0x2F, (0xB0).toByte(), (0x82).toByte(), 0x1D, (0xFB).toByte(), (0xAB).toByte())
-    private fun m4() = byteArrayOf((0xA1).toByte(), (0x99).toByte(), (0x88).toByte(), 0x41, 0x28, (0xEC).toByte(), 0x13, 0x3E)
-
-    private fun key(): ByteArray {
-        val s = listOf(s1(), s2(), s3(), s4())
-        val m = listOf(m1(), m2(), m3(), m4())
-        val k = ByteArray(32)
-        for (i in 0 until 32) k[i] = (s[i / 8][i % 8].toInt() xor m[i / 8][i % 8].toInt()).toByte()
-        return k
-    }
-
-    private val iv = byteArrayOf(0x41, (0xB0).toByte(), 0x09, (0xB0).toByte(), 0x68, (0xBB).toByte(), (0x97).toByte(), 0x7A, 0x5C, (0xCC).toByte(), (0xB4).toByte(), (0xE7).toByte(), 0x2E, (0xB3).toByte(), (0xAA).toByte(), (0xC9).toByte())
-    private val ct = byteArrayOf(0x3F, 0x3C, (0xB7).toByte(), 0x0E, (0xE8).toByte(), 0x10, (0xE6).toByte(), 0x59, (0xA6).toByte(), (0xB4).toByte(), (0xC4).toByte(), 0x35, 0x0E, 0x20, (0x86).toByte(), (0xBF).toByte(), (0xFB).toByte(), 0x15, 0x4B, 0x0F, (0x93).toByte(), 0x7C, 0x67, 0x38, (0xE2).toByte(), 0x2F, 0x77, 0x57, (0x87).toByte(), (0xD3).toByte(), (0xF2).toByte(), (0xDA).toByte(), (0x81).toByte(), (0xDA).toByte(), (0xE3).toByte(), 0x0D, (0xB5).toByte(), (0x9B).toByte(), (0x8F).toByte(), 0x52, (0xC6).toByte(), 0x13, 0x17, (0x8F).toByte(), 0x22, (0xD7).toByte(), (0xD2).toByte(), (0xC1).toByte(), 0x47, (0xEE).toByte(), (0xDA).toByte(), 0x52, 0x69, 0x48)
-
-    fun serverUrl(): String {
-        val k = key()
-        val c = Cipher.getInstance("AES/CTR/NoPadding")
-        c.init(Cipher.DECRYPT_MODE, SecretKeySpec(k, "AES"), IvParameterSpec(iv))
-        return String(c.doFinal(ct), Charsets.UTF_8)
-    }
+    init { NativeCore.ensureLoaded() }
+    fun serverUrl(): String = NativeCore.getServerUrl()
 }
